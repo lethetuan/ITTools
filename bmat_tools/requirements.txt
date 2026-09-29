@@ -1,0 +1,18 @@
+# BMAT-Tools Requirements
+# All standard library except psutil (optional for enhanced CPU/RAM monitoring)
+
+# Optional: for enhanced system monitoring
+# psutil>=5.9.0
+
+# Optional: for currency conversion (uses built-in urllib instead)
+# requests>=2.28.0
+
+# Note: All core functionality uses Python standard library only:
+# - tkinter (GUI)
+# - winreg (Windows registry)
+# - subprocess (system commands)
+# - socket (networking)
+# - threading (background tasks)
+# - queue (thread communication)
+# - ipaddress (IP calculation)
+# - os, sys, shutil, json, datetime, etc.
