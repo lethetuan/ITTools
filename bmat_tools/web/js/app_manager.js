@@ -1,5 +1,5 @@
 /**
- * IT-Tools 2026 - Free Software Store, App Uninstall, Startup & Desktop Icon Manager Module
+ * IT Tool LTT 2026 - Free Software Store, App Uninstall, Startup & Desktop Icon Manager Module
  */
 Object.assign(AppController.prototype, {
   // ── FREE SOFTWARE STORE (WINGET SILENT INSTALLER) ──────────────────────
@@ -369,6 +369,24 @@ Object.assign(AppController.prototype, {
 
         const total = st.total || totalHint || 1;
 
+        // Đẩy nhật ký thời gian thực sang bảng thông báo người dùng
+        if (st.log && Array.isArray(st.log)) {
+          if (!this._lastLoggedWingetIdx) this._lastLoggedWingetIdx = 0;
+          for (let i = this._lastLoggedWingetIdx; i < st.log.length; i++) {
+            const line = st.log[i];
+            if (line.includes("[OK]")) {
+              this.addLog("success", line);
+            } else if (line.includes("[LOI]") || line.includes("[EXCEPTION]")) {
+              this.addLog("error", line);
+            } else if (line.includes("[HUY]") || line.includes("[QUA THOI GIAN]") || line.includes("Thu lai")) {
+              this.addLog("warning", line);
+            } else if (line.includes("Bat dau")) {
+              this.addLog("info", line);
+            }
+          }
+          this._lastLoggedWingetIdx = st.log.length;
+        }
+
         // Cập nhật UI thời gian thực
         if (statusText && st.status_text) {
           statusText.innerText = st.status_text;
@@ -376,6 +394,13 @@ Object.assign(AppController.prototype, {
         if (progressBar) {
           const pct = Math.min(100, Math.max(0, st.percentage || 0));
           progressBar.style.width = `${pct}%`;
+          if (st.error_count > 0 && st.success_count === 0) {
+            progressBar.style.background = "#ef4444";
+          } else if (st.error_count > 0) {
+            progressBar.style.background = "#f59e0b";
+          } else {
+            progressBar.style.background = "linear-gradient(90deg, #10b981 0%, #059669 100%)";
+          }
         }
         if (progressText) {
           const nameInfo = st.current_package_name ? ` — ${st.current_package_name}` : '';
@@ -387,23 +412,32 @@ Object.assign(AppController.prototype, {
           clearInterval(this._wingetPollInterval);
           this._wingetPollInterval = null;
           this._isBatchInstalling = false;
+          this._lastLoggedWingetIdx = 0;
           this._updateBatchInstallButton();
           if (bgBanner) bgBanner.style.display = "none";
 
           if (st.canceled) {
             if (statusText) statusText.innerText = "⛔ Đã dừng";
+            if (progressBar) progressBar.style.background = "#94a3b8";
             this.addLog("warning", "⛔ Quá trình cài đặt phần mềm nền đã bị dừng.");
           } else if (st.error_count > 0 && st.success_count === 0) {
             if (statusText) statusText.innerText = `❌ Thất bại (${st.error_count} lỗi)`;
-            this.addLog("error", `❌ Quá trình cài đặt thất bại: ${st.status_text}`);
+            if (progressBar) progressBar.style.background = "#ef4444";
+            this.addLog("error", `❌ Quá trình cài đặt thất bại: Không thể cài đặt ${st.error_count} phần mềm.`);
           } else if (st.error_count > 0) {
-            if (statusText) statusText.innerText = `⚠️ Hoàn tất (${st.success_count}/${total} thành công)`;
-            if (progressBar) progressBar.style.width = "100%";
-            this.addLog("warning", `⚠️ Hoàn tất: ${st.success_count} thành công, ${st.error_count} lỗi.`);
+            if (statusText) statusText.innerText = `⚠️ Hoàn tất một phần (${st.success_count}/${total} thành công, ${st.error_count} lỗi)`;
+            if (progressBar) {
+              progressBar.style.width = "100%";
+              progressBar.style.background = "#f59e0b";
+            }
+            this.addLog("warning", `⚠️ Hoàn tất một phần: ${st.success_count} thành công, ${st.error_count} lỗi.`);
             setTimeout(() => this.loadSoftwareCatalog(), 1500);
           } else {
-            if (statusText) statusText.innerText = "✅ Hoàn tất";
-            if (progressBar) progressBar.style.width = "100%";
+            if (statusText) statusText.innerText = `✅ Hoàn tất (${st.success_count || total}/${total} thành công)`;
+            if (progressBar) {
+              progressBar.style.width = "100%";
+              progressBar.style.background = "linear-gradient(90deg, #10b981 0%, #059669 100%)";
+            }
             if (progressText) progressText.innerText = `100% • ${total} / ${total} phần mềm`;
             this.addLog("success", `🎉 ${st.status_text || "Đã hoàn tất cài đặt tất cả phần mềm!"}`);
             setTimeout(() => this.loadSoftwareCatalog(), 1500);
@@ -485,16 +519,75 @@ Object.assign(AppController.prototype, {
   async cancelBatchInstall() {
     this.addLog("warning", "⛔ Đang gửi yêu cầu dừng quá trình cài đặt phần mềm nền...");
     const statusText = document.getElementById("install-status-text");
-    if (statusText) statusText.innerText = "Đang dừng... (sẽ kết thúc sau gói hiện tại)";
+    const bgBanner = document.getElementById("bg-install-banner");
+    const progressBar = document.getElementById("install-progress-bar");
+    const progressText = document.getElementById("install-progress-text");
 
     if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.cancel_winget_batch === 'function') {
-      const res = await window.pywebview.api.cancel_winget_batch();
-      this.addLog("info", res.message);
+      try {
+        const res = await window.pywebview.api.cancel_winget_batch();
+        this.addLog("warning", res.message || "Đã dừng tiến trình cài đặt.");
+      } catch (e) {
+        console.error("Lỗi cancel:", e);
+      }
     }
-    // Giữ poll tiếp tục để nhận trạng thái dừng chính thức từ runner và reset UI
-    if (!this._wingetPollInterval) {
-      this._startWingetPoll();
+
+    if (this._wingetPollInterval) {
+      clearInterval(this._wingetPollInterval);
+      this._wingetPollInterval = null;
     }
+    this._isBatchInstalling = false;
+    this._updateBatchInstallButton();
+
+    if (bgBanner) bgBanner.style.display = "none";
+    if (statusText) statusText.innerText = "⛔ Đã dừng";
+    if (progressBar) progressBar.style.width = "0%";
+    if (progressText) progressText.innerText = "0% • Đã dừng tiến trình cài đặt";
+
+    document.querySelectorAll(".software-card button.queued").forEach(b => {
+      b.innerHTML = "<span>⚡</span> Cài đặt";
+      b.classList.remove("queued");
+      b.disabled = false;
+    });
+
+    this.loadSoftwareCatalog();
+  },
+
+  async resetWingetSession() {
+    if (!confirm("Bạn có muốn đặt lại toàn bộ hàng đợi cài đặt về trạng thái ban đầu?")) return;
+    this.addLog("info", "🔄 Đang đặt lại trạng thái kho phần mềm...");
+    if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.reset_winget_session === 'function') {
+      try {
+        const res = await window.pywebview.api.reset_winget_session();
+        this.addLog("success", res.message);
+      } catch (e) {
+        console.error("Lỗi reset:", e);
+      }
+    }
+    if (this._wingetPollInterval) {
+      clearInterval(this._wingetPollInterval);
+      this._wingetPollInterval = null;
+    }
+    this._isBatchInstalling = false;
+    this._updateBatchInstallButton();
+
+    const bgBanner = document.getElementById("bg-install-banner");
+    const statusText = document.getElementById("install-status-text");
+    const progressBar = document.getElementById("install-progress-bar");
+    const progressText = document.getElementById("install-progress-text");
+
+    if (bgBanner) bgBanner.style.display = "none";
+    if (statusText) statusText.innerText = "Sẵn sàng";
+    if (progressBar) progressBar.style.width = "0%";
+    if (progressText) progressText.innerText = "0% • 0 / 0 phần mềm";
+
+    document.querySelectorAll(".software-card button.queued").forEach(b => {
+      b.innerHTML = "<span>⚡</span> Cài đặt";
+      b.classList.remove("queued");
+      b.disabled = false;
+    });
+
+    this.loadSoftwareCatalog();
   },
 
   // ── DESKTOP ICON & TASKBAR MANAGER ────────────────────────────────────
@@ -821,6 +914,12 @@ Object.assign(AppController.prototype, {
       this.currentUninstallCategory = 'all';
     }
 
+    // Default sort: install_date descending (newest first)
+    if (!this.uninstallSortCol) {
+      this.uninstallSortCol = 'install_date';
+      this.uninstallSortDir = 'desc';
+    }
+
     const catName = String(this.currentUninstallCategory || 'all').toUpperCase();
     const tbody = document.getElementById("uninstall-list-body");
     if (tbody) {
@@ -828,7 +927,6 @@ Object.assign(AppController.prototype, {
     }
 
     this.addLog("info", `Đang quét phần mềm (${this.currentUninstallCategory})...`);
-
 
     if (window.pywebview && window.pywebview.api) {
       try {
@@ -856,6 +954,18 @@ Object.assign(AppController.prototype, {
       ];
       this.renderUninstallAppsTable();
     }
+  },
+
+  sortUninstallBy(col) {
+    if (this.uninstallSortCol === col) {
+      // Toggle direction
+      this.uninstallSortDir = (this.uninstallSortDir === 'asc') ? 'desc' : 'asc';
+    } else {
+      this.uninstallSortCol = col;
+      // Default direction per column type
+      this.uninstallSortDir = (col === 'install_date' || col === 'estimated_size') ? 'desc' : 'asc';
+    }
+    this.renderUninstallAppsTable();
   },
 
   filterUninstallCategory(category, btnEl) {
@@ -886,6 +996,41 @@ Object.assign(AppController.prototype, {
       const nameMatch = (app.display_name || "").toLowerCase().includes(query);
       const pubMatch = (app.publisher || "").toLowerCase().includes(query);
       return nameMatch || pubMatch;
+    });
+
+    // ── Apply sorting ──────────────────────────────────────────────────────
+    const col = this.uninstallSortCol || 'install_date';
+    const dir = this.uninstallSortDir || 'desc';
+    this.filteredInstalledApps = [...this.filteredInstalledApps].sort((a, b) => {
+      let va = a[col];
+      let vb = b[col];
+      if (col === 'estimated_size') {
+        va = Number(va) || 0;
+        vb = Number(vb) || 0;
+      } else if (col === 'install_date') {
+        // Normalize to comparable string: YYYYMMDD or YYYY-MM-DD → strip dashes
+        va = String(va || '').replace(/-/g, '') || '00000000';
+        vb = String(vb || '').replace(/-/g, '') || '00000000';
+      } else {
+        va = String(va || '').toLowerCase();
+        vb = String(vb || '').toLowerCase();
+      }
+      if (va < vb) return dir === 'asc' ? -1 : 1;
+      if (va > vb) return dir === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    // ── Update sort arrows in header ───────────────────────────────────────
+    const sortCols = ['display_name', 'publisher', 'install_date', 'estimated_size', 'display_version'];
+    sortCols.forEach(c => {
+      const th = document.querySelector(`.sort-col[data-col="${c}"]`);
+      const arrow = document.getElementById(`sort-arrow-${c}`);
+      if (th) th.classList.remove('sort-active');
+      if (arrow) arrow.textContent = '';
+      if (c === col) {
+        if (th) th.classList.add('sort-active');
+        if (arrow) arrow.textContent = dir === 'asc' ? ' ▲' : ' ▼';
+      }
     });
 
     if (badge) {
@@ -1439,8 +1584,8 @@ Object.assign(AppController.prototype, {
   async setBitlocker(drive, action) {
     const actionText = action === "disable" ? "TẮT" : "BẬT";
     const cmdText = action === "disable" ? `manage-bde -off ${drive}` : `manage-bde -on ${drive} -used`;
-    
-    if (!confirm(`Bạn có chắc chắn muốn ${actionText} BitLocker trên ổ ${drive}?\nLệnh thực hiện: ${cmdText}`)) {
+
+    if (!confirm(`Bạn có chắc chắn muốn ${actionText} BitLocker trên ổ ${drive}?\nLệnh thực hiện: ${cmdText}\n\n⚠️ Lưu ý: Cần chạy phần mềm với quyền Administrator!`)) {
       return;
     }
 
@@ -1453,15 +1598,15 @@ Object.assign(AppController.prototype, {
     const btnClose = document.getElementById("bl-drawer-close");
 
     if (drawer) drawer.style.display = "block";
-    if (title) title.innerText = `⚡ Đang thực hiện ${actionText} BitLocker trên ổ ${drive}...`;
+    if (title) title.innerText = `⏳ Đang gửi lệnh ${actionText} BitLocker trên ổ ${drive}...`;
     if (badge) {
       badge.style.background = "#fef3c7";
       badge.style.color = "#d97706";
-      badge.innerText = action === "disable" ? "Đang giải mã" : "Đang mã hóa";
+      badge.innerText = "Đang xử lý...";
     }
-    if (msg) msg.innerText = `Đã phát lệnh '${cmdText}'. Đang khởi chạy tiến trình... Vui lòng chờ...`;
+    if (msg) msg.innerText = `Đang chạy: ${cmdText}\nVui lòng chờ (tối đa 30 giây)...`;
     if (bar) bar.style.width = "10%";
-    if (pct) pct.innerText = "10% hoàn tất";
+    if (pct) pct.innerText = "Đang gửi lệnh...";
     if (btnClose) btnClose.style.display = "none";
 
     this.addLog("info", `Đang chạy lệnh ${cmdText}...`);
@@ -1471,25 +1616,44 @@ Object.assign(AppController.prototype, {
         const res = await window.pywebview.api.set_bitlocker(drive, action);
         if (res && res.success) {
           this.addLog("success", res.message);
-          if (msg) msg.innerText = `⚡ ${res.message} Đang theo dõi tiến độ giải mã/mã hóa thời gian thực...`;
+          if (title) title.innerText = `⚡ Đang theo dõi tiến độ BitLocker trên ổ ${drive}...`;
+          if (badge) {
+            badge.style.background = "#fef3c7";
+            badge.style.color = "#d97706";
+            badge.innerText = action === "disable" ? "Đang giải mã" : "Đang mã hóa";
+          }
+          if (msg) msg.innerText = `⚡ ${res.message}\nĐang theo dõi tiến độ thời gian thực...`;
+          if (bar) bar.style.width = "15%";
           this.startBitlockerPolling(drive, action);
         } else {
-          this.addLog("error", `Lỗi ${actionText} BitLocker: ${res ? res.message : 'Unknown'}`);
-          if (msg) msg.innerText = `❌ Lỗi: ${res ? res.message : 'Không thể thực hiện'}`;
+          // Lỗi thực sự — hiển thị ngay
+          const errMsg = res ? res.message : "Không thể thực hiện lệnh BitLocker.";
+          this.addLog("error", `Lỗi ${actionText} BitLocker ổ ${drive}: ${errMsg}`);
+          if (title) title.innerText = `❌ Thất bại: ${actionText} BitLocker ổ ${drive}`;
           if (badge) { badge.style.background = "#fee2e2"; badge.style.color = "#991b1b"; badge.innerText = "Thất bại"; }
+          if (msg) msg.innerText = errMsg;
+          if (bar) bar.style.width = "0%";
+          if (pct) pct.innerText = "Thất bại";
           if (btnClose) btnClose.style.display = "inline-block";
+          alert(`❌ Lỗi ${actionText} BitLocker:\n\n${errMsg}`);
         }
       } catch (err) {
         console.error("Lỗi set_bitlocker:", err);
-        this.addLog("error", `Lỗi ${actionText} BitLocker: ${err.message}`);
-        if (msg) msg.innerText = `❌ Ngoại lệ: ${err.message}`;
+        const errMsg = `Lỗi kết nối API: ${err.message || err}`;
+        this.addLog("error", errMsg);
+        if (title) title.innerText = `❌ Lỗi API`;
+        if (badge) { badge.style.background = "#fee2e2"; badge.style.color = "#991b1b"; badge.innerText = "Lỗi"; }
+        if (msg) msg.innerText = errMsg;
         if (btnClose) btnClose.style.display = "inline-block";
+        alert(`❌ ${errMsg}`);
       }
     } else {
+      // Mock mode (không có pywebview)
       if (msg) msg.innerText = `[MOCK] Đã phát lệnh ${cmdText}! Đang tiến hành...`;
       this.startBitlockerPolling(drive, action);
     }
   },
+
 
   startBitlockerPolling(drive, action) {
     if (this.blPollInterval) {
@@ -1736,15 +1900,21 @@ Object.assign(AppController.prototype, {
     const msg = document.getElementById("office-install-msg");
     const badge = document.getElementById("office-install-badge");
     const logBox = document.getElementById("office-install-log");
+    const cancelBtn = document.getElementById("office-install-cancel");
     const closeBtn = document.getElementById("office-install-close");
 
     if (drawer) drawer.style.display = "block";
     if (bar) bar.style.width = "5%";
     if (pct) pct.textContent = "5%";
     if (msg) msg.textContent = `Đang khởi tạo lệnh tải ${vname}...`;
-    if (badge) badge.textContent = "ĐANG XỬ LÝ";
+    if (badge) {
+      badge.textContent = "ĐANG XỬ LÝ";
+      badge.style.background = "#e0f2fe";
+      badge.style.color = "#0369a1";
+    }
+    if (cancelBtn) cancelBtn.style.display = "inline-block";
     if (closeBtn) closeBtn.style.display = "none";
-    if (logBox) logBox.innerHTML = `<div>[SYS] Khởi động tiến trình cài đặt ${vname}...</div>`;
+    if (logBox) logBox.innerHTML = `<div>[SYS] Khởi động tiến trình cài đặt ẩn ${vname}...</div>`;
 
     this.addLog("info", `Đang khởi chạy tiến trình cài đặt ${vname} (${arch})...`);
 
@@ -1755,10 +1925,15 @@ Object.assign(AppController.prototype, {
           this.addLog("success", res.message);
           this.startOfficeInstallPolling();
         } else {
-          alert(res ? res.message : "Không thể khởi chạy cài đặt Office.");
+          const errMsg = res ? res.message : "Không thể khởi chạy cài đặt Office.";
+          alert(errMsg);
+          if (cancelBtn) cancelBtn.style.display = "inline-block";
+          if (closeBtn) closeBtn.style.display = "inline-block";
+          this.startOfficeInstallPolling();
         }
       } catch (err) {
         alert(`Lỗi cài đặt Office: ${err.message}`);
+        if (closeBtn) closeBtn.style.display = "inline-block";
       }
     } else {
       let mockPct = 10;
@@ -1771,9 +1946,34 @@ Object.assign(AppController.prototype, {
         if (mockPct >= 100) {
           clearInterval(timer);
           if (msg) msg.textContent = `[MOCK] Hoàn tất cài đặt ${vname}!`;
+          if (cancelBtn) cancelBtn.style.display = "none";
           if (closeBtn) closeBtn.style.display = "inline-block";
         }
       }, 1000);
+    }
+  },
+
+  async cancelOfficeInstall() {
+    if (!confirm("Bạn có chắc chắn muốn hủy tiến trình tải & cài đặt Office đang chạy?")) return;
+    if (window.pywebview && window.pywebview.api) {
+      try {
+        const res = await window.pywebview.api.cancel_office_install();
+        this.addLog("warn", res.message || "Đã gửi lệnh hủy cài đặt Office.");
+        const badge = document.getElementById("office-install-badge");
+        const cancelBtn = document.getElementById("office-install-cancel");
+        const closeBtn = document.getElementById("office-install-close");
+        const msg = document.getElementById("office-install-msg");
+        if (badge) {
+          badge.textContent = "ĐÃ HỦY";
+          badge.style.background = "#fee2e2";
+          badge.style.color = "#dc2626";
+        }
+        if (msg) msg.textContent = "Đã hủy tiến trình cài đặt Office.";
+        if (cancelBtn) cancelBtn.style.display = "none";
+        if (closeBtn) closeBtn.style.display = "inline-block";
+      } catch (err) {
+        alert(`Lỗi khi hủy: ${err.message}`);
+      }
     }
   },
 
@@ -1793,27 +1993,50 @@ Object.assign(AppController.prototype, {
             const msg = document.getElementById("office-install-msg");
             const badge = document.getElementById("office-install-badge");
             const logBox = document.getElementById("office-install-log");
+            const cancelBtn = document.getElementById("office-install-cancel");
             const closeBtn = document.getElementById("office-install-close");
 
             const pVal = data.percentage || 0;
             if (bar) bar.style.width = `${pVal}%`;
             if (pct) pct.textContent = `${pVal}% hoàn tất`;
             if (msg) msg.textContent = data.message || "Đang xử lý...";
-            if (badge) badge.textContent = (data.status || "processing").toUpperCase();
+            if (badge) {
+              const statusUpper = (data.status || "processing").toUpperCase();
+              badge.textContent = statusUpper;
+              if (data.status === "completed") {
+                badge.style.background = "#dcfce7";
+                badge.style.color = "#16a34a";
+              } else if (data.status === "error" || data.status === "cancelled") {
+                badge.style.background = "#fee2e2";
+                badge.style.color = "#dc2626";
+              } else {
+                badge.style.background = "#e0f2fe";
+                badge.style.color = "#0369a1";
+              }
+            }
 
             if (logBox && data.output_log && data.output_log.length > 0) {
               logBox.innerHTML = data.output_log.map(l => `<div>${this.escapeHtml(l)}</div>`).join("");
               logBox.scrollTop = logBox.scrollHeight;
             }
 
+            if (data.active) {
+              if (cancelBtn) cancelBtn.style.display = "inline-block";
+              if (closeBtn) closeBtn.style.display = "none";
+            } else {
+              if (cancelBtn) cancelBtn.style.display = "none";
+              if (closeBtn) closeBtn.style.display = "inline-block";
+            }
+
             if (!data.active || data.status === "completed" || data.status === "error" || data.status === "cancelled") {
               clearInterval(this.officeInstallPollingTimer);
               this.officeInstallPollingTimer = null;
+              if (cancelBtn) cancelBtn.style.display = "none";
               if (closeBtn) closeBtn.style.display = "inline-block";
               if (data.status === "completed") {
                 this.addLog("success", `Đã hoàn tất cài đặt Office!`);
               } else if (data.status === "error") {
-                this.addLog("error", `Lỗi cài đặt Office!`);
+                this.addLog("error", `Tiến trình cài đặt Office kết thúc với lỗi!`);
               }
             }
           }
@@ -1839,10 +2062,33 @@ Object.assign(AppController.prototype, {
         const res = await window.pywebview.api.get_office_install_progress();
         if (res && res.success && res.data) {
           const data = res.data;
-          if (data.active || data.status === "installing" || data.status === "downloading" || data.status === "configuring" || data.status === "finalizing") {
-            const drawer = document.getElementById("office-install-drawer");
+          const drawer = document.getElementById("office-install-drawer");
+          const cancelBtn = document.getElementById("office-install-cancel");
+          const closeBtn = document.getElementById("office-install-close");
+
+          if (data.active) {
             if (drawer) drawer.style.display = "block";
+            if (cancelBtn) cancelBtn.style.display = "inline-block";
+            if (closeBtn) closeBtn.style.display = "none";
             this.startOfficeInstallPolling();
+          } else if (data.status && data.status !== "ready") {
+            // Previously finished or error
+            if (drawer) drawer.style.display = "block";
+            if (cancelBtn) cancelBtn.style.display = "none";
+            if (closeBtn) closeBtn.style.display = "inline-block";
+            
+            const bar = document.getElementById("office-install-bar");
+            const pct = document.getElementById("office-install-pct");
+            const msg = document.getElementById("office-install-msg");
+            const badge = document.getElementById("office-install-badge");
+            const logBox = document.getElementById("office-install-log");
+            if (bar) bar.style.width = `${data.percentage || 0}%`;
+            if (pct) pct.textContent = `${data.percentage || 0}% hoàn tất`;
+            if (msg) msg.textContent = data.message || "";
+            if (badge) badge.textContent = (data.status || "").toUpperCase();
+            if (logBox && data.output_log) {
+              logBox.innerHTML = data.output_log.map(l => `<div>${this.escapeHtml(l)}</div>`).join("");
+            }
           }
         }
       } catch (e) {

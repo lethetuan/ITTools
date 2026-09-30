@@ -645,3 +645,10 @@ def open_app_folder(install_location, app_name):
         return {"success": False, "message": "Không tìm thấy thư mục cài đặt của phần mềm này!"}
     except Exception as e:
         return {"success": False, "message": str(e)}
+
+
+class UninstallManager:
+    """Tkinter fallback compatibility class."""
+    def __init__(self, parent=None):
+        self.parent = parent
+

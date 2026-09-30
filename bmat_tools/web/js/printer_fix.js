@@ -1,5 +1,5 @@
 /**
- * IT-Tools 2026 - Printer & Credentials Module
+ * IT Tool LTT 2026 - Printer & Credentials Module
  */
 Object.assign(AppController.prototype, {
   async scanPrinters() {
@@ -286,35 +286,66 @@ Object.assign(AppController.prototype, {
   },
 
   async saveCredential() {
-    const target = document.getElementById("cred-target").value.trim();
-    const user = document.getElementById("cred-user").value.trim();
-    const pass = document.getElementById("cred-pass").value;
+    const targetEl = document.getElementById("cred-target");
+    const userEl = document.getElementById("cred-user");
+    const passEl = document.getElementById("cred-pass");
+
+    const target = targetEl ? targetEl.value.trim() : "";
+    const user = userEl ? userEl.value.trim() : "";
+    const pass = passEl ? passEl.value : "";
 
     if (!target || !user) {
-      alert("Vui lòng nhập Target (Tên máy chủ / IP) và User name!");
+      alert("⚠️ Vui lòng nhập Target (Tên máy chủ / IP) và User name!");
       return;
     }
 
-    this.addLog("info", `Đang lưu Credential cho ${target}...`);
-    if (window.pywebview && window.pywebview.api) {
-      const res = await window.pywebview.api.save_credential(target, user, pass);
-      this.addLog(res.success ? "success" : "error", res.message);
-      this.scanCredentials();
+    const btn = document.querySelector('#subtab-credentials button[type="submit"]');
+    const oldText = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳</span> Đang lưu...';
+    }
+
+    this.addLog("info", `Đang lưu Windows Credential cho ${target}...`);
+    try {
+      if (window.pywebview && window.pywebview.api) {
+        const res = await window.pywebview.api.save_credential(target, user, pass);
+        this.addLog(res.success ? "success" : "error", res.message);
+        alert(res.message);
+        if (res.success) {
+          if (passEl) passEl.value = "";
+          await this.scanCredentials();
+        }
+      }
+    } catch (err) {
+      this.addLog("error", "Lỗi lưu Credential: " + err);
+      alert("Lỗi kết nối API: " + err);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = oldText || '<span>💾</span> Lưu Windows Credentials';
+      }
     }
   },
 
   async deleteSelectedCredential() {
-    const target = this.selectedCredTarget || document.getElementById("cred-target").value.trim();
+    const target = this.selectedCredTarget || (document.getElementById("cred-target") ? document.getElementById("cred-target").value.trim() : "");
     if (!target) {
-      alert("Vui lòng chọn hoặc nhập Credential cần xóa!");
+      alert("⚠️ Vui lòng click chọn một dòng trong bảng hoặc nhập Target cần xóa!");
       return;
     }
 
     if (confirm(`Bạn có chắc chắn muốn xóa Credential: ${target}?`)) {
       if (window.pywebview && window.pywebview.api) {
-        const res = await window.pywebview.api.delete_credential(target);
-        this.addLog(res.success ? "success" : "error", res.message);
-        this.scanCredentials();
+        try {
+          const res = await window.pywebview.api.delete_credential(target);
+          this.addLog(res.success ? "success" : "error", res.message);
+          alert(res.message);
+          this.selectedCredTarget = null;
+          await this.scanCredentials();
+        } catch (err) {
+          alert("Lỗi khi xóa: " + err);
+        }
       }
     }
   },
@@ -322,19 +353,31 @@ Object.assign(AppController.prototype, {
   async createShareUser() {
     const user = document.getElementById("share-username").value.trim();
     const pass = document.getElementById("share-password").value;
+    const desc = document.getElementById("share-desc") ? document.getElementById("share-desc").value.trim() : "";
 
     if (!user || !pass) {
       alert("Vui lòng nhập Username và Mật khẩu!");
       return;
     }
 
-    this.addLog("info", `Đang tạo user ${user}...`);
+    const btn = document.querySelector('#subtab-create-user button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = "⏳ Đang xử lý..."; }
+
+    this.addLog("info", `Đang tạo user "${user}" và phân quyền chia sẻ máy in...`);
     if (window.pywebview && window.pywebview.api) {
-      const res = await window.pywebview.api.create_printer_share_user(user, pass);
-      this.addLog(res.success ? "success" : "error", res.message);
-      alert(res.message);
+      try {
+        const res = await window.pywebview.api.create_printer_share_user(user, pass, desc);
+        this.addLog(res.success ? "success" : "error", res.message);
+        alert(res.message);
+      } catch (err) {
+        this.addLog("error", "Lỗi kết nối API: " + err);
+        alert("Lỗi kết nối API: " + err);
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<span>🚀</span> Tạo User & Tự Động Phân Quyền Chia Sẻ Máy In'; }
+      }
     }
   },
+
 
   async fixDataSharing() {
     this.addLog("info", "Đang Fix Chia Sẻ Dữ Liệu & Mạng LAN...");

@@ -505,8 +505,11 @@ def open_iscsi_cpl():
 def open_server_tools_gui():
     """Launches Tkinter Server Tools GUI."""
     try:
-        main_py = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "main.py")
-        subprocess.Popen([sys.executable, main_py, "--module", "server_tools"])
+        if getattr(sys, 'frozen', False):
+            subprocess.Popen([sys.executable, "--module", "server_tools"])
+        else:
+            main_py = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "main.py")
+            subprocess.Popen([sys.executable, main_py, "--module", "server_tools"])
         return {"success": True, "message": "Đã mở giao diện Server Tools GUI!"}
     except Exception as e:
         return {"success": False, "message": str(e)}

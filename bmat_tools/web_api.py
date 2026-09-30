@@ -1,6 +1,6 @@
 """
-IT-Tools Web API Bridge - Connects Frontend JavaScript to Python System Modules
-Author: Lê Thế Tuấn | 0352 194 195 | https://lethetuanpc.blogspot.com/
+IT Tool LTT Web API Bridge - Connects Frontend JavaScript to Python System Modules
+Author: Lê Thế Tuấn | 0352 194 195 | https://lethetuanpc.blogspot.com | Telegram: https://t.me/lethetuanpc
 """
 
 import os
@@ -16,7 +16,32 @@ import datetime
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from constants import APP_NAME, APP_VERSION, APP_AUTHOR, APP_PHONE, APP_WEBSITE
+from constants import APP_NAME, APP_VERSION, APP_AUTHOR, APP_PHONE, APP_WEBSITE, APP_TELEGRAM, AUTOSTART_KEY_NAME
+
+def patch_silent_subprocess():
+    """Globally configures subprocess on Windows to never flash console or PowerShell windows."""
+    if sys.platform != 'win32':
+        return
+    if getattr(subprocess, '_bmat_silent_patched', False):
+        return
+    subprocess._bmat_silent_patched = True
+
+    orig_init = subprocess.Popen.__init__
+
+    def silent_init(self, *args, **kwargs):
+        # 0x08000000 = CREATE_NO_WINDOW
+        flags = kwargs.get('creationflags', 0)
+        flags |= 0x08000000
+        kwargs['creationflags'] = flags
+        orig_init(self, *args, **kwargs)
+
+    subprocess.Popen.__init__ = silent_init
+
+patch_silent_subprocess()
+
+def get_resource_path(*rel_path):
+    base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, *rel_path)
 
 class LogBridge:
     """Redirects Tkinter text widget logging calls from printer_fix functions to PyWebView API logger."""
@@ -68,6 +93,17 @@ class Api:
             "version_name": "",
             "output_log": []
         }
+        self._browser_backup_progress = {
+            "active": False,
+            "mode": "idle",
+            "percent": 0,
+            "status": "idle",
+            "current_browser": "",
+            "step_title": "",
+            "detail": "",
+            "logs": [],
+            "result": None
+        }
         self._last_winget_status = None
         self._current_winget_pid = None
 
@@ -96,6 +132,110 @@ class Api:
             "website": APP_WEBSITE,
             "is_admin": is_admin
         }
+
+    # ── AUTOSTART WITH WINDOWS ─────────────────────────────────────────────
+    def get_autostart_status(self):
+        """Checks if IT Tool LTT is configured to auto-start with Windows."""
+        import winreg
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_READ)
+            try:
+                val, _ = winreg.QueryValueEx(key, AUTOSTART_KEY_NAME)
+                winreg.CloseKey(key)
+                if not val:
+                    return {"enabled": False, "path": ""}
+
+                # Verify in StartupApproved\Run
+                try:
+                    appr_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run", 0, winreg.KEY_READ)
+                    appr_val, _ = winreg.QueryValueEx(appr_key, AUTOSTART_KEY_NAME)
+                    winreg.CloseKey(appr_key)
+                    if isinstance(appr_val, bytes) and len(appr_val) > 0 and appr_val[0] not in (0, 2):
+                        return {"enabled": False, "path": val}
+                except Exception:
+                    pass
+
+                return {"enabled": True, "path": val}
+            except FileNotFoundError:
+                winreg.CloseKey(key)
+                return {"enabled": False, "path": ""}
+        except Exception as e:
+            return {"enabled": False, "path": "", "error": str(e)}
+
+    def set_autostart(self, enable):
+        """Enables or disables IT Tool LTT auto-starting with Windows."""
+        import winreg
+        try:
+            if enable:
+                cmd = self._get_autostart_command()
+                # 1. Write to Run key
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE)
+                winreg.SetValueEx(key, AUTOSTART_KEY_NAME, 0, winreg.REG_SZ, cmd)
+                winreg.CloseKey(key)
+
+                # 2. Mark Enabled in StartupApproved
+                try:
+                    appr_key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run")
+                    winreg.SetValueEx(appr_key, AUTOSTART_KEY_NAME, 0, winreg.REG_BINARY, bytes([0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]))
+                    winreg.CloseKey(appr_key)
+                except Exception:
+                    pass
+
+                self.log("SUCCESS", f"Đã BẬT tự động khởi động cùng Windows: {cmd}")
+                return {
+                    "success": True,
+                    "enabled": True,
+                    "path": cmd,
+                    "message": "Đã BẬT tự động khởi động cùng Windows cho IT Tool LTT thành công!"
+                }
+            else:
+                # 1. Delete from Run key
+                try:
+                    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE)
+                    winreg.DeleteValue(key, AUTOSTART_KEY_NAME)
+                    winreg.CloseKey(key)
+                except FileNotFoundError:
+                    pass
+
+                # 2. Delete or reset in StartupApproved
+                try:
+                    appr_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run", 0, winreg.KEY_SET_VALUE)
+                    winreg.DeleteValue(appr_key, AUTOSTART_KEY_NAME)
+                    winreg.CloseKey(appr_key)
+                except Exception:
+                    pass
+
+                self.log("INFO", "Đã TẮT tự động khởi động cùng Windows cho IT Tool LTT")
+                return {
+                    "success": True,
+                    "enabled": False,
+                    "message": "Đã TẮT tự động khởi động cùng Windows cho IT Tool LTT thành công!"
+                }
+        except Exception as e:
+            self.log("ERROR", f"Lỗi thiết lập khởi động cùng Windows: {e}")
+            return {
+                "success": False,
+                "enabled": False,
+                "message": f"Lỗi thiết lập khởi động cùng Windows: {e}"
+            }
+
+    def _get_autostart_command(self):
+        """Resolves the best command/executable path to register for auto startup."""
+        if getattr(sys, 'frozen', False):
+            return f'"{os.path.abspath(sys.executable)}"'
+
+        base = os.path.dirname(os.path.abspath(__file__))
+        candidates = [
+            os.path.abspath(os.path.join(base, '..', 'dist', 'IT Tool LTT.exe')),
+            os.path.abspath(os.path.join(base, '..', 'IT-Tools.exe')),
+            os.path.abspath(os.path.join(base, '..', 'IT-Tools.bat')),
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                return f'"{c}"'
+
+        main_py = os.path.abspath(os.path.join(base, 'main.py'))
+        return f'"{sys.executable}" "{main_py}"'
 
     # ── PRINTERS MODULE ───────────────────────────────────────────────────
     def get_printers(self):
@@ -466,41 +606,229 @@ class Api:
         if not target or not username:
             return {"success": False, "message": "Vui lòng nhập Target (IP/Máy chủ) và Username!"}
         try:
-            cmd = f'cmdkey /add:"{target}" /user:"{username}" /pass:"{password}"'
-            subprocess.run(cmd, shell=True)
-            self.log("SUCCESS", f"Đã lưu Windows Credential cho Target: {target} (User: {username})")
-            return {"success": True, "message": f"Đã lưu Credential cho {target}"}
+            # Làm sạch Target: loại bỏ ký tự dẫn đầu \\ hoặc //, khoảng trắng và tên folder chia sẻ
+            clean_target = target.strip().replace('/', '\\')
+            while clean_target.startswith('\\'):
+                clean_target = clean_target[1:]
+            if '\\' in clean_target:
+                clean_target = clean_target.split('\\')[0].strip()
+
+            if not clean_target:
+                return {"success": False, "message": "Target (Tên máy chủ / IP) không hợp lệ!"}
+
+            username = username.strip()
+            password = password.strip() if password else ""
+
+            CREATE_NO_WINDOW = 0x08000000
+
+            # Lưu đồng thời Domain Credential (/add) và Generic Credential (/generic) để tương thích tối đa chia sẻ mạng LAN và máy in
+            success = False
+            last_err = ""
+
+            # 1. Lưu dạng Domain Password
+            if password:
+                r1 = subprocess.run(
+                    f'cmdkey /add:"{clean_target}" /user:"{username}" /pass:"{password}"',
+                    shell=True, capture_output=True, text=True,
+                    creationflags=CREATE_NO_WINDOW, encoding="utf-8", errors="ignore"
+                )
+                r2 = subprocess.run(
+                    f'cmdkey /generic:"{clean_target}" /user:"{username}" /pass:"{password}"',
+                    shell=True, capture_output=True, text=True,
+                    creationflags=CREATE_NO_WINDOW, encoding="utf-8", errors="ignore"
+                )
+            else:
+                r1 = subprocess.run(
+                    ['cmdkey', f'/add:{clean_target}', f'/user:{username}', '/pass:'],
+                    input='\n', capture_output=True, text=True,
+                    creationflags=CREATE_NO_WINDOW, encoding="utf-8", errors="ignore"
+                )
+                r2 = subprocess.run(
+                    ['cmdkey', f'/generic:{clean_target}', f'/user:{username}', '/pass:'],
+                    input='\n', capture_output=True, text=True,
+                    creationflags=CREATE_NO_WINDOW, encoding="utf-8", errors="ignore"
+                )
+
+            if r1.returncode == 0 or r2.returncode == 0:
+                success = True
+            else:
+                last_err = (r1.stderr or r1.stdout or r2.stderr or r2.stdout).strip()
+
+            if success:
+                self.log("SUCCESS", f"Đã lưu Windows Credential cho Target: {clean_target} (User: {username})")
+                return {"success": True, "message": f"✅ Đã lưu thành công Windows Credential cho '{clean_target}' (User: {username})!"}
+            else:
+                self.log("ERROR", f"Lỗi lưu credential: {last_err}")
+                return {"success": False, "message": f"Lỗi khi lưu Credential: {last_err or 'Không xác định'}"}
         except Exception as e:
-            return {"success": False, "message": str(e)}
+            self.log("ERROR", f"Lỗi ngoại lệ save_credential: {e}")
+            return {"success": False, "message": f"Lỗi: {str(e)}"}
 
     def delete_credential(self, target):
         if not target:
             return {"success": False, "message": "Vui lòng chọn hoặc nhập Credential cần xóa!"}
         try:
-            cmd = f'cmdkey /delete:"{target}"'
-            subprocess.run(cmd, shell=True)
-            self.log("SUCCESS", f"Đã xóa Credential: {target}")
-            return {"success": True, "message": f"Đã xóa Credential: {target}"}
+            clean_target = target.strip()
+            # Xóa các tiền tố thường gặp khi hiển thị
+            for prefix in ["Domain:target=", "LegacyGeneric:target=", "Target: "]:
+                if clean_target.startswith(prefix):
+                    clean_target = clean_target[len(prefix):].strip()
+
+            CREATE_NO_WINDOW = 0x08000000
+            r = subprocess.run(
+                f'cmdkey /delete:"{clean_target}"',
+                shell=True, capture_output=True, text=True,
+                creationflags=CREATE_NO_WINDOW, encoding="utf-8", errors="ignore"
+            )
+
+            # Nếu target có dạng TERMSRV/... hoặc IP, thử xóa cả dạng gốc
+            if r.returncode != 0 and "/" in clean_target:
+                sub_target = clean_target.split("/", 1)[1]
+                subprocess.run(f'cmdkey /delete:"{sub_target}"', shell=True, creationflags=CREATE_NO_WINDOW)
+
+            self.log("SUCCESS", f"Đã xóa Credential: {clean_target}")
+            return {"success": True, "message": f"✅ Đã xóa Credential '{clean_target}'"}
         except Exception as e:
+            self.log("ERROR", f"Lỗi delete_credential: {e}")
             return {"success": False, "message": str(e)}
 
     # ── USER CREATION FOR PRINTER SHARE ───────────────────────────────────
-    def create_printer_share_user(self, username, password):
+    def create_printer_share_user(self, username, password, description=""):
         if not username or not password:
             return {"success": False, "message": "Vui lòng nhập Username và Mật khẩu!"}
+
+        username = username.strip()
+        password = password.strip()
+
+        # Kiểm tra độ dài mật khẩu (Windows Domain & Local Security Policy thường yêu cầu tối thiểu 8 ký tự)
+        if len(password) < 8:
+            return {
+                "success": False,
+                "message": "⚠️ Mật khẩu quá ngắn! Windows yêu cầu mật khẩu tối thiểu 8 ký tự (khuyến nghị có cả chữ hoa, chữ thường và số, VD: Printer@123456) theo chính sách bảo mật hệ thống."
+            }
+
+        # Kiểm tra quyền Administrator
+        is_admin = False
         try:
-            # Create user
-            subprocess.run(f'net user "{username}" "{password}" /add /expires:never', shell=True)
-            # Set password never expires via WMIC
-            subprocess.run(f'wmic useraccount where name="{username}" set PasswordExpires=FALSE', shell=True)
-            # Add to Users group
-            subprocess.run(f'net localgroup Users "{username}" /add', shell=True)
-            # Configure Guest auth
-            subprocess.run(r'reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" /v AllowInsecureGuestAuth /t REG_DWORD /d 1 /f', shell=True)
-            self.log("SUCCESS", f"Đã tạo user '{username}' chia sẻ máy in LAN thành công!")
-            return {"success": True, "message": f"Đã tạo user chia sẻ '{username}'!"}
+            is_admin = (ctypes.windll.shell32.IsUserAnAdmin() != 0)
+        except Exception:
+            pass
+
+        if not is_admin:
+            return {
+                "success": False,
+                "message": "❌ Yêu cầu quyền Administrator để tạo User Windows!\nVui lòng đóng phần mềm và mở lại bằng cách: Click chuột phải vào file exe -> chọn 'Run as administrator'."
+            }
+
+        try:
+            CREATE_NO_WINDOW = 0x08000000
+            results = []
+            errors = []
+
+            def run_cmd(cmd):
+                r = subprocess.run(
+                    cmd, shell=True,
+                    capture_output=True, text=True,
+                    creationflags=CREATE_NO_WINDOW,
+                    encoding="utf-8", errors="ignore"
+                )
+                out = (r.stdout + r.stderr).strip()
+                return r.returncode, out
+
+            # 1. Tạo tài khoản user mới
+            rc, out = run_cmd(f'net user "{username}" "{password}" /add /expires:never /active:yes')
+            if rc != 0:
+                # Nếu user đã tồn tại (rc=2 hoặc thông báo already exists)
+                if "already" in out.lower() or "tồn tại" in out or rc == 2:
+                    run_cmd(f'net user "{username}" "{password}" /active:yes')
+                    results.append(f"User '{username}' đã tồn tại, đã cập nhật lại mật khẩu.")
+                else:
+                    # Thử tạo qua PowerShell New-LocalUser
+                    desc_text = description if description else "Tai khoan chia se may in"
+                    ps_cmd = (
+                        f'powershell -NoProfile -Command "'
+                        f'$p = ConvertTo-SecureString \'{password}\' -AsPlainText -Force; '
+                        f'New-LocalUser -Name \'{username}\' -Password $p -PasswordNeverExpires '
+                        f'-Description \'{desc_text}\'"'
+                    )
+                    rc_ps, out_ps = run_cmd(ps_cmd)
+                    if rc_ps == 0:
+                        results.append(f"Đã tạo tài khoản '{username}' (qua PowerShell).")
+                    else:
+                        errors.append(f"Tạo user thất bại: {out or out_ps}")
+            else:
+                results.append(f"Đã tạo tài khoản '{username}'.")
+
+            if errors:
+                msg = "Hoàn thành có lỗi:\n" + "\n".join(errors)
+                self.log("WARNING", msg)
+                return {"success": False, "message": msg}
+
+            # 2. Đặt mô tả nếu có
+            if description:
+                run_cmd(f'net user "{username}" /comment:"{description}"')
+
+            # 3. Mật khẩu không hết hạn (Ưu tiên PowerShell Set-LocalUser, tương thích Windows 10/11)
+            rc2b, out2b = run_cmd(
+                f'powershell -NoProfile -Command "Set-LocalUser -Name \'{username}\' -PasswordNeverExpires $true"'
+            )
+            if rc2b == 0:
+                results.append("Đã đặt mật khẩu vĩnh viễn không hết hạn.")
+            else:
+                # Fallback WMIC nếu có
+                rc2, _ = run_cmd(f'wmic useraccount where name="{username}" set PasswordExpires=FALSE')
+                if rc2 == 0:
+                    results.append("Đã đặt mật khẩu vĩnh viễn không hết hạn (WMIC).")
+
+            # 4. Thêm vào nhóm quản trị hoặc nhóm Users để phân quyền in mạng LAN
+            # Dùng SID S-1-5-32-544 (Administrators) để không phụ thuộc ngôn ngữ Windows
+            ps_group_cmd = (
+                f'powershell -NoProfile -Command "'
+                f'$adminGroup = (Get-LocalGroup -SID \'S-1-5-32-544\').Name; '
+                f'Add-LocalGroupMember -Group $adminGroup -Member \'{username}\'"'
+            )
+            rc3_ps, _ = run_cmd(ps_group_cmd)
+            if rc3_ps == 0:
+                results.append(f"Đã thêm '{username}' vào nhóm Administrators.")
+            else:
+                # Fallback net localgroup
+                rc3, out3 = run_cmd(f'net localgroup Administrators "{username}" /add')
+                if rc3 == 0:
+                    results.append(f"Đã thêm '{username}' vào nhóm Administrators.")
+                else:
+                    rc3b, _ = run_cmd(f'net localgroup Users "{username}" /add')
+                    if rc3b == 0:
+                        results.append(f"Đã thêm '{username}' vào nhóm Users.")
+
+            # 5. Bật AllowInsecureGuestAuth cho chia sẻ máy in LAN
+            run_cmd(
+                r'reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" '
+                r'/v AllowInsecureGuestAuth /t REG_DWORD /d 1 /f'
+            )
+
+            # 6. Tắt Password Protected Sharing (forceguest = 0 để chứng thực bằng user vừa tạo)
+            run_cmd(
+                r'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Lsa" '
+                r'/v forceguest /t REG_DWORD /d 0 /f'
+            )
+
+            # 7. Bật File and Printer Sharing qua Firewall
+            run_cmd('netsh advfirewall firewall set rule group="File and Printer Sharing" new enable=Yes')
+
+            # 8. Đặt tài khoản active
+            run_cmd(f'net user "{username}" /active:yes')
+
+            # 9. Tự động lưu luôn vào Windows Credential của máy nội bộ nếu người dùng muốn
+            self.save_credential("127.0.0.1", username, password)
+            self.save_credential("localhost", username, password)
+
+            summary = f"✅ Tạo User '{username}' thành công!\n" + "\n".join(f"• {r}" for r in results) + \
+                      f"\n\n📌 Thông tin đăng nhập từ máy trạm:\n- User: {username}\n- Password: {password}"
+            self.log("SUCCESS", summary)
+            return {"success": True, "message": summary}
         except Exception as e:
-            return {"success": False, "message": str(e)}
+            self.log("ERROR", f"Lỗi tạo user: {e}")
+            return {"success": False, "message": f"Lỗi hệ thống: {str(e)}"}
 
     # ── DATA SHARING FIX ──────────────────────────────────────────────────
     def fix_data_sharing(self):
@@ -544,8 +872,12 @@ class Api:
         try:
             import modules.wincheck as wc
             bridge = LogBridge(self)
-            wc.clean_office_keys(bridge)
-            return {"success": True, "message": "Đã hoàn tất dọn sạch key Office lậu!"}
+            total_removed = wc.clean_office_keys(bridge)
+            if total_removed and total_removed > 0:
+                msg = f"Đã gỡ sạch thành công {total_removed} key Office lậu & dọn cấu hình KMS!"
+            else:
+                msg = "Đã dọn dẹp cấu hình KMS Office (Không còn key lậu nào đang cài đặt)."
+            return {"success": True, "message": msg, "removed": total_removed or 0}
         except Exception as e:
             self.log("ERROR", f"Lỗi Clean Office Keys: {e}")
             return {"success": False, "message": str(e)}
@@ -557,8 +889,8 @@ class Api:
         try:
             import modules.wincheck as wc
             bridge = LogBridge(self)
-            res = wc.install_win_key(key.strip(), bridge)
-            return {"success": res, "message": f"Kết quả cài key: {key}"}
+            ok, msg = wc.install_win_key(key.strip(), bridge)
+            return {"success": ok, "message": msg}
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -567,8 +899,28 @@ class Api:
         try:
             import modules.wincheck as wc
             bridge = LogBridge(self)
-            wc.uninstall_win_key(bridge)
-            return {"success": True, "message": "Đã gỡ bỏ key bản quyền hiện tại."}
+            ok, msg = wc.uninstall_win_key(bridge)
+            return {"success": ok, "message": msg}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def deactivate_win_digital(self):
+        """Completely deactivates Windows Digital License / uninstalls license."""
+        try:
+            import modules.wincheck as wc
+            bridge = LogBridge(self)
+            ok, msg = wc.deactivate_windows(bridge)
+            return {"success": ok, "message": msg}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def restore_win_digital(self):
+        """Restores Windows Digital License via default retail generic key and slmgr /ato."""
+        try:
+            import modules.wincheck as wc
+            bridge = LogBridge(self)
+            ok, msg = wc.restore_digital_license(bridge)
+            return {"success": ok, "message": msg}
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -577,8 +929,30 @@ class Api:
         try:
             import modules.wincheck as wc
             bridge = LogBridge(self)
-            wc.rearm_windows(bridge)
-            return {"success": True, "message": "Đã đặt lại thời gian dùng thử (Rearm)."}
+            res = wc.rearm_windows(bridge)
+            return {"success": True, "message": f"Kết quả gia hạn (Rearm):\n{res or 'Hoàn tất'}"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def rearm_office(self):
+        """Rearms Microsoft Office trial period via ospp.vbs /rearm."""
+        try:
+            import modules.wincheck as wc
+            bridge = LogBridge(self)
+            ok, msg = wc.rearm_office(bridge)
+            return {"success": ok, "message": msg}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def install_office_key(self, key):
+        """Installs a product key for Microsoft Office via ospp.vbs /inpkey:"""
+        if not key:
+            return {"success": False, "message": "Vui lòng nhập Product Key Office!"}
+        try:
+            import modules.wincheck as wc
+            bridge = LogBridge(self)
+            ok, msg = wc.install_office_key(key.strip(), bridge)
+            return {"success": ok, "message": msg}
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -601,6 +975,80 @@ class Api:
                 "disks": [],
                 "os": {"caption": "Windows", "version": "", "build": "", "arch": "64-bit"}
             }
+
+    def get_realtime_stats(self):
+        """Returns real-time CPU%, RAM%, disk I/O and network speed using psutil.
+        Designed to be polled every 2s by the frontend for live gauge updates.
+        """
+        try:
+            import psutil, time
+
+            cpu_pct = psutil.cpu_percent(interval=0.5)
+
+            ram = psutil.virtual_memory()
+            ram_pct = ram.percent
+            ram_used_mb = ram.used // (1024 * 1024)
+            ram_total_mb = ram.total // (1024 * 1024)
+            ram_used_str = f"{ram_used_mb / 1024:.1f} GB" if ram_used_mb >= 1024 else f"{ram_used_mb} MB"
+            ram_total_str = f"{ram_total_mb / 1024:.1f} GB" if ram_total_mb >= 1024 else f"{ram_total_mb} MB"
+
+            def fmt_speed(kb_s):
+                if kb_s >= 1024:
+                    return f"{kb_s/1024:.1f} MB/s"
+                return f"{kb_s:.0f} KB/s"
+
+            d1 = psutil.disk_io_counters()
+            time.sleep(0.3)
+            d2 = psutil.disk_io_counters()
+            if d1 and d2:
+                disk_read_kb = (d2.read_bytes - d1.read_bytes) / 1024 / 0.3
+                disk_write_kb = (d2.write_bytes - d1.write_bytes) / 1024 / 0.3
+            else:
+                disk_read_kb = disk_write_kb = 0.0
+
+            partitions_usage = []
+            for part in psutil.disk_partitions(all=False):
+                try:
+                    usage = psutil.disk_usage(part.mountpoint)
+                    partitions_usage.append({
+                        "drive": part.mountpoint.replace("\\", ""),
+                        "used_gb": round(usage.used / (1024**3), 1),
+                        "free_gb": round(usage.free / (1024**3), 1),
+                        "total_gb": round(usage.total / (1024**3), 1),
+                        "pct": usage.percent,
+                    })
+                except Exception:
+                    pass
+
+            n2 = psutil.net_io_counters()
+            now = time.time()
+            net_rx_kb = net_tx_kb = 0.0
+            if hasattr(self, '_net_baseline') and self._net_baseline:
+                prev, prev_time = self._net_baseline
+                elapsed = now - prev_time
+                if elapsed > 0:
+                    net_rx_kb = (n2.bytes_recv - prev.bytes_recv) / 1024 / elapsed
+                    net_tx_kb = (n2.bytes_sent - prev.bytes_sent) / 1024 / elapsed
+            self._net_baseline = (n2, now)
+
+            return {
+                "success": True,
+                "cpu_pct": round(cpu_pct, 1),
+                "ram_pct": round(ram_pct, 1),
+                "ram_used": ram_used_str,
+                "ram_total": ram_total_str,
+                "disk_read": fmt_speed(disk_read_kb),
+                "disk_write": fmt_speed(disk_write_kb),
+                "disk_read_kb": round(disk_read_kb, 1),
+                "disk_write_kb": round(disk_write_kb, 1),
+                "net_rx": fmt_speed(net_rx_kb),
+                "net_tx": fmt_speed(net_tx_kb),
+                "net_rx_kb": round(net_rx_kb, 1),
+                "net_tx_kb": round(net_tx_kb, 1),
+                "partitions_usage": partitions_usage,
+            }
+        except Exception as e:
+            return {"success": False, "message": str(e), "cpu_pct": 0, "ram_pct": 0}
 
     def open_vendor_driver_site(self, vendor_name, service_tag=""):
         """Opens official manufacturer driver website based on vendor & service tag."""
@@ -637,68 +1085,20 @@ class Api:
             return {"success": False, "message": str(e)}
 
     def export_specs_file(self, format_type, specs_data=None):
-        """Exports computer configuration specs to CSV or Excel/HTML format."""
+        """Exports computer configuration specs to full Excel (.xlsx) or CSV format."""
         try:
-            user_profile = os.environ.get('USERPROFILE', 'C:\\')
-            desktop = os.path.join(user_profile, 'Desktop')
-
-            if not specs_data:
-                import modules.computer_info as ci
-                specs_data = ci.get_detailed_hardware_info()
-
-            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            sys_info = specs_data.get("system", {})
-            comp_name = sys_info.get("computer_name", "PC")
-
-            if format_type.lower() == "csv":
-                file_name = f"CauHinh_{comp_name}_{ts}.csv"
-                file_path = os.path.join(desktop, file_name)
-                with open(file_path, "w", encoding="utf-8-sig") as f:
-                    f.write("Thành Phần,Chi Tiết\n")
-                    f.write(f"Tên Máy Tính,{comp_name}\n")
-                    f.write(f"Loại Máy / Hãng,{sys_info.get('vendor', 'N/A')}\n")
-                    f.write(f"CPU,{specs_data.get('cpu', {}).get('name', 'N/A')}\n")
-                    f.write(f"RAM,{specs_data.get('ram_total', 'N/A')}\n")
-                    f.write(f"Mainboard,{specs_data.get('mainboard', {}).get('manufacturer', '')} {specs_data.get('mainboard', {}).get('model', '')}\n")
-                    f.write(f"Service Tag / Serial,{specs_data.get('service_tag', {}).get('service_tag', 'N/A')}\n")
-                    f.write(f"UUID,{specs_data.get('service_tag', {}).get('uuid', 'N/A')}\n")
-                    f.write(f"Hệ Điều Hành,{specs_data.get('os', {}).get('caption', 'Windows')}\n")
-
-                self.log("SUCCESS", f"Đã xuất file CSV cấu hình tại: {file_path}")
-                subprocess.run(f'explorer.exe /select,"{file_path}"', shell=True)
-                return {"success": True, "message": f"Đã xuất file CSV thành công tại:\n{file_path}"}
+            import modules.computer_info as ci
+            res = ci.export_specs(format_type, specs_data)
+            if res.get("success"):
+                file_path = res.get("file_path", "")
+                self.log("SUCCESS", f"Đã xuất cấu hình máy tính tại: {file_path}")
+                if file_path and os.path.exists(file_path):
+                    subprocess.run(f'explorer.exe /select,"{file_path}"', shell=True)
             else:
-                file_name = f"CauHinh_{comp_name}_{ts}.html"
-                file_path = os.path.join(desktop, file_name)
-                html_content = f"""
-                <html>
-                <head><meta charset="utf-8"><title>Cấu Hình Máy Tính - {comp_name}</title>
-                <style>body{{font-family:Segoe UI, sans-serif; padding:20px;}} table{{border-collapse:collapse; width:100%;}} th,td{{border:1px solid #cbd5e1; padding:10px; text-align:left;}} th{{background:#f1f5f9;}}</style>
-                </head>
-                <body>
-                <h2>📊 BÁO CÁO CẤU HÌNH MÁY TÍNH ({comp_name})</h2>
-                <table>
-                <tr><th>Thành Phần</th><th>Thông Tin Chi Tiết</th></tr>
-                <tr><td>Tên Máy Tính</td><td>{comp_name}</td></tr>
-                <tr><td>Hãng Sản Xuất / Model</td><td>{sys_info.get('vendor', 'N/A')} ({sys_info.get('system_family', '')})</td></tr>
-                <tr><td>Bộ Xử Lý (CPU)</td><td>{specs_data.get('cpu', {}).get('name', 'N/A')} ({specs_data.get('cpu', {}).get('cores_threads', '')})</td></tr>
-                <tr><td>Bộ Nhớ (RAM)</td><td>{specs_data.get('ram_total', 'N/A')}</td></tr>
-                <tr><td>Bo Mạch Chủ</td><td>{specs_data.get('mainboard', {}).get('manufacturer', '')} {specs_data.get('mainboard', {}).get('model', '')}</td></tr>
-                <tr><td>Service Tag / Serial</td><td>{specs_data.get('service_tag', {}).get('service_tag', 'N/A')}</td></tr>
-                <tr><td>UUID</td><td>{specs_data.get('service_tag', {}).get('uuid', 'N/A')}</td></tr>
-                <tr><td>Pin / Wear Level</td><td>{specs_data.get('battery', {}).get('health_text', '')} ({specs_data.get('battery', {}).get('status_text', '')})</td></tr>
-                <tr><td>Hệ Điều Hành</td><td>{specs_data.get('os', {}).get('caption', 'Windows')} ({specs_data.get('os', {}).get('build', '')})</td></tr>
-                </table>
-                </body>
-                </html>
-                """
-                with open(file_path, "w", encoding="utf-8") as f:
-                    f.write(html_content)
-
-                self.log("SUCCESS", f"Đã xuất Báo Cáo cấu hình tại: {file_path}")
-                subprocess.run(f'explorer.exe /select,"{file_path}"', shell=True)
-                return {"success": True, "message": f"Đã xuất Báo Cáo thành công tại:\n{file_path}"}
+                self.log("ERROR", res.get("message", "Lỗi xuất file"))
+            return res
         except Exception as e:
+            self.log("ERROR", f"Lỗi xuất cấu hình: {e}")
             return {"success": False, "message": str(e)}
 
     # ── DESKTOP ICON & TASKBAR MANAGER MODULE ─────────────────────────────
@@ -1121,6 +1521,14 @@ class Api:
         except Exception as e:
             return {"success": False, "message": str(e)}
 
+    def get_firewall_rules_detail(self, filter_type="fps"):
+        """Returns details of firewall rules matching the filter_type."""
+        try:
+            import modules.firewall as fw
+            return fw.get_firewall_rules_detail(filter_type)
+        except Exception as e:
+            return {"success": False, "message": str(e), "rules": [], "total": 0}
+
     # ── IP MANAGER & SUBNET CALCULATOR ───────────────────────────────────
     def get_network_adapters(self):
         """Returns list of all network adapters, local IP, and external IP."""
@@ -1222,12 +1630,253 @@ class Api:
                     return {"success": False, "message": "Vui lòng chọn thư mục chứa bản sao lưu để phục hồi!"}
             elif module_name == "datetime_tool":
                 return self.configure_datetime(action if action != "open" else "1click_fix", params)
+            elif module_name == "sendto_editor":
+                sendto_path = os.path.join(os.environ.get('APPDATA', ''), r'Microsoft\Windows\SendTo')
+                os.startfile(sendto_path)
+                self.log("SUCCESS", f"Đã mở thư mục SendTo: {sendto_path}")
             else:
                 self.log("SUCCESS", f"Đã thực thi tác vụ {module_name} ({action})")
 
             return {"success": True, "message": f"Đã hoàn thành {module_name}!"}
         except Exception as e:
             self.log("ERROR", f"Lỗi chạy module {module_name}: {e}")
+            return {"success": False, "message": str(e)}
+
+    # ── SENDTO EDITOR API ─────────────────────────────────────────────────────
+    _SENDTO_PATH = os.path.join(os.environ.get('APPDATA', ''), r'Microsoft\Windows\SendTo')
+
+    @staticmethod
+    def _parse_lnk_target(filepath):
+        """Parses target path from a Windows .lnk file in pure Python."""
+        try:
+            import struct
+            with open(filepath, 'rb') as f:
+                content = f.read()
+            if len(content) < 0x4c or content[:4] != b'L\x00\x00\x00':
+                return ''
+            flags = struct.unpack('<I', content[0x14:0x18])[0]
+            pos = 0x4c
+            if flags & 0x01:  # HasLinkTargetIDList
+                id_list_size = struct.unpack('<H', content[pos:pos+2])[0]
+                pos += 2 + id_list_size
+            if flags & 0x02 and pos < len(content):  # HasLinkInfo
+                local_base_pos = struct.unpack('<I', content[pos+0x10:pos+0x14])[0]
+                if local_base_pos != 0:
+                    target_bytes = content[pos+local_base_pos:]
+                    end = target_bytes.find(b'\x00')
+                    if end != -1:
+                        return target_bytes[:end].decode('mbcs', errors='ignore')
+        except Exception:
+            pass
+        return ''
+
+    def get_sendto_entries(self):
+        """Returns all entries in the SendTo folder as a list of dicts with target details."""
+        try:
+            sendto = self._SENDTO_PATH
+            if not os.path.exists(sendto):
+                os.makedirs(sendto, exist_ok=True)
+            entries = []
+            for fname in sorted(os.listdir(sendto), key=lambda x: x.lower()):
+                fpath = os.path.join(sendto, fname)
+                ext = os.path.splitext(fname)[1].lower()
+                target = ''
+                if ext == '.lnk':
+                    ftype = 'Shortcut'
+                    target = self._parse_lnk_target(fpath)
+                elif ext == '.exe':
+                    ftype = 'Executable'
+                    target = fpath
+                elif os.path.isdir(fpath):
+                    ftype = 'Folder'
+                    target = fpath
+                else:
+                    ftype = ext.lstrip('.').upper() or 'File'
+                try:
+                    size = os.path.getsize(fpath)
+                    if size < 1024:
+                        size_str = f"{size} B"
+                    elif size < 1024*1024:
+                        size_str = f"{size//1024} KB"
+                    else:
+                        size_str = f"{size//1024//1024} MB"
+                except Exception:
+                    size_str = ""
+                entries.append({
+                    "name": fname,
+                    "type": ftype,
+                    "path": fpath,
+                    "target": target,
+                    "size": size_str,
+                    "is_system": fname.lower() in ['desktop.ini', 'desktop (create shortcut).desklink'],
+                })
+            return {"success": True, "entries": entries, "sendto_path": sendto}
+        except Exception as e:
+            return {"success": False, "message": str(e), "entries": []}
+
+    def browse_sendto_file(self):
+        """Opens native file picker to select a program/file for SendTo."""
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)
+            file_path = filedialog.askopenfilename(
+                title="Chọn File hoặc Chương trình muốn thêm vào SendTo",
+                filetypes=[
+                    ("Chương trình thực thi / Script", "*.exe;*.bat;*.cmd;*.ps1;*.vbs;*.py"),
+                    ("Tất cả tập tin", "*.*")
+                ]
+            )
+            root.destroy()
+            return file_path or ""
+        except Exception as e:
+            self.log("ERROR", f"Lỗi mở hộp thoại chọn file: {e}")
+            return ""
+
+    def browse_sendto_folder(self):
+        """Opens native folder picker to select a folder for SendTo."""
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)
+            folder_path = filedialog.askdirectory(title="Chọn Thư mục muốn thêm vào SendTo")
+            root.destroy()
+            return folder_path or ""
+        except Exception as e:
+            self.log("ERROR", f"Lỗi mở hộp thoại chọn thư mục: {e}")
+            return ""
+
+    def create_sendto_shortcut(self, name, target_path):
+        """Creates a .lnk shortcut in SendTo pointing to target_path using Base64 encoded PowerShell."""
+        try:
+            import base64
+            import re
+            import shutil
+
+            if not name or not target_path:
+                return {"success": False, "message": "Vui lòng nhập tên hiển thị và đường dẫn target!"}
+
+            target_path = target_path.strip().strip('"').strip("'")
+            if not target_path:
+                return {"success": False, "message": "Đường dẫn target không hợp lệ!"}
+
+            # Check if target exists
+            if not os.path.exists(target_path):
+                which_p = shutil.which(target_path)
+                if which_p:
+                    target_path = which_p
+                else:
+                    return {"success": False, "message": f"Không tìm thấy file/thư mục: {target_path}"}
+
+            # Sanitize shortcut name
+            clean_name = name.strip()
+            clean_name = re.sub(r'[\\/*?:"<>|]', '_', clean_name).strip(' ._')
+            if not clean_name:
+                clean_name = os.path.splitext(os.path.basename(target_path))[0] or "Shortcut"
+            if not clean_name.lower().endswith('.lnk'):
+                clean_name += '.lnk'
+
+            lnk_path = os.path.join(self._SENDTO_PATH, clean_name)
+
+            clean_lnk_esc = lnk_path.replace("'", "''")
+            clean_target_esc = target_path.replace("'", "''")
+
+            ps_code = f"""
+$ws = New-Object -ComObject WScript.Shell
+$s = $ws.CreateShortcut('{clean_lnk_esc}')
+$s.TargetPath = '{clean_target_esc}'
+if (Test-Path -LiteralPath '{clean_target_esc}' -PathType Container) {{
+    $s.WorkingDirectory = '{clean_target_esc}'
+}} else {{
+    $s.WorkingDirectory = [System.IO.Path]::GetDirectoryName('{clean_target_esc}')
+}}
+$s.Save()
+"""
+            encoded = base64.b64encode(ps_code.encode('utf-16le')).decode('ascii')
+            r = subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+                               capture_output=True, timeout=10)
+
+            if os.path.exists(lnk_path) and os.path.getsize(lnk_path) > 100:
+                self.log("SUCCESS", f"Đã tạo shortcut SendTo: {clean_name} -> {target_path}")
+                return {"success": True, "message": f"Đã tạo shortcut: {clean_name}"}
+            else:
+                err_text = r.stderr.decode(errors='ignore').strip()
+                return {"success": False, "message": f"Lỗi tạo shortcut: {err_text or 'Không thể lưu file .lnk'}"}
+        except Exception as e:
+            self.log("ERROR", f"Lỗi tạo shortcut SendTo: {e}")
+            return {"success": False, "message": str(e)}
+
+    def delete_sendto_entry(self, entry_path):
+        """Deletes a file or folder from the SendTo folder."""
+        try:
+            import stat
+            import shutil
+
+            if not entry_path:
+                return {"success": False, "message": "Chưa chọn mục cần xóa!"}
+
+            # Support relative filename or full path
+            if not os.path.isabs(entry_path):
+                entry_path = os.path.join(self._SENDTO_PATH, entry_path)
+
+            real = os.path.realpath(entry_path)
+            sendto_real = os.path.realpath(self._SENDTO_PATH)
+
+            # Security check (case-insensitive for Windows)
+            if not real.lower().startswith((sendto_real + os.sep).lower()) and real.lower() != sendto_real.lower():
+                return {"success": False, "message": "Chỉ được xóa các mục trong thư mục SendTo!"}
+
+            fname = os.path.basename(real).lower()
+            if fname in ['desktop.ini', 'desktop (create shortcut).desklink']:
+                return {"success": False, "message": "Đây là file hệ thống Windows, không thể xóa!"}
+
+            if not os.path.exists(real):
+                return {"success": False, "message": "Mục này không còn tồn tại!"}
+
+            # Remove read-only / hidden attribute if needed
+            try:
+                os.chmod(real, stat.S_IWRITE | stat.S_IREAD)
+            except Exception:
+                pass
+
+            if os.path.isdir(real):
+                shutil.rmtree(real, ignore_errors=True)
+            else:
+                os.remove(real)
+
+            self.log("SUCCESS", f"Đã xóa khỏi SendTo: {os.path.basename(entry_path)}")
+            return {"success": True, "message": f"Đã xóa: {os.path.basename(entry_path)}"}
+        except Exception as e:
+            self.log("ERROR", f"Lỗi xóa mục SendTo: {e}")
+            return {"success": False, "message": str(e)}
+
+    def open_sendto_folder(self):
+        """Opens the SendTo folder in Windows Explorer."""
+        try:
+            os.startfile(self._SENDTO_PATH)
+            return {"success": True, "message": f"Đã mở thư mục: {self._SENDTO_PATH}"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def open_sendto_entry_location(self, entry_path):
+        """Highlights the target or the entry itself in Windows File Explorer."""
+        try:
+            target = entry_path
+            if entry_path.lower().endswith('.lnk'):
+                parsed = self._parse_lnk_target(entry_path)
+                if parsed and os.path.exists(parsed):
+                    target = parsed
+            if os.path.exists(target):
+                subprocess.Popen(f'explorer /select,"{os.path.normpath(target)}"')
+                return {"success": True, "message": f"Đã mở vị trí: {target}"}
+            else:
+                os.startfile(self._SENDTO_PATH)
+                return {"success": True, "message": "Đã mở thư mục SendTo"}
+        except Exception as e:
             return {"success": False, "message": str(e)}
 
     # ── DATE & TIME CONFIG MODULE ─────────────────────────────────────────
@@ -1336,51 +1985,147 @@ class Api:
             import modules.browser_backup as bb
             browsers = bb.get_detected_browsers()
             history = bb.get_backup_history()
-            return {"success": True, "browsers": browsers, "history": history}
+            default_dir = bb.get_default_backup_dir()
+            return {"success": True, "browsers": browsers, "history": history, "default_backup_dir": default_dir}
         except Exception as e:
             self.log("ERROR", f"Lỗi quét thông tin trình duyệt: {e}")
-            return {"success": False, "message": str(e), "browsers": [], "history": []}
+            return {"success": False, "message": str(e), "browsers": [], "history": [], "default_backup_dir": "D:\\Browser_Backups"}
+
+    def get_browser_backup_progress(self):
+        """Returns live progress state for Browser Backup / Restore."""
+        return self._browser_backup_progress
 
     def backup_browsers(self, selected_browsers, options, target_dir=""):
-        """Performs full or selective backup of selected browsers."""
-        try:
-            import modules.browser_backup as bb
-            bridge = LogBridge(self)
-            self.log("INFO", f"Đang bắt đầu sao lưu {len(selected_browsers)} trình duyệt...")
-            res = bb.backup_browser_data(selected_browsers, options, target_dir, logger=bridge)
-            if res.get("success"):
-                self.log("SUCCESS", res.get("message"))
-            else:
-                self.log("ERROR", res.get("message"))
-            return res
-        except Exception as e:
-            self.log("ERROR", f"Lỗi sao lưu trình duyệt: {e}")
-            return {"success": False, "message": str(e)}
+        """Performs full or selective backup of selected browsers asynchronously with progress."""
+        if self._browser_backup_progress.get("active"):
+            return {"success": False, "message": "Tiến trình sao lưu đang diễn ra, vui lòng chờ hoàn tất!"}
+
+        self._browser_backup_progress = {
+            "active": True,
+            "mode": "backup",
+            "percent": 0,
+            "status": "running",
+            "current_browser": "",
+            "step_title": "Đang chuẩn bị sao lưu...",
+            "detail": "Khởi tạo thư mục và quét hồ sơ...",
+            "logs": [],
+            "result": None
+        }
+
+        def _run_backup():
+            try:
+                import modules.browser_backup as bb
+                def on_progress(percent, b_name, title, detail, log_msg=None):
+                    self._browser_backup_progress["percent"] = min(100, max(0, int(percent)))
+                    if b_name:
+                        self._browser_backup_progress["current_browser"] = b_name
+                    if title:
+                        self._browser_backup_progress["step_title"] = title
+                    if detail:
+                        self._browser_backup_progress["detail"] = detail
+                    if log_msg:
+                        self._browser_backup_progress["logs"].append({
+                            "time": datetime.datetime.now().strftime("%H:%M:%S"),
+                            "msg": log_msg
+                        })
+                        self.log("INFO", log_msg)
+
+                bridge = LogBridge(self)
+                self.log("INFO", f"Đang bắt đầu sao lưu {len(selected_browsers)} trình duyệt...")
+                res = bb.backup_browser_data(selected_browsers, options, target_dir, logger=bridge, progress_callback=on_progress)
+                self._browser_backup_progress["active"] = False
+                self._browser_backup_progress["status"] = "success" if res.get("success") else "error"
+                self._browser_backup_progress["percent"] = 100 if res.get("success") else self._browser_backup_progress["percent"]
+                self._browser_backup_progress["result"] = res
+                if res.get("success"):
+                    self._browser_backup_progress["step_title"] = "Sao lưu thành công!"
+                    self._browser_backup_progress["detail"] = res.get("message", "Đã sao lưu thành công!")
+                    self.log("SUCCESS", res.get("message"))
+                else:
+                    self._browser_backup_progress["step_title"] = "Sao lưu thất bại"
+                    self._browser_backup_progress["detail"] = res.get("message", "Có lỗi xảy ra!")
+                    self.log("ERROR", res.get("message"))
+            except Exception as e:
+                self._browser_backup_progress["active"] = False
+                self._browser_backup_progress["status"] = "error"
+                self._browser_backup_progress["step_title"] = "Lỗi sao lưu"
+                self._browser_backup_progress["detail"] = str(e)
+                self._browser_backup_progress["result"] = {"success": False, "message": str(e)}
+                self.log("ERROR", f"Lỗi sao lưu trình duyệt: {e}")
+
+        t = threading.Thread(target=_run_backup, daemon=True)
+        t.start()
+        return {"success": True, "message": "Đã bắt đầu tiến trình sao lưu trong nền"}
 
     def restore_browsers(self, backup_folder, selected_browsers, options=None):
-        """Restores browser profiles and data from backup directory."""
-        try:
-            import modules.browser_backup as bb
-            bridge = LogBridge(self)
-            if not options:
-                options = {'bookmarks': True, 'passwords': True, 'history': True, 'extensions': True, 'full_profile': False}
-            self.log("INFO", f"Đang bắt đầu phục hồi dữ liệu trình duyệt từ: {backup_folder}...")
-            res = bb.restore_browser_data(backup_folder, selected_browsers, options, logger=bridge)
-            if res.get("success"):
-                self.log("SUCCESS", res.get("message"))
-            else:
-                self.log("ERROR", res.get("message"))
-            return res
-        except Exception as e:
-            self.log("ERROR", f"Lỗi phục hồi trình duyệt: {e}")
-            return {"success": False, "message": str(e)}
+        """Restores browser profiles and data from backup directory asynchronously with progress."""
+        if self._browser_backup_progress.get("active"):
+            return {"success": False, "message": "Tiến trình phục hồi/sao lưu đang diễn ra!"}
+
+        self._browser_backup_progress = {
+            "active": True,
+            "mode": "restore",
+            "percent": 0,
+            "status": "running",
+            "current_browser": "",
+            "step_title": "Đang chuẩn bị phục hồi...",
+            "detail": f"Đọc gói lưu từ {os.path.basename(backup_folder)}...",
+            "logs": [],
+            "result": None
+        }
+
+        def _run_restore():
+            try:
+                import modules.browser_backup as bb
+                def on_progress(percent, b_name, title, detail, log_msg=None):
+                    self._browser_backup_progress["percent"] = min(100, max(0, int(percent)))
+                    if b_name:
+                        self._browser_backup_progress["current_browser"] = b_name
+                    if title:
+                        self._browser_backup_progress["step_title"] = title
+                    if detail:
+                        self._browser_backup_progress["detail"] = detail
+                    if log_msg:
+                        self._browser_backup_progress["logs"].append({
+                            "time": datetime.datetime.now().strftime("%H:%M:%S"),
+                            "msg": log_msg
+                        })
+                        self.log("INFO", log_msg)
+
+                bridge = LogBridge(self)
+                opts = options or {'bookmarks': True, 'passwords': True, 'history': True, 'extensions': True, 'full_profile': False}
+                self.log("INFO", f"Đang bắt đầu phục hồi dữ liệu trình duyệt từ: {backup_folder}...")
+                res = bb.restore_browser_data(backup_folder, selected_browsers, opts, logger=bridge, progress_callback=on_progress)
+                self._browser_backup_progress["active"] = False
+                self._browser_backup_progress["status"] = "success" if res.get("success") else "error"
+                self._browser_backup_progress["percent"] = 100 if res.get("success") else self._browser_backup_progress["percent"]
+                self._browser_backup_progress["result"] = res
+                if res.get("success"):
+                    self._browser_backup_progress["step_title"] = "Phục hồi thành công!"
+                    self._browser_backup_progress["detail"] = res.get("message", "Đã phục hồi thành công!")
+                    self.log("SUCCESS", res.get("message"))
+                else:
+                    self._browser_backup_progress["step_title"] = "Phục hồi thất bại"
+                    self._browser_backup_progress["detail"] = res.get("message", "Có lỗi xảy ra!")
+                    self.log("ERROR", res.get("message"))
+            except Exception as e:
+                self._browser_backup_progress["active"] = False
+                self._browser_backup_progress["status"] = "error"
+                self._browser_backup_progress["step_title"] = "Lỗi phục hồi"
+                self._browser_backup_progress["detail"] = str(e)
+                self._browser_backup_progress["result"] = {"success": False, "message": str(e)}
+                self.log("ERROR", f"Lỗi phục hồi trình duyệt: {e}")
+
+        t = threading.Thread(target=_run_restore, daemon=True)
+        t.start()
+        return {"success": True, "message": "Đã bắt đầu tiến trình phục hồi trong nền"}
 
     def open_browser_backup_folder(self, target_dir=""):
         """Opens backup location in File Explorer."""
         try:
-            if not target_dir:
-                user_profile = os.environ.get('USERPROFILE', 'C:\\')
-                target_dir = os.path.join(user_profile, 'Desktop', 'Browser_Backups')
+            import modules.browser_backup as bb
+            if not target_dir or not target_dir.strip():
+                target_dir = bb.get_default_backup_dir()
             os.makedirs(target_dir, exist_ok=True)
             subprocess.run(f'explorer.exe "{target_dir}"', shell=True)
             return {"success": True}
@@ -1481,6 +2226,12 @@ class Api:
         except Exception as e:
             return {"success": False, "message": str(e)}
 
+    def _get_temp_hosts_path(self):
+        import tempfile
+        temp_dir = os.path.join(tempfile.gettempdir(), "IT_Tools_Hosts_Temp")
+        os.makedirs(temp_dir, exist_ok=True)
+        return os.path.join(temp_dir, "hosts")
+
     def get_hosts_file(self):
         hosts_path = r"C:\Windows\System32\drivers\etc\hosts"
         try:
@@ -1489,44 +2240,270 @@ class Api:
                 default_hosts = "# Copyright (c) 1993-2009 Microsoft Corp.\n127.0.0.1       localhost\n::1             localhost\n"
                 with open(hosts_path, "w", encoding="utf-8") as f:
                     f.write(default_hosts)
-            with open(hosts_path, "r", encoding="utf-8", errors="ignore") as f:
+
+            temp_hosts_path = self._get_temp_hosts_path()
+            # Tự động sao chép file hosts gốc ra thư mục tạm của user
+            try:
+                import shutil
+                shutil.copy2(hosts_path, temp_hosts_path)
+            except Exception as copy_err:
+                self.log("WARNING", f"Không thể copy bằng shutil, đọc ghi trực tiếp sang temp: {copy_err}")
+                with open(hosts_path, "r", encoding="utf-8", errors="ignore") as f:
+                    init_content = f.read()
+                with open(temp_hosts_path, "w", encoding="utf-8") as tf:
+                    tf.write(init_content)
+
+            # Đọc nội dung từ chính file tạm đã sao chép
+            with open(temp_hosts_path, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
-            return {"success": True, "content": content, "path": hosts_path}
+
+            self.log("INFO", f"Đã tự động sao chép file hosts ra thư mục tạm: {temp_hosts_path}")
+            return {
+                "success": True,
+                "content": content,
+                "path": hosts_path,
+                "temp_path": temp_hosts_path,
+                "message": "Đã sao chép file hosts vào thư mục tạm thành công."
+            }
         except Exception as e:
             self.log("ERROR", f"Lỗi đọc Hosts file: {e}")
             return {"success": False, "message": str(e), "content": ""}
 
-    def save_hosts_file(self, content):
-        hosts_path = r"C:\Windows\System32\drivers\etc\hosts"
+    def update_hosts_temp(self, content):
+        """Lưu nội dung đang chỉnh sửa trực tiếp vào file tạm của user."""
         try:
-            subprocess.run(f'attrib -r "{hosts_path}"', shell=True)
-            with open(hosts_path, "w", encoding="utf-8") as f:
+            temp_hosts_path = self._get_temp_hosts_path()
+            with open(temp_hosts_path, "w", encoding="utf-8") as f:
                 f.write(content)
-            subprocess.run('ipconfig /flushdns', shell=True, capture_output=True)
-            self.log("SUCCESS", "Đã lưu thay đổi vào Hosts file & Flush DNS thành công!")
-            return {"success": True, "message": "Đã lưu Hosts file & Flush DNS thành công!"}
+            return {"success": True, "temp_path": temp_hosts_path}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def open_hosts_temp_folder(self):
+        """Mở thư mục tạm đang chứa file hosts đang chỉnh sửa."""
+        try:
+            temp_hosts_path = self._get_temp_hosts_path()
+            subprocess.run(f'explorer.exe /select,"{temp_hosts_path}"', shell=True)
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def save_hosts_file(self, content):
+        """
+        Quy trình lưu an toàn và triệt để:
+        1. Ghi nội dung mới vào file tạm temp_hosts_path trước.
+        2. Xóa các cờ Read-Only, System, Hidden của file gốc (nếu có).
+        3. Tạo file backup dự phòng (hosts.bak).
+        4. Thử ghi trực tiếp vào file hosts gốc (nếu đã có quyền Admin).
+        5. Nếu thiếu quyền, nâng quyền bằng ShellExecuteExW ('runas') đồng bộ chờ (WaitForSingleObject).
+        6. Kiểm tra đối soát nội dung thực tế trong file hosts gốc. Chỉ báo thành công nếu nội dung đã khớp 100%.
+        7. Flush DNS và trả về kết quả chính xác.
+        """
+        hosts_path = r"C:\Windows\System32\drivers\etc\hosts"
+        backup_path = r"C:\Windows\System32\drivers\etc\hosts.bak"
+        no_win = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+
+        try:
+            temp_hosts_path = self._get_temp_hosts_path()
+            # 1. Lưu nội dung chỉnh sửa vào file tạm
+            with open(temp_hosts_path, "w", encoding="utf-8") as tf:
+                tf.write(content)
+
+            # 2. Xóa cờ Read-Only / System / Hidden & tạo file backup dự phòng
+            if os.path.exists(hosts_path):
+                subprocess.run(f'attrib -r -s -h "{hosts_path}"', shell=True, capture_output=True, creationflags=no_win)
+                try:
+                    import stat
+                    os.chmod(hosts_path, stat.S_IWRITE)
+                except Exception:
+                    pass
+
+                try:
+                    import shutil
+                    shutil.copy2(hosts_path, backup_path)
+                except Exception:
+                    pass
+
+            # 3. Thử ghi trực tiếp vào hosts_path nếu tiến trình hiện tại đã có quyền Admin
+            direct_saved = False
+            try:
+                with open(hosts_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                direct_saved = True
+            except (PermissionError, OSError):
+                # Không đủ quyền ghi trực tiếp, chuyển sang phương thức UAC RunAs
+                pass
+            except Exception as e_direct:
+                self.log("WARNING", f"Ghi trực tiếp file hosts thất bại ({e_direct}), thử nâng quyền Admin...")
+
+            # 4. Nếu chưa ghi được do thiếu quyền, nâng quyền qua ShellExecuteExW ('runas')
+            if not direct_saved:
+                from ctypes import wintypes
+                import ctypes
+
+                class SHELLEXECUTEINFO(ctypes.Structure):
+                    _fields_ = [
+                        ('cbSize', wintypes.DWORD),
+                        ('fMask', wintypes.ULONG),
+                        ('hwnd', wintypes.HWND),
+                        ('lpVerb', wintypes.LPCWSTR),
+                        ('lpFile', wintypes.LPCWSTR),
+                        ('lpParameters', wintypes.LPCWSTR),
+                        ('lpDirectory', wintypes.LPCWSTR),
+                        ('nShow', ctypes.c_int),
+                        ('hInstApp', wintypes.HINSTANCE),
+                        ('lpIDList', wintypes.LPVOID),
+                        ('lpClass', wintypes.LPCWSTR),
+                        ('hkeyClass', wintypes.HKEY),
+                        ('dwHotKey', wintypes.DWORD),
+                        ('hIconOrMonitor', wintypes.HANDLE),
+                        ('hProcess', wintypes.HANDLE)
+                    ]
+
+                sei = SHELLEXECUTEINFO()
+                sei.cbSize = ctypes.sizeof(sei)
+                sei.fMask = 0x00000040  # SEE_MASK_NOCLOSEPROCESS
+                sei.lpVerb = "runas"
+                sei.lpFile = "cmd.exe"
+                cmd_params = f'/c "attrib -r -s -h "{hosts_path}" & copy /y "{hosts_path}" "{backup_path}" & copy /y "{temp_hosts_path}" "{hosts_path}" & ipconfig /flushdns"'
+                sei.lpParameters = cmd_params
+                sei.nShow = 0  # SW_HIDE
+
+                ret = ctypes.windll.shell32.ShellExecuteExW(ctypes.byref(sei))
+                if not ret:
+                    err_code = ctypes.GetLastError()
+                    if err_code == 1223:  # ERROR_CANCELLED (Người dùng bấm No trên UAC)
+                        self.log("WARNING", "Người dùng đã từ chối cấp quyền Administrator (UAC).")
+                        return {
+                            "success": False,
+                            "message": "Không thể lưu file Hosts: Bạn đã từ chối cấp quyền Administrator (UAC)."
+                        }
+                    else:
+                        self.log("ERROR", f"ShellExecuteExW thất bại, mã lỗi: {err_code}")
+                        return {
+                            "success": False,
+                            "message": f"Không thể kích hoạt quyền Administrator (Mã lỗi: {err_code}). Vui lòng khởi động phần mềm bằng 'Run as Administrator'."
+                        }
+
+                # Đợi tiến trình cmd elevated thực thi xong (tối đa 60 giây)
+                if sei.hProcess:
+                    ctypes.windll.kernel32.WaitForSingleObject(sei.hProcess, 60000)
+                    ctypes.windll.kernel32.CloseHandle(sei.hProcess)
+
+            # 5. XÁC THỰC THỰC TẾ: Đọc lại file hosts gốc và so sánh nội dung
+            is_verified = False
+            try:
+                if os.path.exists(hosts_path):
+                    with open(hosts_path, "r", encoding="utf-8", errors="ignore") as f:
+                        current_hosts = f.read()
+                    if current_hosts.replace("\r\n", "\n").strip() == content.replace("\r\n", "\n").strip():
+                        is_verified = True
+            except Exception as e_verify:
+                self.log("WARNING", f"Lỗi đọc lại file hosts gốc để đối soát: {e_verify}")
+
+            if is_verified:
+                subprocess.run("ipconfig /flushdns", shell=True, capture_output=True, creationflags=no_win)
+                self.log("SUCCESS", f"Đã lưu thành công nội dung vào File Hosts ({hosts_path}) & Flush DNS!")
+                return {
+                    "success": True,
+                    "message": "Đã lưu thay đổi vào File Hosts (C:\\Windows\\System32\\drivers\\etc\\hosts) & Flush DNS thành công!",
+                    "temp_path": temp_hosts_path,
+                    "path": hosts_path
+                }
+            else:
+                self.log("ERROR", "Nội dung file hosts gốc chưa được cập nhật sau khi lưu.")
+                return {
+                    "success": False,
+                    "message": "Không thể lưu vào file Hosts hệ thống!\nFile chưa được cập nhật (Có thể do Windows Defender / phần mềm diệt virus đang khóa file Hosts hoặc thao tác UAC chưa hoàn tất)."
+                }
+
         except Exception as e:
             self.log("ERROR", f"Lỗi lưu Hosts file: {e}")
-            return {"success": False, "message": f"Lỗi ghi Hosts file (cần quyền Admin): {e}"}
+            return {"success": False, "message": f"Lỗi lưu Hosts file: {e}"}
+
+    def save_hosts_as(self, content):
+        """Opens native Windows Save File Dialog to save hosts file content anywhere."""
+        try:
+            from tkinter import filedialog
+            import tkinter as tk
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)
+            root.focus_force()
+
+            target_path = filedialog.asksaveasfilename(
+                title="Lưu File Hosts Ra Nơi Khác (Save As...)",
+                initialfile="hosts",
+                defaultextension="",
+                filetypes=[
+                    ("All Files (*.*)", "*.*"),
+                    ("Hosts File", "hosts"),
+                    ("Text Files (*.txt)", "*.txt"),
+                ]
+            )
+            root.destroy()
+
+            if not target_path:
+                return {"success": False, "canceled": True, "message": "Đã hủy thao tác lưu file."}
+
+            with open(target_path, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            self.log("SUCCESS", f"Đã lưu Hosts thành file mới: {target_path}")
+            return {
+                "success": True,
+                "canceled": False,
+                "path": target_path,
+                "message": f"Đã lưu thành công file tại:\n{target_path}"
+            }
+        except Exception as e:
+            self.log("ERROR", f"Lỗi Lưu Thành (Save As): {e}")
+            return {"success": False, "message": f"Lỗi khi lưu file: {e}"}
+
+    def load_hosts_from_file(self):
+        """Opens native Windows Open File Dialog to import an external hosts file."""
+        try:
+            from tkinter import filedialog
+            import tkinter as tk
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)
+            root.focus_force()
+
+            target_path = filedialog.askopenfilename(
+                title="Chọn File Hosts Cần Nạp Vào Editor",
+                filetypes=[
+                    ("All Files (*.*)", "*.*"),
+                    ("Hosts File", "hosts"),
+                    ("Text Files (*.txt)", "*.txt"),
+                ]
+            )
+            root.destroy()
+
+            if not target_path:
+                return {"success": False, "canceled": True}
+
+            with open(target_path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+
+            self.log("SUCCESS", f"Đã nạp nội dung từ file: {target_path}")
+            return {"success": True, "content": content, "path": target_path}
+        except Exception as e:
+            self.log("ERROR", f"Lỗi nạp file hosts: {e}")
+            return {"success": False, "message": f"Lỗi đọc file: {e}"}
 
     def restore_hosts_default(self):
-        hosts_path = r"C:\Windows\System32\drivers\etc\hosts"
         default_hosts = (
             "# Copyright (c) 1993-2009 Microsoft Corp.\n"
-            "# Default Hosts file restored by IT-Tools 2026\n"
+            "# Default Hosts file restored by IT Tool LTT 2026\n"
             "127.0.0.1       localhost\n"
             "::1             localhost\n"
         )
-        try:
-            subprocess.run(f'attrib -r "{hosts_path}"', shell=True)
-            with open(hosts_path, "w", encoding="utf-8") as f:
-                f.write(default_hosts)
-            subprocess.run('ipconfig /flushdns', shell=True, capture_output=True)
+        res = self.save_hosts_file(default_hosts)
+        if res.get("success"):
             self.log("SUCCESS", "Đã khôi phục Hosts file về mặc định Windows & Flush DNS!")
             return {"success": True, "message": "Đã khôi phục Hosts file mặc định thành công!"}
-        except Exception as e:
-            self.log("ERROR", f"Lỗi khôi phục Hosts file: {e}")
-            return {"success": False, "message": str(e)}
+        return res
 
     def open_hosts_folder(self):
         hosts_path = r"C:\Windows\System32\drivers\etc\hosts"
@@ -1558,12 +2535,12 @@ class Api:
         """Triggers completely detached background silent installation of Microsoft Office via official ODT."""
         work_dir = r"C:\ProgramData\BMAT_Tools\OfficeSetup"
         state_file = os.path.join(work_dir, "office_install_state.json")
-        ps1_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "modules", "install_office_silent.ps1")
+        ps1_script = get_resource_path("modules", "install_office_silent.ps1")
 
-        # Check if already active
+        # Check if already active with a real liveness verification
         current_state = self.get_office_install_progress().get("data", {})
         if current_state.get("active"):
-            return {"success": False, "message": "Đang có tiến trình cài đặt Office chạy ngầm! Vui lòng chờ hoàn tất."}
+            return {"success": False, "message": "Đang có tiến trình cài đặt Office chạy ngầm! Vui lòng chờ hoàn tất hoặc bấm Hủy cài đặt."}
 
         version_names = {
             "office365": "Microsoft 365 Apps for Enterprise",
@@ -1611,14 +2588,10 @@ class Api:
 
             self._office_install_progress = initial_state
 
-            # Launch PowerShell script as a completely DETACHED, independent background process
-            detached_flags = 0
+            # Launch PowerShell script as an independent background process
+            creationflags = 0
             if os.name == "nt":
-                detached_flags = (
-                    subprocess.DETACHED_PROCESS |
-                    subprocess.CREATE_NEW_PROCESS_GROUP |
-                    subprocess.CREATE_NO_WINDOW
-                )
+                creationflags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
 
             ps_cmd = [
                 "powershell.exe",
@@ -1633,14 +2606,15 @@ class Api:
             ]
 
             self.log("INFO", f"Khởi chạy tiến trình cài đặt ẩn độc lập: {' '.join(ps_cmd)}")
-            subprocess.Popen(
+            proc = subprocess.Popen(
                 ps_cmd,
-                creationflags=detached_flags,
+                creationflags=creationflags,
                 close_fds=True,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )
+            self.log("SUCCESS", f"Đã khởi động tiến trình nền PowerShell (PID: {proc.pid}) để tải & cài đặt {vname}")
 
             return {"success": True, "message": f"Đã bắt đầu cài đặt ẩn {vname}! Bạn có thể tắt ứng dụng, tiến trình vẫn tự động hoàn tất trong nền."}
 
@@ -1651,30 +2625,58 @@ class Api:
     def get_office_install_progress(self):
         """Returns current Office installation progress state from the background daemon state file."""
         state_file = r"C:\ProgramData\BMAT_Tools\OfficeSetup\office_install_state.json"
+        data = self._office_install_progress
         if os.path.exists(state_file):
             try:
                 import json
                 with open(state_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     self._office_install_progress = data
-                    return {"success": True, "data": data}
             except Exception:
                 pass
 
-        return {"success": True, "data": self._office_install_progress}
+        # Check if state says active, but process is actually dead / timed out
+        if data.get("active"):
+            updated_at = data.get("updated_at", 0)
+            now = int(time.time())
+            # If no updates for > 35 seconds, verify if processes are really alive
+            if (now - updated_at) > 35:
+                try:
+                    out = subprocess.check_output(
+                        'powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq \'setup.exe\' -or $_.CommandLine -like \'*install_office_silent.ps1*\' } | Select-Object -ExpandProperty ProcessId"',
+                        shell=True, text=True, stderr=subprocess.DEVNULL
+                    ).strip()
+                    if not out:
+                        # Processes died unexpectedly or never updated
+                        data["active"] = False
+                        data["status"] = "error"
+                        data["message"] = "Tiến trình cài đặt ngầm không phản hồi hoặc đã dừng."
+                        if "output_log" in data and isinstance(data["output_log"], list):
+                            data["output_log"].append("[CẢNH BÁO] Không tìm thấy tiến trình cài đặt đang chạy. Bạn có thể nhấn 'Thử lại' hoặc 'Hủy'.")
+                        self._office_install_progress = data
+                        try:
+                            import json
+                            with open(state_file, "w", encoding="utf-8") as f:
+                                json.dump(data, f, ensure_ascii=False, indent=2)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+        return {"success": True, "data": data}
 
     def cancel_office_install(self):
         """Cancels active Office installation process and terminates background runners."""
         state_file = r"C:\ProgramData\BMAT_Tools\OfficeSetup\office_install_state.json"
         try:
             subprocess.run('taskkill /f /im "setup.exe"', shell=True, capture_output=True)
-            subprocess.run('powershell -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like \'*install_office_silent.ps1*\' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"', shell=True, capture_output=True)
+            subprocess.run('powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like \'*install_office_silent.ps1*\' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"', shell=True, capture_output=True)
 
             self._office_install_progress["active"] = False
             self._office_install_progress["status"] = "cancelled"
             self._office_install_progress["message"] = "Đã hủy tiến trình cài đặt Office."
-            if "output_log" in self._office_install_progress:
-                self._office_install_progress["output_log"].append("Đã gửi lệnh hủy tiến trình cài đặt Office.")
+            if "output_log" in self._office_install_progress and isinstance(self._office_install_progress["output_log"], list):
+                self._office_install_progress["output_log"].append("Đã dừng tiến trình và hủy cài đặt Office.")
 
             if os.path.exists(state_file):
                 import json
@@ -1682,7 +2684,7 @@ class Api:
                     json.dump(self._office_install_progress, f, ensure_ascii=False, indent=2)
 
             self.log("WARN", "Đã gửi lệnh hủy tiến trình cài đặt Office.")
-            return {"success": True, "message": "Đã hủy tiến trình cài đặt Office."}
+            return {"success": True, "message": "Đã hủy tiến trình cài đặt Office thành công."}
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -1892,8 +2894,8 @@ class Api:
 
             # ── BỘ GÕ TIẾNG VIỆT (3) ──────────────────────────────────────
             {"id": "UniKey.UniKey",             "name": "UniKey",              "category": "Bộ gõ",          "icon": "⌨️"},
-            {"id": "EVKeyVN.EVKey",             "name": "EVKey",               "category": "Bộ gõ",          "icon": "⌨️"},
-            {"id": "BoGoEngine.IBus-BoGo",      "name": "Bộ Gõ Tiếng Việt WinBoGo", "category": "Bộ gõ",  "icon": "⌨️"},
+            {"id": "lamquangminh.EVKey",        "name": "EVKey Tiếng Việt",    "category": "Bộ gõ",          "icon": "⌨️"},
+            {"id": "Tuyenvm.OpenKey",           "name": "OpenKey (Mã Nguồn Mở)","category": "Bộ gõ",         "icon": "⌨️"},
 
             # ── GIẢI NÉN (4) ──────────────────────────────────────────────
             {"id": "7zip.7zip",                 "name": "7-Zip",               "category": "Giải nén",       "icon": "📦"},
@@ -1907,30 +2909,30 @@ class Api:
             {"id": "WinSCP.WinSCP",             "name": "WinSCP",              "category": "Download",       "icon": "🔐"},
             {"id": "PuTTY.PuTTY",               "name": "PuTTY",               "category": "Download",       "icon": "🖥️"},
             {"id": "Tonec.InternetDownloadManager", "name": "IDM (Internet Download Manager)", "category": "Download", "icon": "⬇️"},
-            {"id": "FileZilla.FileZilla",       "name": "FileZilla FTP",       "category": "Download",       "icon": "📡"},
+            {"id": "Iterate.Cyberduck",         "name": "Cyberduck (FTP/SFTP)", "category": "Download",      "icon": "🦆"},
 
             # ── PDF & VĂN BẢN (6) ─────────────────────────────────────────
             {"id": "Foxit.FoxitReader",         "name": "Foxit PDF Reader",    "category": "PDF",            "icon": "📄"},
             {"id": "SumatraPDF.SumatraPDF",     "name": "SumatraPDF",          "category": "PDF",            "icon": "📖"},
             {"id": "geeksoftwareGmbH.PDF24Creator", "name": "PDF24 Creator",   "category": "PDF",            "icon": "📑"},
             {"id": "Adobe.Acrobat.Reader.64-bit", "name": "Adobe Acrobat Reader", "category": "PDF",         "icon": "📄"},
-            {"id": "doPDF.doPDF",               "name": "doPDF",               "category": "PDF",            "icon": "🖨️"},
-            {"id": "NitroPDF.NitroPDFPro",      "name": "Nitro PDF Reader",    "category": "PDF",            "icon": "📋"},
+            {"id": "TrackerSoftware.PDF-XChangeEditor", "name": "PDF-XChange Editor", "category": "PDF",     "icon": "🖨️"},
+            {"id": "TrackerSoftware.PDF-Tools", "name": "PDF-Tools",           "category": "PDF",            "icon": "📋"},
 
-            # ── FONTS VIỆT NAM (2) ────────────────────────────────────────
+            # ── FONTS & CÔNG CỤ (2) ───────────────────────────────────────
             {"id": "FontForge.FontForge",       "name": "FontForge",           "category": "Fonts",          "icon": "🔤"},
-            {"id": "NirSoft.NirLauncher",       "name": "NirLauncher (Font Tools)", "category": "Fonts",    "icon": "🔡"},
+            {"id": "REALiX.HWiNFO",             "name": "HWiNFO Diagnostics",  "category": "Fonts",          "icon": "🔡"},
 
             # ── CHAT & LIÊN LẠC (9) ───────────────────────────────────────
-            {"id": "Tencent.WeChat",            "name": "WeChat PC",           "category": "Chat",           "icon": "💬"},
+            {"id": "VNGCorp.Zalo",              "name": "Zalo PC",             "category": "Chat",           "icon": "💬"},
             {"id": "Telegram.TelegramDesktop",  "name": "Telegram",            "category": "Chat",           "icon": "✈️"},
             {"id": "Zoom.Zoom",                 "name": "Zoom Meetings",       "category": "Chat",           "icon": "📹"},
             {"id": "Discord.Discord",           "name": "Discord",             "category": "Chat",           "icon": "👾"},
             {"id": "SlackTechnologies.Slack",   "name": "Slack",               "category": "Chat",           "icon": "💼"},
             {"id": "Microsoft.Teams",           "name": "Microsoft Teams",     "category": "Chat",           "icon": "👥"},
-            {"id": "Skype.Skype",               "name": "Skype",               "category": "Chat",           "icon": "📞"},
-            {"id": "Viber.Viber",               "name": "Viber",               "category": "Chat",           "icon": "📱"},
-            {"id": "OpenWhatsApp.OpenWhatsApp", "name": "WhatsApp Desktop",    "category": "Chat",           "icon": "💬"},
+            {"id": "Rakuten.Viber",             "name": "Viber Messenger",     "category": "Chat",           "icon": "📱"},
+            {"id": "Tencent.WeChat",            "name": "WeChat PC",           "category": "Chat",           "icon": "💬"},
+            {"id": "Caprine.Caprine",           "name": "Messenger (Caprine)", "category": "Chat",           "icon": "💙"},
 
             # ── VĂN PHÒNG & SOẠN THẢO (10) ───────────────────────────────
             {"id": "TheDocumentFoundation.LibreOffice", "name": "LibreOffice", "category": "Văn phòng",      "icon": "📝"},
@@ -1938,23 +2940,23 @@ class Api:
             {"id": "Notepad++.Notepad++",       "name": "Notepad++",           "category": "Văn phòng",      "icon": "✏️"},
             {"id": "voidtools.Everything",      "name": "Everything",          "category": "Văn phòng",      "icon": "🔍"},
             {"id": "Microsoft.PowerToys",       "name": "PowerToys",           "category": "Văn phòng",      "icon": "🛠️"},
-            {"id": "Listary.Listary",           "name": "Listary",             "category": "Văn phòng",      "icon": "🔎"},
+            {"id": "Bopsoft.Listary",           "name": "Listary Pro",         "category": "Văn phòng",      "icon": "🔎"},
             {"id": "Obsidian.Obsidian",         "name": "Obsidian (Ghi chú)", "category": "Văn phòng",      "icon": "📒"},
             {"id": "Notion.Notion",             "name": "Notion",              "category": "Văn phòng",      "icon": "📘"},
-            {"id": "Typora.Typora",             "name": "Typora Markdown",     "category": "Văn phòng",      "icon": "📄"},
+            {"id": "MarkText.MarkText",         "name": "MarkText (Markdown)", "category": "Văn phòng",      "icon": "📄"},
             {"id": "Inkscape.Inkscape",         "name": "Inkscape",            "category": "Văn phòng",      "icon": "✒️"},
 
             # ── ĐA PHƯƠNG TIỆN & ÂM NHẠC (11) ────────────────────────────
             {"id": "VideoLAN.VLC",              "name": "VLC Media Player",    "category": "Đa phương tiện", "icon": "🎥"},
-            {"id": "Kakao.PotPlayer",           "name": "PotPlayer",           "category": "Đa phương tiện", "icon": "🎬"},
+            {"id": "Daum.PotPlayer",            "name": "PotPlayer",           "category": "Đa phương tiện", "icon": "🎬"},
             {"id": "OBSProject.OBSStudio",      "name": "OBS Studio",          "category": "Đa phương tiện", "icon": "📹"},
             {"id": "GIMP.GIMP",                 "name": "GIMP",                "category": "Đa phương tiện", "icon": "🎨"},
             {"id": "Audacity.Audacity",         "name": "Audacity",            "category": "Đa phương tiện", "icon": "🎙️"},
             {"id": "Spotify.Spotify",           "name": "Spotify",             "category": "Đa phương tiện", "icon": "🎵"},
             {"id": "MPC-BE.MPC-BE",             "name": "MPC-BE Player",       "category": "Đa phương tiện", "icon": "▶️"},
             {"id": "HandBrake.HandBrake",       "name": "HandBrake (Video)",   "category": "Đa phương tiện", "icon": "📼"},
-            {"id": "Kdenlive.Kdenlive",         "name": "Kdenlive Video Editor", "category": "Đa phương tiện", "icon": "🎞️"},
-            {"id": "DaVinci-Resolve.DaVinci-Resolve", "name": "DaVinci Resolve", "category": "Đa phương tiện", "icon": "🎬"},
+            {"id": "KDE.Kdenlive",              "name": "Kdenlive Video Editor", "category": "Đa phương tiện", "icon": "🎞️"},
+            {"id": "ByteDance.CapCut",          "name": "CapCut PC",           "category": "Đa phương tiện", "icon": "🎬"},
             {"id": "ShareX.ShareX",             "name": "ShareX (Screenshot)", "category": "Đa phương tiện", "icon": "📸"},
 
             # ── TIỆN ÍCH HỆ THỐNG (8) ────────────────────────────────────
@@ -1973,27 +2975,27 @@ class Api:
             {"id": "CrystalDewWorld.CrystalDiskInfo", "name": "CrystalDiskInfo", "category": "Hệ thống",    "icon": "💽"},
             {"id": "REALiX.HWiNFO",             "name": "HWiNFO",              "category": "Hệ thống",       "icon": "ℹ️"},
             {"id": "CPUID.HWMonitor",           "name": "HWMonitor",           "category": "Hệ thống",       "icon": "🌡️"},
-            {"id": "MajorGeeks.SpeedFan",       "name": "SpeedFan",            "category": "Hệ thống",       "icon": "💨"},
+            {"id": "Almico.SpeedFan",           "name": "SpeedFan",            "category": "Hệ thống",       "icon": "💨"},
             {"id": "Piriform.Speccy",           "name": "Speccy",              "category": "Hệ thống",       "icon": "🖥️"},
             {"id": "CrystalDewWorld.CrystalDiskMark", "name": "CrystalDiskMark", "category": "Hệ thống",   "icon": "⏱️"},
             {"id": "WiseCleaner.WiseRegistryCleaner", "name": "Wise Registry Cleaner", "category": "Hệ thống", "icon": "🔧"},
 
             # ── Ổ ĐĨA ẢO & BACKUP (5) ─────────────────────────────────────
-            {"id": "Disc-Tools.DAEMONToolsLite","name": "DAEMON Tools Lite",   "category": "Ổ đĩa ảo",      "icon": "💿"},
-            {"id": "WinCDEmu.WinCDEmu",         "name": "WinCDEmu",            "category": "Ổ đĩa ảo",      "icon": "💿"},
-            {"id": "Veeam.Agent",               "name": "Veeam Agent Backup",  "category": "Ổ đĩa ảo",      "icon": "💾"},
-            {"id": "Macrium.Reflect",            "name": "Macrium Reflect",     "category": "Ổ đĩa ảo",      "icon": "🔄"},
-            {"id": "Cobian.CobianBackup",       "name": "Cobian Backup",       "category": "Ổ đĩa ảo",      "icon": "📦"},
+            {"id": "EZBSystems.UltraISO",       "name": "UltraISO Premium",    "category": "Ổ đĩa ảo",      "icon": "💿"},
+            {"id": "AOMEI.PartitionAssistant",  "name": "AOMEI Partition",     "category": "Ổ đĩa ảo",      "icon": "💿"},
+            {"id": "AOMEI.Backupper.Standard",  "name": "AOMEI Backupper",     "category": "Ổ đĩa ảo",      "icon": "💾"},
+            {"id": "EaseUS.TodoBackup",         "name": "EaseUS Todo Backup",  "category": "Ổ đĩa ảo",      "icon": "🔄"},
+            {"id": "EaseUS.PartitionMaster",    "name": "EaseUS Partition",    "category": "Ổ đĩa ảo",      "icon": "📦"},
 
             # ── BẢO MẬT & DIỆT VIRUS (8) ─────────────────────────────────
             {"id": "Malwarebytes.Malwarebytes",  "name": "Malwarebytes",        "category": "Bảo mật",        "icon": "🛡️"},
             {"id": "AdGuard.AdGuard",            "name": "AdGuard",             "category": "Bảo mật",        "icon": "🚫"},
-            {"id": "ESET.ESET-OnlineScanner",   "name": "ESET Online Scanner",  "category": "Bảo mật",        "icon": "🔍"},
-            {"id": "Kaspersky.KasperskySecurityCloud", "name": "Kaspersky Free", "category": "Bảo mật",      "icon": "🛡️"},
-            {"id": "BitdefenderSRL.BitdefenderFreeAntivirus", "name": "Bitdefender Free", "category": "Bảo mật", "icon": "🔒"},
+            {"id": "Bitdefender.Bitdefender",    "name": "Bitdefender Free",    "category": "Bảo mật",        "icon": "🔒"},
             {"id": "Bitwarden.Bitwarden",        "name": "Bitwarden (Password Manager)", "category": "Bảo mật", "icon": "🔑"},
             {"id": "GlassWire.GlassWire",        "name": "GlassWire Firewall",  "category": "Bảo mật",        "icon": "🌐"},
-            {"id": "ProtonVPN.ProtonVPN",        "name": "ProtonVPN",           "category": "Bảo mật",        "icon": "🔐"},
+            {"id": "Proton.ProtonVPN",           "name": "Proton VPN",          "category": "Bảo mật",        "icon": "🔐"},
+            {"id": "Cloudflare.Warp",            "name": "Cloudflare 1.1.1.1 WARP", "category": "Bảo mật",    "icon": "🛡️"},
+            {"id": "NordSecurity.NordVPN",       "name": "NordVPN",             "category": "Bảo mật",        "icon": "🔒"},
 
             # ── LẬP TRÌNH & DEVTOOLS (14) ──────────────────────────────────
             {"id": "Microsoft.VisualStudioCode", "name": "Visual Studio Code",  "category": "Lập trình",      "icon": "💙"},
@@ -2003,56 +3005,56 @@ class Api:
             {"id": "OpenJS.NodeJS",             "name": "Node.js",             "category": "Lập trình",      "icon": "🟢"},
             {"id": "Oracle.JDK.21",             "name": "Java JDK 21",         "category": "Lập trình",      "icon": "☕"},
             {"id": "Postman.Postman",           "name": "Postman (API Test)",  "category": "Lập trình",      "icon": "📮"},
-            {"id": "DBngin.DBngin",             "name": "HeidiSQL (Database)", "category": "Lập trình",      "icon": "🗄️"},
+            {"id": "DBeaver.DBeaver.Community", "name": "DBeaver (Universal DB)", "category": "Lập trình",   "icon": "🗄️"},
             {"id": "HeidiSQL.HeidiSQL",         "name": "HeidiSQL",            "category": "Lập trình",      "icon": "🗄️"},
             {"id": "Docker.DockerDesktop",      "name": "Docker Desktop",      "category": "Lập trình",      "icon": "🐳"},
             {"id": "Yarn.Yarn",                 "name": "Yarn",                "category": "Lập trình",      "icon": "🧶"},
             {"id": "GitHub.GitHubDesktop",      "name": "GitHub Desktop",      "category": "Lập trình",      "icon": "🐙"},
             {"id": "Insomnia.Insomnia",         "name": "Insomnia (REST API)", "category": "Lập trình",      "icon": "😴"},
-            {"id": "WampServer.WampServer",     "name": "WampServer (PHP/MySQL)", "category": "Lập trình",   "icon": "⚙️"},
+            {"id": "Wampserver.Wampserver",     "name": "WampServer (PHP/MySQL)", "category": "Lập trình",   "icon": "⚙️"},
 
             # ── MẠNG XÃ HỘI & GIẢI TRÍ (7) ──────────────────────────────
             {"id": "Valve.Steam",               "name": "Steam",               "category": "Mạng xã hội",    "icon": "🎮"},
             {"id": "EpicGames.EpicGamesLauncher","name": "Epic Games Launcher", "category": "Mạng xã hội",    "icon": "🎮"},
-            {"id": "Facebook.Messenger",        "name": "Facebook Messenger",  "category": "Mạng xã hội",    "icon": "💙"},
-            {"id": "LINE.LINE",                 "name": "LINE",                "category": "Mạng xã hội",    "icon": "💬"},
-            {"id": "TikTok.TikTok",             "name": "TikTok Desktop",      "category": "Mạng xã hội",    "icon": "🎵"},
+            {"id": "PeterPawlowski.foobar2000", "name": "foobar2000 Music",    "category": "Mạng xã hội",    "icon": "🎶"},
+            {"id": "AIMP.AIMP",                 "name": "AIMP Audio Player",   "category": "Mạng xã hội",    "icon": "🎵"},
             {"id": "Tencent.TencentMeeting",    "name": "Tencent Meeting",     "category": "Mạng xã hội",    "icon": "📹"},
-            {"id": "NeteaseMusic.CloudMusic",   "name": "Zing MP3 / NetEase",  "category": "Mạng xã hội",    "icon": "🎶"},
+            {"id": "Meltytech.Shotcut",         "name": "Shotcut Studio",      "category": "Mạng xã hội",    "icon": "🎬"},
+            {"id": "Caprine.Caprine",           "name": "Facebook Messenger",  "category": "Mạng xã hội",    "icon": "💙"},
 
             # ── ĐỒ HOẠ & THIẾT KẾ (8) ────────────────────────────────────
             {"id": "Canva.Canva",               "name": "Canva Desktop",       "category": "Đồ hoạ",         "icon": "🎨"},
             {"id": "Figma.Figma",               "name": "Figma",               "category": "Đồ hoạ",         "icon": "✏️"},
-            {"id": "KritaFoundation.Krita",     "name": "Krita",               "category": "Đồ hoạ",         "icon": "🖌️"},
+            {"id": "KDE.Krita",                 "name": "Krita Digital Art",   "category": "Đồ hoạ",         "icon": "🖌️"},
             {"id": "BlenderFoundation.Blender", "name": "Blender 3D",          "category": "Đồ hoạ",         "icon": "🌀"},
-            {"id": "IrfanView.IrfanView",       "name": "IrfanView",           "category": "Đồ hoạ",         "icon": "🖼️"},
-            {"id": "XnSoft.XnView",             "name": "XnView MP",           "category": "Đồ hoạ",         "icon": "🖼️"},
+            {"id": "IrfanSkiljan.IrfanView",    "name": "IrfanView",           "category": "Đồ hoạ",         "icon": "🖼️"},
+            {"id": "XnSoft.XnView.Classic",     "name": "XnView Classic",      "category": "Đồ hoạ",         "icon": "🖼️"},
             {"id": "GIMP.GIMP",                 "name": "GIMP",                "category": "Đồ hoạ",         "icon": "🎨"},
             {"id": "Greenshot.Greenshot",       "name": "Greenshot Screen",    "category": "Đồ hoạ",         "icon": "📷"},
 
             # ── KẾ TOÁN & TÀI CHÍNH (5) ──────────────────────────────────
             {"id": "GnuCash.GnuCash",           "name": "GnuCash Kế Toán",    "category": "Kế toán",        "icon": "💰"},
-            {"id": "MoneyManager-Ex.MoneyManagerEx", "name": "Money Manager Ex", "category": "Kế toán",     "icon": "💵"},
+            {"id": "moneymanagerex.moneymanagerex", "name": "Money Manager Ex", "category": "Kế toán",     "icon": "💵"},
             {"id": "HomeBank.HomeBank",         "name": "HomeBank",            "category": "Kế toán",        "icon": "🏦"},
-            {"id": "Firefly-III.Firefly-III",   "name": "Firefly III (Quản lý tiền)", "category": "Kế toán","icon": "🔥"},
             {"id": "Microsoft.PowerBI",         "name": "Power BI Desktop",    "category": "Kế toán",        "icon": "📊"},
+            {"id": "TheDocumentFoundation.LibreOffice", "name": "LibreOffice Calc", "category": "Kế toán",    "icon": "📈"},
 
             # ── CLOUD & LƯU TRỮ (7) ──────────────────────────────────────
             {"id": "Google.GoogleDrive",        "name": "Google Drive",        "category": "Cloud",          "icon": "☁️"},
             {"id": "Dropbox.Dropbox",           "name": "Dropbox",             "category": "Cloud",          "icon": "📦"},
             {"id": "Microsoft.OneDrive",        "name": "OneDrive",            "category": "Cloud",          "icon": "☁️"},
             {"id": "Mega.MEGASync",             "name": "MEGA Sync",           "category": "Cloud",          "icon": "🌊"},
-            {"id": "pCloud.pCloud",             "name": "pCloud",              "category": "Cloud",          "icon": "☁️"},
+            {"id": "pCloudAG.pCloudDrive",      "name": "pCloud Drive",        "category": "Cloud",          "icon": "☁️"},
             {"id": "Nextcloud.NextcloudDesktop","name": "Nextcloud Desktop",   "category": "Cloud",          "icon": "🌤️"},
             {"id": "Box.Box",                   "name": "Box Drive",           "category": "Cloud",          "icon": "📫"},
 
             # ── CÔNG CỤ MẠNG (8) ──────────────────────────────────────────
-            {"id": "Wireshark.Wireshark",       "name": "Wireshark",           "category": "Công cụ mạng",   "icon": "🦈"},
+            {"id": "WiresharkFoundation.Wireshark", "name": "Wireshark",       "category": "Công cụ mạng",   "icon": "🦈"},
             {"id": "OpenVPNTechnologies.OpenVPN","name": "OpenVPN",             "category": "Công cụ mạng",   "icon": "🔒"},
-            {"id": "NetScanTools.BasicEdition", "name": "Angry IP Scanner",    "category": "Công cụ mạng",   "icon": "📡"},
-            {"id": "Nmap.Nmap",                 "name": "Nmap",                "category": "Công cụ mạng",   "icon": "🔍"},
-            {"id": "NordVPN.NordVPN",           "name": "NordVPN",             "category": "Công cụ mạng",   "icon": "🛡️"},
-            {"id": "Ookla.Speedtest",           "name": "Speedtest by Ookla",  "category": "Công cụ mạng",   "icon": "⚡"},
+            {"id": "angryziber.AngryIPScanner", "name": "Angry IP Scanner",    "category": "Công cụ mạng",   "icon": "📡"},
+            {"id": "Insecure.Nmap",             "name": "Nmap Security",       "category": "Công cụ mạng",   "icon": "🔍"},
+            {"id": "NordSecurity.NordVPN",      "name": "NordVPN Client",      "category": "Công cụ mạng",   "icon": "🛡️"},
+            {"id": "LibreSpeed.librespeed-cli", "name": "LibreSpeed (Speedtest)", "category": "Công cụ mạng","icon": "⚡"},
             {"id": "Cloudflare.Warp",           "name": "Cloudflare WARP",     "category": "Công cụ mạng",   "icon": "🌐"},
             {"id": "mRemoteNG.mRemoteNG",       "name": "mRemoteNG (RDP/SSH)", "category": "Công cụ mạng",   "icon": "🖥️"},
         ]
@@ -2106,7 +3108,7 @@ class Api:
             "queue":  os.path.join(base, "queue.json"),
             "status": os.path.join(base, "status.json"),
             "cancel": os.path.join(base, "status.cancel"),
-            "ps1":    os.path.join(os.path.dirname(os.path.abspath(__file__)), "modules", "winget_runner.ps1")
+            "ps1":    get_resource_path("modules", "winget_runner.ps1")
         }
 
     def get_winget_install_status(self):
@@ -2155,16 +3157,32 @@ class Api:
         canceled   = bool(data.get("canceled", False))
         pid        = int(data.get("pid", 0)) or (self._current_winget_pid or 0)
 
-        # DEAD PROCESS DETECTION: If marked running but PID is dead, finalize status
+        # DEAD OR STALLED PROCESS DETECTION
         if is_running and not finished:
-            if pid > 0 and not self._is_pid_alive(pid):
-                self.log("WARN", f"Tiến trình cài đặt nền (PID {pid}) đã kết thúc.")
+            is_dead = (pid > 0 and not self._is_pid_alive(pid))
+            is_stalled = False
+            try:
+                # If status file hasn't been updated for > 300s (5 mins), consider it stalled
+                mtime = os.path.getmtime(status_file)
+                if (time.time() - mtime) > 300:
+                    is_stalled = True
+            except Exception:
+                pass
+
+            if is_dead or is_stalled:
+                if is_dead:
+                    self.log("WARN", f"Tiến trình cài đặt nền (PID {pid}) đã kết thúc.")
+                else:
+                    self.log("WARN", f"Tiến trình cài đặt nền (PID {pid}) bị treo quá 5 phút. Tự động kết thúc.")
+                    if pid > 0:
+                        subprocess.run(f"taskkill /f /t /pid {pid}", shell=True, capture_output=True)
+                    subprocess.run("taskkill /f /im winget.exe", shell=True, capture_output=True)
+
                 is_running = False
                 finished = True
                 data["is_running"] = False
                 data["finished"] = True
-                if not data.get("status_text") or "Đang" in str(data.get("status_text", "")):
-                    data["status_text"] = "Tiến trình cài đặt nền đã hoàn tất hoặc kết thúc."
+                data["status_text"] = "Tiến trình cài đặt nền đã hoàn tất hoặc đã được giải phóng."
                 self._write_json_atomic(status_file, data)
 
         state = "running" if (is_running and not finished) else ("canceled" if canceled else ("completed" if finished else "idle"))
@@ -2200,17 +3218,101 @@ class Api:
         return {"has_session": False}
 
     def cancel_winget_batch(self):
-        """Cancels the ongoing background winget installation."""
+        """Forcefully cancels and terminates the ongoing background winget installation."""
         paths = self._get_winget_session_paths()
         try:
+            # 1. Write cancel file
             with open(paths["cancel"], "w", encoding="utf-8") as f:
                 f.write("cancel")
-            self.log("WARNING", "Đã gửi lệnh dừng quá trình cài đặt phần mềm nền.")
-            if self._last_winget_status and self._last_winget_status.get("is_running"):
-                self._last_winget_status["status_text"] = "Đang dừng... (sẽ kết thúc sau gói hiện tại)"
+
+            # 2. Terminate runner process tree and any lingering winget processes
+            cur_status = self.get_winget_install_status()
+            pid = cur_status.get("pid") or self._current_winget_pid
+            if pid and pid > 0:
+                subprocess.run(f"taskkill /f /t /pid {pid}", shell=True, capture_output=True)
+
+            subprocess.run("taskkill /f /im winget.exe", shell=True, capture_output=True)
+            subprocess.run("taskkill /f /im coccoc_vi_machine.exe", shell=True, capture_output=True)
+            subprocess.run("taskkill /f /im CocCocUpdate.exe", shell=True, capture_output=True)
+
+            # 3. Finalize status immediately so UI unblocks instantly
+            final_status = {
+                "state":                "canceled",
+                "pid":                  0,
+                "is_running":           False,
+                "finished":             True,
+                "canceled":             True,
+                "current_index":        cur_status.get("current_index", 0),
+                "total":                cur_status.get("total", 0),
+                "current_package_id":   "",
+                "current_package_name": "",
+                "success_count":        cur_status.get("success_count", 0),
+                "error_count":          cur_status.get("error_count", 0),
+                "status_text":          "Đã dừng cài đặt theo yêu cầu.",
+                "percentage":           0,
+                "log":                  cur_status.get("log", []) + ["⛔ Đã dừng tiến trình cài đặt."]
+            }
+            self._write_json_atomic(paths["status"], final_status)
+            self._last_winget_status = final_status
+            self._current_winget_pid = None
+
+            if os.path.exists(paths["queue"]):
+                try:
+                    os.remove(paths["queue"])
+                except Exception:
+                    pass
+
+            self.log("WARNING", "Đã dừng và giải phóng hoàn toàn tiến trình cài đặt nền.")
+            return {"success": True, "message": "Đã dừng hoàn toàn tiến trình cài đặt phần mềm!"}
         except Exception as e:
-            self.log("ERROR", f"Không thể ghi file cancel: {e}")
-        return {"success": True, "message": "Đã gửi tín hiệu dừng cài đặt. Tiến trình sẽ dừng sau gói hiện tại."}
+            self.log("ERROR", f"Không thể dừng cài đặt: {e}")
+            return {"success": False, "message": str(e)}
+
+    def reset_winget_session(self):
+        """Resets the winget installer session back to idle state, killing any hung processes."""
+        paths = self._get_winget_session_paths()
+        try:
+            cur_status = self.get_winget_install_status()
+            pid = cur_status.get("pid") or self._current_winget_pid
+            if pid and pid > 0:
+                subprocess.run(f"taskkill /f /t /pid {pid}", shell=True, capture_output=True)
+
+            subprocess.run("taskkill /f /im winget.exe", shell=True, capture_output=True)
+            subprocess.run("taskkill /f /im coccoc_vi_machine.exe", shell=True, capture_output=True)
+            subprocess.run("taskkill /f /im CocCocUpdate.exe", shell=True, capture_output=True)
+
+            idle_status = {
+                "state":                "idle",
+                "pid":                  0,
+                "is_running":           False,
+                "finished":             True,
+                "canceled":             False,
+                "current_index":        0,
+                "total":                0,
+                "current_package_id":   "",
+                "current_package_name": "",
+                "success_count":        0,
+                "error_count":          0,
+                "status_text":          "Sẵn sàng",
+                "percentage":           0,
+                "log":                  []
+            }
+            self._write_json_atomic(paths["status"], idle_status)
+            self._last_winget_status = idle_status
+            self._current_winget_pid = None
+
+            for f in [paths["queue"], paths["cancel"]]:
+                if os.path.exists(f):
+                    try:
+                        os.remove(f)
+                    except Exception:
+                        pass
+
+            self.log("INFO", "Đã đặt lại trạng thái kho phần mềm về ban đầu.")
+            return {"success": True, "message": "Đã làm mới và xóa hàng đợi cài đặt thành công!"}
+        except Exception as e:
+            self.log("ERROR", f"Lỗi reset session: {e}")
+            return {"success": False, "message": str(e)}
 
     def _append_to_winget_queue(self, package_ids):
         """Appends new package IDs to an actively running winget background queue."""
@@ -2289,6 +3391,12 @@ class Api:
                     os.remove(fpath)
             except Exception:
                 pass
+
+        # Also terminate any orphan winget.exe processes that might be holding index.db locked
+        try:
+            subprocess.run("taskkill /f /im winget.exe", shell=True, capture_output=True)
+        except Exception:
+            pass
 
         # Build catalog map for human-readable package names
         catalog_map = {item["id"]: item["name"] for item in self.get_software_catalog()}
@@ -2493,7 +3601,7 @@ class Api:
             self.log("ERROR", f"Lỗi lấy danh sách Driver: {e}")
             return {"success": False, "message": str(e), "drivers": [], "total": 0}
 
-    def select_folder_dialog(self, title="Chọn thư mục"):
+    def select_folder_dialog(self, title="Chọn thư mục", initial_dir=""):
         """Opens native Windows folder picker dialog."""
         try:
             import tkinter as tk
@@ -2501,11 +3609,83 @@ class Api:
             root = tk.Tk()
             root.withdraw()
             root.attributes('-topmost', True)
-            folder = filedialog.askdirectory(title=title)
+            kwargs = {'title': title}
+            if initial_dir and os.path.exists(initial_dir):
+                kwargs['initialdir'] = initial_dir
+            folder = filedialog.askdirectory(**kwargs)
             root.destroy()
             return {"success": True, "folder": folder}
         except Exception as e:
             return {"success": False, "message": str(e)}
+
+    def _get_last_driver_backup_dir(self):
+        """Retrieves last driver backup directory or finds existing backup folder on disk."""
+        # 1. In-memory cache
+        if getattr(self, '_last_driver_backup_path', None) and os.path.exists(self._last_driver_backup_path):
+            return self._last_driver_backup_path
+
+        # 2. Persistent JSON config
+        try:
+            appdata = os.environ.get('APPDATA', '')
+            cfg_p = os.path.join(appdata, 'IT Tool LTT', 'driver_backup_config.json')
+            if os.path.exists(cfg_p):
+                with open(cfg_p, 'r', encoding='utf-8') as f:
+                    cfg = json.load(f)
+                    p = cfg.get('last_backup_dir')
+                    if p and os.path.exists(p):
+                        self._last_driver_backup_path = p
+                        return p
+        except Exception:
+            pass
+
+        # 3. Smart scan on available drives for existing driver backup directory
+        candidates = [
+            r"D:\Backup Driver",
+            r"D:\Driver_Backup",
+            r"D:\DriverBackup",
+            r"E:\Backup Driver",
+            r"E:\Driver_Backup",
+            r"E:\DriverBackup",
+            r"F:\Backup Driver",
+            r"F:\Driver_Backup",
+            r"C:\Backup Driver",
+            r"C:\Driver_Backup"
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                try:
+                    if os.listdir(c):
+                        self._last_driver_backup_path = c
+                        return c
+                except Exception:
+                    pass
+
+        # 4. Fallback: prefer D:\Backup Driver if drive D exists
+        for letter in ['D', 'E', 'F']:
+            drive = f"{letter}:\\"
+            if os.path.exists(drive):
+                def_p = os.path.join(drive, 'Backup Driver')
+                os.makedirs(def_p, exist_ok=True)
+                return def_p
+
+        user_profile = os.environ.get('USERPROFILE', 'C:\\')
+        def_c = os.path.join(user_profile, 'Desktop', 'Backup Driver')
+        os.makedirs(def_c, exist_ok=True)
+        return def_c
+
+    def _save_last_driver_backup_dir(self, path):
+        """Saves last driver backup directory into persistent cache."""
+        if not path:
+            return
+        self._last_driver_backup_path = path
+        try:
+            appdata = os.environ.get('APPDATA', '')
+            cfg_dir = os.path.join(appdata, 'IT Tool LTT')
+            os.makedirs(cfg_dir, exist_ok=True)
+            with open(os.path.join(cfg_dir, 'driver_backup_config.json'), 'w', encoding='utf-8') as f:
+                json.dump({'last_backup_dir': path}, f)
+        except Exception:
+            pass
 
     def get_driver_progress(self):
         """Returns real-time progress of ongoing driver backup or restore task."""
@@ -2523,10 +3703,13 @@ class Api:
     def start_backup_drivers_async(self, target_dir=""):
         """Starts asynchronous background driver backup with real-time progress tracking."""
         if not target_dir:
-            res_dlg = self.select_folder_dialog("Chọn thư mục lưu trữ Backup Driver")
+            initial_folder = self._get_last_driver_backup_dir()
+            res_dlg = self.select_folder_dialog("Chọn thư mục lưu trữ Backup Driver", initial_folder)
             target_dir = res_dlg.get("folder")
             if not target_dir:
                 return {"success": False, "message": "Bạn đã hủy chọn thư mục sao lưu."}
+
+        self._save_last_driver_backup_dir(target_dir)
 
         os.makedirs(target_dir, exist_ok=True)
         
@@ -2583,7 +3766,8 @@ class Api:
     def start_restore_drivers_async(self, src_dir=""):
         """Starts asynchronous background driver restore with real-time progress tracking."""
         if not src_dir:
-            res_dlg = self.select_folder_dialog("Chọn thư mục chứa Driver đã Sao Lưu")
+            initial_folder = self._get_last_driver_backup_dir()
+            res_dlg = self.select_folder_dialog("Chọn thư mục chứa Driver đã Sao Lưu", initial_folder)
             src_dir = res_dlg.get("folder")
             if not src_dir:
                 return {"success": False, "message": "Bạn đã hủy chọn thư mục phục hồi."}
@@ -2651,13 +3835,17 @@ class Api:
 
     def open_folder_explorer(self, folder_path=""):
         try:
-            path = folder_path or r"C:\Driver_Backup"
-            if not os.path.exists(path):
-                os.makedirs(path, exist_ok=True)
+            path = folder_path.strip() if folder_path else ""
+            if not path or not os.path.exists(path):
+                path = self._get_last_driver_backup_dir()
+            os.makedirs(path, exist_ok=True)
             subprocess.run(f'explorer.exe "{path}"', shell=True)
-            return {"success": True}
+            return {"success": True, "path": path}
         except Exception as e:
             return {"success": False, "message": str(e)}
+
+    def open_driver_backup_folder(self, folder_path=""):
+        return self.open_folder_explorer(folder_path)
 
 
     # ── WINDOWS SERVICES MANAGER ──────────────────────────────────────────
@@ -2868,14 +4056,35 @@ class Api:
             "timeout": timeout_val
         }
 
-    def add_wim_boot_entry(self, wim_path, boot_name="WinPE Boot"):
+    def get_available_partitions(self):
         import modules.boot_manager as bm
-        res = bm.add_wim_boot_entry(wim_path, boot_name)
+        partitions = bm.get_available_partitions()
+        return {
+            "success": True,
+            "partitions": partitions
+        }
+
+    def inspect_winpe_source(self, source_path):
+        import modules.boot_manager as bm
+        return bm.inspect_winpe_source(source_path)
+
+    def integrate_winpe_boot(self, source_path, target_drive="C:", boot_name="WinPE Rescue", selected_wim_rel=None, copy_apps=False):
+        import modules.boot_manager as bm
+        res = bm.integrate_winpe_boot(
+            source_path=source_path,
+            target_drive=target_drive,
+            boot_name=boot_name,
+            selected_wim_rel=selected_wim_rel,
+            copy_apps=copy_apps
+        )
         if res.get("success"):
             self.log("SUCCESS", res.get("message"))
         else:
             self.log("ERROR", res.get("message"))
         return res
+
+    def add_wim_boot_entry(self, wim_path, boot_name="WinPE Boot", target_drive="C:"):
+        return self.integrate_winpe_boot(source_path=wim_path, target_drive=target_drive, boot_name=boot_name)
 
     def delete_boot_entry(self, guid):
         import modules.boot_manager as bm
@@ -2921,6 +4130,10 @@ class Api:
         return res
 
     def browse_wim_file(self):
+        """Allows user to select WinPE source (.iso or .wim)."""
+        return self.browse_winpe_file()
+
+    def browse_winpe_file(self):
         try:
             import tkinter as tk
             from tkinter import filedialog
@@ -2928,8 +4141,13 @@ class Api:
             root.withdraw()
             root.attributes('-topmost', True)
             file_path = filedialog.askopenfilename(
-                title='Chọn file WinPE WIM (*.wim)',
-                filetypes=[('WIM Files', '*.wim'), ('All Files', '*.*')]
+                title='Chọn file WinPE (.iso hoặc .wim)',
+                filetypes=[
+                    ('WinPE Files (*.iso, *.wim)', '*.iso;*.wim'),
+                    ('ISO Disk Images (*.iso)', '*.iso'),
+                    ('WIM Files (*.wim)', '*.wim'),
+                    ('All Files', '*.*')
+                ]
             )
             root.destroy()
             if file_path:
@@ -2953,9 +4171,41 @@ class Api:
         webbrowser.open(APP_WEBSITE)
         return {"success": True}
 
+    def open_telegram(self):
+        """Opens the author's Telegram link in the default browser."""
+        import webbrowser
+        webbrowser.open(APP_TELEGRAM)
+        return {"success": True}
+
+    def get_app_info(self):
+        """Returns author and application metadata."""
+        return {
+            "name": APP_NAME,
+            "version": APP_VERSION,
+            "author": APP_AUTHOR,
+            "phone": APP_PHONE,
+            "website": APP_WEBSITE,
+            "telegram": APP_TELEGRAM
+        }
+
     def get_logs(self):
         return self._logs
 
     def clear_logs(self):
         self._logs = []
         return {"success": True}
+
+    def minimize_to_tray(self):
+        """Hides the main window to the system tray."""
+        if hasattr(self, '_tray') and self._tray:
+            self._tray.hide_window()
+            return {"success": True, "message": "Đã thu nhỏ xuống khay hệ thống"}
+        return {"success": False, "message": "TrayManager chưa khởi tạo"}
+
+    def exit_app(self):
+        """Completely terminates the application."""
+        if hasattr(self, '_tray') and self._tray:
+            self._tray.quit_app()
+        else:
+            import os
+            os._exit(0)

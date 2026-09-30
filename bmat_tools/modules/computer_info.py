@@ -147,7 +147,7 @@ class ComputerInfo:
         w = self.info_widgets['📋 Summary']
         self._clear(w)
         self._write(w, '═' * 60 + '\n', 'section')
-        self._write(w, '          BMAT-Tools - System Summary\n', 'header')
+        self._write(w, '          IT Tool LTT - System Summary\n', 'header')
         self._write(w, '═' * 60 + '\n\n', 'section')
 
         # Computer name
@@ -758,4 +758,280 @@ def get_detailed_hardware_info():
         "os": os_info,
         "missing_drivers": missing_drivers
     }
+
+
+def export_specs(format_type="xlsx", specs_data=None, output_dir=None):
+    """
+    Exports full, comprehensive computer specs to Excel (.xlsx) or CSV (.csv).
+    Includes all hardware, CPU, RAM modules, GPUs, Disks, Partitions, Battery, OS, Network, etc.
+    """
+    import datetime
+    import csv
+    import os
+    import subprocess
+
+    if not specs_data:
+        specs_data = get_detailed_hardware_info()
+
+    user_profile = os.environ.get('USERPROFILE', 'C:\\')
+    if not output_dir or not os.path.exists(output_dir):
+        output_dir = os.path.join(user_profile, 'Desktop')
+
+    sys_info = specs_data.get("system", {})
+    comp_name = sys_info.get("computer_name", "PC")
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Collect network info if possible
+    net_adapters = []
+    try:
+        import modules.ip_manager as im
+        net_adapters = im.get_network_adapters().get("adapters", [])
+    except Exception:
+        pass
+
+    # Build full list of rows: (Category, Attribute, Value)
+    rows = []
+
+    # 1. System Info
+    sec = "1. THÔNG TIN MÁY TÍNH & HỆ THỐNG"
+    rows.append((sec, "Tên Máy Tính (Computer Name)", comp_name))
+    rows.append((sec, "Hãng Sản Xuất (Manufacturer)", sys_info.get("manufacturer", "N/A")))
+    rows.append((sec, "Model Máy (System Model)", sys_info.get("model", "N/A")))
+    rows.append((sec, "Dòng Sản Phẩm (System Family)", sys_info.get("system_family", "N/A")))
+    rows.append((sec, "Kiểu Dáng (Chassis Type)", "Laptop / Notebook" if sys_info.get("is_laptop") else "Desktop PC"))
+    rows.append((sec, "Service Tag / Serial Number", specs_data.get("service_tag", {}).get("service_tag", "N/A")))
+    rows.append((sec, "Mã Định Danh Duy Nhất (UUID)", specs_data.get("service_tag", {}).get("uuid", "N/A")))
+
+    # 2. CPU
+    sec = "2. BỘ XỬ LÝ (CPU)"
+    cpu = specs_data.get("cpu", {})
+    rows.append((sec, "Tên Vi Xử Lý (CPU Name)", cpu.get("name", "N/A")))
+    rows.append((sec, "Số Nhân & Số Luồng", cpu.get("cores_threads", "N/A")))
+    rows.append((sec, "Xung Nhịp Tối Đa (Max Clock)", cpu.get("max_clock", "N/A")))
+    rows.append((sec, "Socket CPU", cpu.get("socket", "N/A")))
+    rows.append((sec, "Bộ Nhớ Đệm (Cache)", cpu.get("cache", "N/A")))
+
+    # 3. Mainboard & BIOS
+    sec = "3. BO MẠCH CHỦ (MAINBOARD) & BIOS"
+    mb = specs_data.get("mainboard", {})
+    bios = specs_data.get("bios_info", {})
+    rows.append((sec, "Hãng Sản Xuất Mainboard", mb.get("manufacturer", "N/A")))
+    rows.append((sec, "Model Mainboard", mb.get("model", "N/A")))
+    rows.append((sec, "Serial Mainboard", mb.get("serial", "N/A")))
+    rows.append((sec, "Phiên Bản Mainboard (Revision)", mb.get("version", "N/A")))
+    rows.append((sec, "Nhà Cung Cấp BIOS (Vendor)", bios.get("vendor", "N/A")))
+    rows.append((sec, "Phiên Bản BIOS (Version)", bios.get("version", "N/A")))
+    rows.append((sec, "Ngày Phát Hành BIOS (Release Date)", bios.get("release_date", "N/A")))
+
+    # 4. RAM
+    sec = "4. BỘ NHỚ RAM (MEMORY)"
+    rows.append((sec, "Tổng Dung Lượng RAM", specs_data.get("ram_total", "N/A")))
+    ram_modules = specs_data.get("ram_modules", [])
+    if ram_modules:
+        for idx, r in enumerate(ram_modules, 1):
+            rows.append((sec, f"Khe Cắm RAM #{idx} ({r.get('locator', 'Slot')})", r.get("details", "N/A")))
+    else:
+        rows.append((sec, "Chi Tiết Khe Cắm", "Không lấy được thông tin khe cắm"))
+
+    # 5. GPU
+    sec = "5. CARD ĐỒ HỌA (GPU)"
+    gpus = specs_data.get("gpus", [])
+    if gpus:
+        for idx, g in enumerate(gpus, 1):
+            rows.append((sec, f"Card Đồ Họa #{idx} ({g.get('label', 'GPU')})", g.get("details", g.get("name", "N/A"))))
+    else:
+        rows.append((sec, "Card Đồ Họa", "N/A"))
+
+    # 6. Physical Disks
+    sec = "6. Ổ ĐĨA VẬT LÝ (PHYSICAL DISKS)"
+    disks = specs_data.get("disks", [])
+    if disks:
+        for idx, d in enumerate(disks, 1):
+            rows.append((sec, f"Ổ Cứng Vật Lý #{idx} ({d.get('label', 'Ổ')})", d.get("details", d.get("model", "N/A"))))
+    else:
+        rows.append((sec, "Ổ Cứng", "N/A"))
+
+    # 7. Partitions
+    sec = "7. PHÂN VÙNG Ổ ĐĨA (PARTITIONS)"
+    partitions = specs_data.get("partitions", [])
+    if partitions:
+        for p in partitions:
+            total = p.get("total_gb", 0)
+            free = p.get("free_gb", 0)
+            used = round(total - free, 1) if total >= free else 0
+            pct = round((used / total * 100), 1) if total > 0 else 0
+            rows.append((sec, f"Phân Vùng {p.get('drive', '')}", f"Tổng: {total} GB | Đã dùng: {used} GB ({pct}%) | Còn trống: {free} GB"))
+    else:
+        rows.append((sec, "Phân Vùng", "N/A"))
+
+    # 8. Battery
+    sec = "8. THÔNG TIN PIN & NGUỒN ĐIỆN"
+    bat = specs_data.get("battery", {})
+    if bat.get("is_laptop"):
+        rows.append((sec, "Tên Pin (Device Name)", bat.get("name", "Standard Battery")))
+        rows.append((sec, "Mức Pin Hiện Tại", f"{bat.get('level_pct', 0)}%"))
+        rows.append((sec, "Độ Chai Pin (Wear Level)", f"{bat.get('wear_pct', 0)}% ({bat.get('health_text', '')})"))
+        rows.append((sec, "Dung Lượng Thiết Kế", bat.get("design_mwh", "N/A")))
+        rows.append((sec, "Dung Lượng Sạc Đầy Thực Tế", bat.get("full_mwh", "N/A")))
+        rows.append((sec, "Trạng Thái Nguồn Điện", bat.get("status_text", "N/A")))
+    else:
+        rows.append((sec, "Tình Trạng Pin", "Không có pin (Máy tính bàn - Desktop PC)"))
+
+    # 9. Operating System
+    sec = "9. HỆ ĐIỀU HÀNH (WINDOWS)"
+    os_info = specs_data.get("os", {})
+    rows.append((sec, "Tên Hệ Điều Hành", os_info.get("caption", "Windows")))
+    rows.append((sec, "Phiên Bản (Version)", os_info.get("version", "N/A")))
+    rows.append((sec, "Số Bản Build (Build Number)", str(os_info.get("build", "N/A"))))
+    rows.append((sec, "Kiến Trúc Hệ Thống", os_info.get("arch", "64-bit")))
+    rows.append((sec, "Ngày Cài Đặt Windows", os_info.get("install_date", "N/A")))
+
+    # 10. Network
+    sec = "10. KẾT NỐI MẠNG (NETWORK)"
+    if net_adapters:
+        for idx, a in enumerate(net_adapters, 1):
+            ip_str = a.get("ip", "N/A")
+            mac_str = a.get("mac", "N/A")
+            gw_str = a.get("gateway", "N/A")
+            dns_str = " / ".join(a.get("dns", [])) if a.get("dns") else "N/A"
+            desc = f"IP: {ip_str} | MAC: {mac_str} | Gateway: {gw_str} | DNS: {dns_str}"
+            rows.append((sec, f"Card Mạng #{idx}: {a.get('name', 'Adapter')}", desc))
+    else:
+        rows.append((sec, "Card Mạng", "N/A"))
+
+    # 11. Missing Drivers
+    sec = "11. DRIVER CẢNH BÁO / THIẾU"
+    missing = specs_data.get("missing_drivers", [])
+    if missing:
+        for idx, m in enumerate(missing, 1):
+            rows.append((sec, f"Thiết Bị Cảnh Báo #{idx}", f"{m.get('name')} (Lớp: {m.get('class')})"))
+    else:
+        rows.append((sec, "Tình Trạng Driver", "✓ Đầy đủ - Không có driver nào bị lỗi hoặc thiếu"))
+
+    fmt = format_type.lower()
+    if fmt == "csv":
+        file_name = f"CauHinh_{comp_name}_{ts}.csv"
+        file_path = os.path.join(output_dir, file_name)
+        with open(file_path, "w", encoding="utf-8-sig", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["STT", "Danh Mục", "Thuộc Tính / Thiết Bị", "Thông Số Chi Tiết"])
+            for idx, (cat, prop, val) in enumerate(rows, 1):
+                writer.writerow([idx, cat, prop, val])
+        return {"success": True, "file_path": file_path, "message": f"✅ Đã xuất toàn bộ cấu hình ra file CSV thành công tại:\n{file_path}"}
+
+    else:
+        # Excel .xlsx format
+        file_name = f"CauHinh_{comp_name}_{ts}.xlsx"
+        file_path = os.path.join(output_dir, file_name)
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Cấu Hình Chi Tiết"
+
+            # Title Banner
+            ws.merge_cells("A1:D1")
+            title_cell = ws["A1"]
+            title_cell.value = f"BÁO CÁO CẤU HÌNH HỆ THỐNG MÁY TÍNH - {comp_name.upper()}"
+            title_cell.font = Font(name="Segoe UI", size=14, bold=True, color="FFFFFF")
+            title_cell.fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
+            title_cell.alignment = Alignment(horizontal="center", vertical="center")
+            ws.row_dimensions[1].height = 36
+
+            # Subtitle Banner
+            ws.merge_cells("A2:D2")
+            sub_cell = ws["A2"]
+            sub_cell.value = f"Thời gian xuất: {datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S')}  |  Phần mềm: IT Tool LTT 2026 - Tác giả: Lê Thế Tuấn (0352 194 195)"
+            sub_cell.font = Font(name="Segoe UI", size=10, italic=True, color="475569")
+            sub_cell.fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+            sub_cell.alignment = Alignment(horizontal="center", vertical="center")
+            ws.row_dimensions[2].height = 22
+
+            # Table Headers (Row 4)
+            headers = ["STT", "Danh Mục", "Thuộc Tính / Thiết Bị", "Thông Số Chi Tiết"]
+            ws.row_dimensions[4].height = 26
+            for col_idx, h in enumerate(headers, 1):
+                cell = ws.cell(row=4, column=col_idx)
+                cell.value = h
+                cell.font = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
+                cell.fill = PatternFill(start_color="2563EB", end_color="2563EB", fill_type="solid")
+                cell.alignment = Alignment(horizontal="center" if col_idx == 1 else "left", vertical="center")
+
+            thin_border = Border(
+                left=Side(style='thin', color='CBD5E1'),
+                right=Side(style='thin', color='CBD5E1'),
+                top=Side(style='thin', color='CBD5E1'),
+                bottom=Side(style='thin', color='CBD5E1')
+            )
+
+            current_cat = None
+            row_idx = 5
+            item_num = 1
+
+            for cat, prop, val in rows:
+                if cat != current_cat:
+                    current_cat = cat
+                    # Section Header Row
+                    ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=4)
+                    sec_cell = ws.cell(row=row_idx, column=1)
+                    sec_cell.value = cat
+                    sec_cell.font = Font(name="Segoe UI", size=11, bold=True, color="0F172A")
+                    sec_cell.fill = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
+                    sec_cell.alignment = Alignment(horizontal="left", vertical="center")
+                    ws.row_dimensions[row_idx].height = 24
+                    row_idx += 1
+
+                bg_color = "FFFFFF" if item_num % 2 != 0 else "F8FAFC"
+                ws.row_dimensions[row_idx].height = 20
+
+                # Col A: STT
+                cA = ws.cell(row=row_idx, column=1, value=item_num)
+                cA.alignment = Alignment(horizontal="center", vertical="center")
+                cA.font = Font(name="Segoe UI", size=10, color="64748B")
+
+                # Col B: Danh Mục
+                cB = ws.cell(row=row_idx, column=2, value=cat.split(".", 1)[-1].strip())
+                cB.alignment = Alignment(horizontal="left", vertical="center")
+                cB.font = Font(name="Segoe UI", size=10, color="334155")
+
+                # Col C: Thuộc Tính
+                cC = ws.cell(row=row_idx, column=3, value=prop)
+                cC.alignment = Alignment(horizontal="left", vertical="center")
+                cC.font = Font(name="Segoe UI", size=10, bold=True, color="1E293B")
+
+                # Col D: Giá Trị
+                cD = ws.cell(row=row_idx, column=4, value=val)
+                cD.alignment = Alignment(horizontal="left", vertical="center")
+                cD.font = Font(name="Segoe UI", size=10, color="0F172A")
+
+                for c in [cA, cB, cC, cD]:
+                    c.border = thin_border
+                    c.fill = PatternFill(start_color=bg_color, end_color=bg_color, fill_type="solid")
+
+                row_idx += 1
+                item_num += 1
+
+            # Auto-adjust column widths
+            ws.column_dimensions['A'].width = 8
+            ws.column_dimensions['B'].width = 34
+            ws.column_dimensions['C'].width = 38
+            ws.column_dimensions['D'].width = 70
+
+            # Freeze panes below headers
+            ws.freeze_panes = "A5"
+
+            wb.save(file_path)
+            return {"success": True, "file_path": file_path, "message": f"✅ Đã xuất toàn bộ cấu hình ra file Excel (.xlsx) thành công tại:\n{file_path}"}
+        except Exception as e:
+            # Fallback to CSV if openpyxl fails for any reason
+            csv_name = f"CauHinh_{comp_name}_{ts}.csv"
+            csv_path = os.path.join(output_dir, csv_name)
+            with open(csv_path, "w", encoding="utf-8-sig", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["STT", "Danh Mục", "Thuộc Tính / Thiết Bị", "Thông Số Chi Tiết"])
+                for idx, (cat, prop, val) in enumerate(rows, 1):
+                    writer.writerow([idx, cat, prop, val])
+            return {"success": True, "file_path": csv_path, "message": f"✅ Đã xuất cấu hình ra file CSV tại:\n{csv_path}"}
 

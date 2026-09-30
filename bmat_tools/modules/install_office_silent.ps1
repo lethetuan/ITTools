@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$VersionCode = "office365",
     [string]$Arch = "x64",
     [string]$Lang = "vi-vn",
@@ -28,9 +28,11 @@ function Set-State {
         if (Test-Path $stateFile) {
             try {
                 $raw = Get-Content -Path $stateFile -Raw -Encoding UTF8 -ErrorAction Stop
-                $parsed = $raw | ConvertFrom-Json
-                foreach ($prop in $parsed.PSObject.Properties) {
-                    $state[$prop.Name] = $prop.Value
+                if ($raw) {
+                    $parsed = $raw | ConvertFrom-Json
+                    foreach ($prop in $parsed.PSObject.Properties) {
+                        $state[$prop.Name] = $prop.Value
+                    }
                 }
             } catch {}
         }
@@ -40,7 +42,7 @@ function Set-State {
         $state["message"] = $Message
         
         $logs = @()
-        if ($state.ContainsKey("output_log") -and $state["output_log"]) {
+        if ($state["output_log"]) {
             $logs = @($state["output_log"])
         }
         if ($LogLine) {
@@ -51,11 +53,19 @@ function Set-State {
             }
         }
         $state["output_log"] = $logs
-        $state["updated_at"] = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        try {
+            $state["updated_at"] = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        } catch {
+            $state["updated_at"] = [int][double]::Parse((Get-Date -UFormat %s))
+        }
         
         $json = $state | ConvertTo-Json -Depth 5
         [System.IO.File]::WriteAllText($stateFile, $json, [System.Text.Encoding]::UTF8)
-    } catch {}
+    } catch {
+        try {
+            [System.IO.File]::AppendAllText((Join-Path $WorkDir "error.log"), "[$(Get-Date)] Set-State error: $($_.Exception.ToString())`r`n")
+        } catch {}
+    }
 }
 
 # 1. Download & Verify Microsoft Official ODT (setup.exe)
@@ -88,21 +98,64 @@ if ($needDownload) {
     }
 }
 
-# 2. Generate configuration.xml
+# 2. Detect existing Office environment to prevent Channel Mismatch errors
+$hasCurrentChannel = $false
+try {
+    $c2rConfig = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\Configuration" -ErrorAction SilentlyContinue
+    if ($c2rConfig -and ($c2rConfig.UpdateChannel -like "*492350f6-3a01-4f97-b9c0-c7c6ddf67d60*" -or $c2rConfig.UpdateChannel -like "*Current*")) {
+        $hasCurrentChannel = $true
+    }
+} catch {}
+
+# Generate configuration.xml
 Set-State -Active $true -Status "configuring" -Percentage 30.0 -Message "Đang khởi tạo cấu hình cài đặt ẩn (Silent Mode)..." -LogLine "Tạo file cấu hình configuration.xml..."
 
 $productId = "O365ProPlusRetail"
 $channel = "Current"
 
 switch ($VersionCode.ToLower()) {
-    "office365"  { $productId = "O365ProPlusRetail"; $channel = "Current" }
-    "office2024" { $productId = "ProPlus2024Volume"; $channel = "PerpetualVL2024" }
-    "office2021" { $productId = "ProPlus2021Volume"; $channel = "PerpetualVL2021" }
-    "office2019" { $productId = "ProPlus2019Volume"; $channel = "PerpetualVL2019" }
-    "office2016" { $productId = "ProPlusRetail";      $channel = "Current" }
-    "visio"      { $productId = "VisioPro2021Volume"; $channel = "PerpetualVL2021" }
-    "project"    { $productId = "ProjectPro2021Volume"; $channel = "PerpetualVL2021" }
-    default      { $productId = "O365ProPlusRetail"; $channel = "Current" }
+    "office365"  { 
+        $productId = "O365ProPlusRetail"
+        $channel = "Current" 
+    }
+    "office2024" { 
+        $productId = "ProPlus2024Volume"
+        $channel = "PerpetualVL2024" 
+    }
+    "office2021" { 
+        $productId = "ProPlus2021Volume"
+        $channel = "PerpetualVL2021" 
+    }
+    "office2019" { 
+        $productId = "ProPlus2019Volume"
+        $channel = "PerpetualVL2019" 
+    }
+    "office2016" { 
+        $productId = "ProPlusRetail"
+        $channel = "Current" 
+    }
+    "visio"      { 
+        if ($hasCurrentChannel) {
+            $productId = "VisioProRetail"
+            $channel = "Current"
+        } else {
+            $productId = "VisioPro2021Volume"
+            $channel = "PerpetualVL2021"
+        }
+    }
+    "project"    { 
+        if ($hasCurrentChannel) {
+            $productId = "ProjectProRetail"
+            $channel = "Current"
+        } else {
+            $productId = "ProjectPro2021Volume"
+            $channel = "PerpetualVL2021"
+        }
+    }
+    default      { 
+        $productId = "O365ProPlusRetail"
+        $channel = "Current" 
+    }
 }
 
 $archNum = if ($Arch -eq "x86") { "32" } else { "64" }
@@ -119,6 +172,7 @@ $xmlContent = @"
 $langXml
     </Product>
   </Add>
+  <RemoveMSI />
   <Display Level="None" AcceptEULA="TRUE" />
   <Property Name="AUTOACTIVATE" Value="0" />
   <Updates Enabled="TRUE" />
@@ -135,7 +189,9 @@ try {
 
 # 3. Execute setup.exe /configure configuration.xml
 Set-State -Active $true -Status "installing" -Percentage 40.0 -Message "Đang khởi chạy dịch vụ Microsoft Click-to-Run cài đặt ngầm..." -LogLine "Thực thi: setup.exe /configure configuration.xml"
-Set-State -Active $true -Status "installing" -Percentage 42.0 -Message "Đang tải và cài đặt ngầm từ Microsoft CDN (Bạn có thể đóng BMAT Tools bất cứ lúc nào)..." -LogLine "ĐÃ KÍCH HOẠT TIẾN TRÌNH CÀI ĐẶT ẨN: Cho dù có tắt ứng dụng BMAT Tools thì Office vẫn tự động tải & hoàn tất trong nền Windows."
+Set-State -Active $true -Status "installing" -Percentage 42.0 -Message "Đang tải và cài đặt ngầm từ Microsoft CDN (Bạn có thể đóng BMAT Tools bất cứ lúc nào)..." -LogLine "TIẾN TRÌNH CÀI ĐẶT ẨN ĐÃ KÍCH HOẠT: Dù tắt BMAT Tools thì Office vẫn tự động tải & hoàn tất trong nền Windows."
+
+$launchTime = Get-Date
 
 try {
     $proc = Start-Process -FilePath $setupExe -ArgumentList "/configure `"$configFile`"" -PassThru -NoNewWindow
@@ -145,43 +201,121 @@ try {
 }
 
 $startTime = [DateTime]::UtcNow
-$pct = 45.0
+$pct = 42.0
+$loopCount = 0
+$lastReportedProgress = 0
 
 while (-not $proc.HasExited) {
     Start-Sleep -Seconds 3
+    $loopCount++
     $elapsed = [DateTime]::UtcNow - $startTime
-    
-    if ($pct -lt 92.0) {
-        $pct += 1.0
-    }
-    
     $minutes = [Math]::Floor($elapsed.TotalMinutes)
     $seconds = [Math]::Floor($elapsed.TotalSeconds % 60)
     $timeStr = "{0:00}:{1:00}" -f $minutes, $seconds
     
+    # Try reading real progress from Microsoft log file
+    $realProgressFound = $false
+    try {
+        $recentLogs = Get-ChildItem -Path "$env:TEMP" -Filter "DNI-*.log" -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge $launchTime.AddMinutes(-1) } | Sort-Object LastWriteTime -Descending
+        if ($recentLogs -and $recentLogs.Count -gt 0) {
+            $latestLog = $recentLogs[0].FullName
+            $match = Select-String -Path $latestLog -Pattern "ScenarioController::UpdateScenarioProgress - total progress is now (\d+)" -ErrorAction SilentlyContinue | Select-Object -Last 1
+            if ($match -and $match.Matches) {
+                $rawVal = [double]$match.Matches[0].Groups[1].Value
+                if ($rawVal -gt 0 -and $rawVal -le 100) {
+                    # Map 0-100 real Microsoft download progress to 42% - 95% range
+                    $pct = [Math]::Round(42.0 + ($rawVal * 0.53), 1)
+                    $realProgressFound = $true
+                    if ($rawVal -ne $lastReportedProgress -and $rawVal % 10 -eq 0) {
+                        $lastReportedProgress = $rawVal
+                        Set-State -Active $true -Status "installing" -Percentage $pct -Message "Dịch vụ ClickToRun đang tải & cài đặt: $rawVal% (Thời gian: $timeStr)..." -LogLine "Tiến độ tải gói Microsoft Office: $rawVal%"
+                    }
+                }
+            }
+        }
+    } catch {}
+    
+    if (-not $realProgressFound) {
+        if ($pct -lt 92.0) {
+            $pct += 0.5
+        }
+    }
+    
     $c2r = Get-Process OfficeClickToRun -ErrorAction SilentlyContinue
     $statusText = if ($c2r) { "Dịch vụ ClickToRun đang tải & cài đặt ngầm" } else { "Đang tiến hành cài đặt ngầm" }
     
-    Set-State -Active $true -Status "installing" -Percentage $pct -Message "$statusText... (Thời gian: $timeStr) - Đang chạy ngầm an toàn."
+    $logLine = ""
+    if ($loopCount % 6 -eq 0 -and -not $realProgressFound) {
+        if ($c2r) {
+            $wsMb = [Math]::Round(($c2r | Measure-Object -Property WorkingSet64 -Sum).Sum / 1MB, 1)
+            $logLine = "Tiến trình OfficeClickToRun đang tải gói dữ liệu ($wsMb MB RAM, thời gian: $timeStr)..."
+        } else {
+            $logLine = "Đang xử lý cài đặt gói dữ liệu Office ($timeStr)..."
+        }
+    }
+    
+    Set-State -Active $true -Status "installing" -Percentage $pct -Message "$statusText... (Thời gian: $timeStr) - Đang chạy ngầm an toàn." -LogLine $logLine
 }
 
 $exitCode = $proc.ExitCode
 Set-State -Active $true -Status "finalizing" -Percentage 95.0 -Message "Đang kiểm tra kết quả cài đặt..." -LogLine "Tiến trình setup.exe hoàn tất với mã trả về: $exitCode"
 
-$wordPaths = @(
-    "C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE",
-    "C:\Program Files (x86)\Microsoft Office\root\Office16\WINWORD.EXE"
+# Determine target binary for verification
+$targetExe = "WINWORD.EXE"
+switch ($VersionCode.ToLower()) {
+    "project" { $targetExe = "WINPROJ.EXE" }
+    "visio"   { $targetExe = "VISIO.EXE" }
+    default   { $targetExe = "WINWORD.EXE" }
+}
+
+$targetPaths = @(
+    "C:\Program Files\Microsoft Office\root\Office16\$targetExe",
+    "C:\Program Files (x86)\Microsoft Office\root\Office16\$targetExe"
 )
-$installed = $false
-foreach ($wp in $wordPaths) {
-    if (Test-Path $wp) {
-        $installed = $true
+
+$targetInstalled = $false
+foreach ($tp in $targetPaths) {
+    if (Test-Path $tp) {
+        $targetInstalled = $true
         break
     }
 }
 
-if ($exitCode -eq 0 -or $installed) {
-    Set-State -Active $false -Status "completed" -Percentage 100.0 -Message "🎉 Đã hoàn tất cài đặt thành công Office vào máy tính!" -LogLine "Cài đặt thành công 100%! Bạn có thể mở Word, Excel, PowerPoint để sử dụng."
+# Also verify in Registry
+$regInstalled = $false
+try {
+    $c2rInstalled = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\Configuration" -ErrorAction SilentlyContinue
+    if ($c2rInstalled) {
+        $regInstalled = $true
+    }
+} catch {}
+
+if ($exitCode -eq 0 -or $exitCode -eq 17002 -or ($targetInstalled -and $exitCode -ge 0)) {
+    Set-State -Active $false -Status "completed" -Percentage 100.0 -Message "🎉 Đã hoàn tất cài đặt thành công $productId vào máy tính!" -LogLine "Cài đặt thành công 100%! Bạn có thể mở ứng dụng để sử dụng."
 } else {
-    Set-State -Active $false -Status "error" -Percentage 100.0 -Message "❌ Quá trình cài đặt kết thúc với mã lỗi: $exitCode. Vui lòng kiểm tra lại kết nối mạng hoặc thử phiên bản khác." -LogLine "Lỗi mã: $exitCode"
+    # Extract detailed error message from Microsoft log if available
+    $errDetail = ""
+    try {
+        $recentLogs = Get-ChildItem -Path "$env:TEMP" -Filter "DNI-*.log" -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge $launchTime.AddMinutes(-2) } | Sort-Object LastWriteTime -Descending
+        if ($recentLogs -and $recentLogs.Count -gt 0) {
+            $latestLog = $recentLogs[0].FullName
+            $prereq = Select-String -Path $latestLog -Pattern 'ShowPrereqFailureDialog.*"Body":"([^"]+)"' -ErrorAction SilentlyContinue | Select-Object -Last 1
+            if ($prereq -and $prereq.Matches) {
+                $rawBody = $prereq.Matches[0].Groups[1].Value
+                $cleanBody = [regex]::Unescape($rawBody).Trim().Replace("`r`n", " ").Replace("`n", " ")
+                $errDetail = "Xung đột cài đặt: $cleanBody"
+            } else {
+                $errLine = Select-String -Path $latestLog -Pattern 'ErrorMessage":\s*"([^"]+)"' -ErrorAction SilentlyContinue | Select-Object -Last 1
+                if ($errLine -and $errLine.Matches) {
+                    $errDetail = $errLine.Matches[0].Groups[1].Value
+                }
+            }
+        }
+    } catch {}
+
+    if (-not $errDetail) {
+        $errDetail = "Quá trình cài đặt kết thúc với mã lỗi: $exitCode. Vui lòng kiểm tra lại kết nối mạng hoặc thử phiên bản khác."
+    }
+
+    Set-State -Active $false -Status "error" -Percentage 100.0 -Message "❌ $errDetail" -LogLine "LỖI TỪ MICROSOFT: $errDetail"
 }

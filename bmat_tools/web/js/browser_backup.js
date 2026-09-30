@@ -1,5 +1,5 @@
 /**
- * IT-Tools 2026 - Browser Backup & Restore Module
+ * IT Tool LTT 2026 - Browser Backup & Restore Module
  */
 Object.assign(AppController.prototype, {
   async loadBrowserBackupInfo() {
@@ -37,6 +37,13 @@ Object.assign(AppController.prototype, {
     this.allDetectedBrowsers = res.browsers || [];
     this.allBackupHistory = res.history || [];
 
+    const targetDirInput = document.getElementById("bb-target-dir-input");
+    if (targetDirInput && res.default_backup_dir) {
+      if (!targetDirInput.value || targetDirInput.value.includes("Desktop")) {
+        targetDirInput.value = res.default_backup_dir;
+      }
+    }
+
     this.renderBrowsersList();
     this.renderBackupHistoryTable();
   },
@@ -44,7 +51,6 @@ Object.assign(AppController.prototype, {
   renderBrowsersList() {
     const detectedCountEl = document.getElementById("bb-detected-count");
     const listEl = document.getElementById("bb-browsers-list");
-    const showUninstalled = document.getElementById("bb-show-uninstalled-toggle")?.checked ?? false;
 
     if (!this.allDetectedBrowsers) return;
 
@@ -64,24 +70,20 @@ Object.assign(AppController.prototype, {
       OperaGX: `<svg width="24" height="24" viewBox="0 0 48 48"><path fill="#FA1E4E" d="M24 4L4 24l20 20 20-20L24 4zm0 10l10 10-10 10-10-10 10-10z"/></svg>`
     };
 
-    const installedCount = this.allDetectedBrowsers.filter(b => b.is_installed).length;
-    const totalCount = this.allDetectedBrowsers.length;
+    // Chỉ hiển thị đúng các trình duyệt đã cài đặt trên máy, ẩn hoàn toàn những trình duyệt chưa cài
+    const displayList = this.allDetectedBrowsers.filter(b => b.is_installed);
+    const installedCount = displayList.length;
 
     if (detectedCountEl) {
-      detectedCountEl.innerText = `${installedCount}/${totalCount} trình duyệt`;
+      detectedCountEl.innerText = `Tìm thấy ${installedCount} trình duyệt đã cài đặt`;
     }
-
-    const displayList = showUninstalled 
-      ? this.allDetectedBrowsers 
-      : this.allDetectedBrowsers.filter(b => b.is_installed);
 
     if (listEl) {
       if (displayList.length === 0) {
         listEl.innerHTML = `
           <div class="text-center py-4 text-muted" style="background: #f8fafc; border-radius: 8px; border: 1px dashed #cbd5e1;">
             <div style="font-size: 24px; margin-bottom: 4px;">🔍</div>
-            <div style="font-size: 13px; font-weight: 600; color: #475569;">Không có trình duyệt nào được cài đặt trên máy.</div>
-            <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">Tích chọn "Hiện chưa cài" để xem danh sách đầy đủ.</div>
+            <div style="font-size: 13px; font-weight: 600; color: #475569;">Không tìm thấy trình duyệt nào được cài đặt trên máy tính này.</div>
           </div>
         `;
       } else {
@@ -91,21 +93,25 @@ Object.assign(AppController.prototype, {
             ? `<img src="${b.real_icon}" width="24" height="24" style="object-fit: contain; display: block;" alt="${b.name}">`
             : (svgMap[b.key] || `<span style="font-size: 20px;">🌐</span>`);
 
-          const statusBadge = isIns 
+          const statusBadge = b.has_profile 
             ? `<span class="badge bg-success-subtle text-success" style="padding: 4px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 600;">✅ Tìm thấy (${b.size})</span>`
-            : `<span class="badge bg-secondary-subtle text-muted" style="padding: 4px 10px; border-radius: 6px; font-size: 11px;">❌ Chưa cài đặt</span>`;
+            : `<span class="badge bg-primary-subtle text-primary" style="padding: 4px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 600;">✅ Đã cài đặt (Chưa có dữ liệu)</span>`;
+
+          const pathDisplay = b.has_profile 
+            ? (b.profile_root || 'Standard Profile Path')
+            : (b.exe_path || 'Đã cài đặt trên máy');
 
           return `
-            <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: ${isIns ? '#ffffff' : '#f8fafc'}; border: 1px solid ${isIns ? '#cbd5e1' : '#e2e8f0'}; border-radius: 8px; box-shadow: ${isIns ? '0 1px 3px rgba(0,0,0,0.04)' : 'none'}; opacity: ${isIns ? '1' : '0.65'};">
-              <label style="display: flex; align-items: center; gap: 12px; cursor: ${isIns ? 'pointer' : 'default'}; margin: 0; flex: 1;">
-                <input type="checkbox" class="bb-browser-checkbox" data-key="${b.key}" ${isIns ? 'checked' : 'disabled'} style="accent-color: #2563eb; width: 18px; height: 18px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+              <label style="display: flex; align-items: center; gap: 12px; cursor: pointer; margin: 0; flex: 1;">
+                <input type="checkbox" class="bb-browser-checkbox" data-key="${b.key}" checked style="accent-color: #2563eb; width: 18px; height: 18px;">
                 <div style="display: flex; align-items: center; justify-content: center; width: 26px; height: 26px;">
                   ${iconMarkup}
                 </div>
                 <div>
                   <div style="font-weight: 700; font-size: 13.5px; color: #1e293b;">${b.name}</div>
-                  <div style="font-size: 11.5px; color: #64748b; text-overflow: ellipsis; overflow: hidden; max-width: 360px;" title="${b.profile_root || ''}">
-                    ${isIns ? (b.profile_root || 'Standard Profile Path') : 'Chưa được khởi tạo hoặc không tồn tại'}
+                  <div style="font-size: 11.5px; color: #64748b; text-overflow: ellipsis; overflow: hidden; max-width: 380px;" title="${pathDisplay}">
+                    ${pathDisplay}
                   </div>
                 </div>
               </label>
@@ -125,7 +131,7 @@ Object.assign(AppController.prototype, {
     if (history.length === 0) {
       historyBodyEl.innerHTML = `
         <tr>
-          <td colspan="5" class="text-center py-3 text-muted">Chưa có bản sao lưu nào được lưu trữ trên Desktop/Browser_Backups. Bấm "Bắt Đầu Sao Lưu" ở trên.</td>
+          <td colspan="5" class="text-center py-3 text-muted">Chưa có bản sao lưu nào được tìm thấy trên các ổ đĩa. Bấm "Bắt Đầu Sao Lưu" ở trên để tạo bản lưu an toàn.</td>
         </tr>
       `;
     } else {
@@ -171,6 +177,86 @@ Object.assign(AppController.prototype, {
     return selected;
   },
 
+  setBrowserBackupUIBusy(busy) {
+    const btnBackup = document.getElementById("bb-btn-backup");
+    const btnRestore = document.getElementById("bb-btn-restore");
+    if (btnBackup) btnBackup.disabled = busy;
+    if (btnRestore) btnRestore.disabled = busy;
+  },
+
+  updateBrowserProgressUI(p) {
+    const card = document.getElementById("bb-progress-card");
+    if (!card) return;
+    card.style.display = "block";
+
+    const titleEl = document.getElementById("bb-progress-title");
+    const percentEl = document.getElementById("bb-progress-percent");
+    const barEl = document.getElementById("bb-progress-bar");
+    const detailEl = document.getElementById("bb-progress-detail");
+    const spinnerEl = document.getElementById("bb-progress-spinner");
+    const logBox = document.getElementById("bb-progress-log-box");
+
+    const percent = Math.min(100, Math.max(0, p.percent || 0));
+    if (percentEl) percentEl.innerText = `${percent}%`;
+    if (barEl) {
+      barEl.style.width = `${percent}%`;
+      if (p.status === "error") {
+        barEl.style.background = "linear-gradient(90deg, #dc2626, #ef4444)";
+      } else {
+        barEl.style.background = "linear-gradient(90deg, #16a34a, #22c55e)";
+      }
+    }
+
+    if (titleEl && p.step_title) {
+      titleEl.innerText = p.step_title;
+    }
+    if (detailEl && p.detail) {
+      detailEl.innerText = p.detail;
+    }
+
+    if (spinnerEl) {
+      spinnerEl.style.display = p.active ? "inline-block" : "none";
+    }
+
+    if (logBox && Array.isArray(p.logs)) {
+      if (p.logs.length === 0) {
+        logBox.innerHTML = `<div>[${p.mode === 'backup' ? 'Sao Lưu' : 'Phục Hồi'}] Đang thực hiện...</div>`;
+      } else {
+        logBox.innerHTML = p.logs.map(l => {
+          return `<div><span style="color: #94a3b8;">[${l.time}]</span> ${l.msg}</div>`;
+        }).join("");
+        logBox.scrollTop = logBox.scrollHeight;
+      }
+    }
+  },
+
+  pollBrowserBackupProgress() {
+    return new Promise((resolve) => {
+      const interval = setInterval(async () => {
+        try {
+          if (!window.pywebview || !window.pywebview.api) {
+            clearInterval(interval);
+            resolve({ success: true, message: "Hoàn tất!" });
+            return;
+          }
+
+          const progress = await window.pywebview.api.get_browser_backup_progress();
+          if (progress) {
+            this.updateBrowserProgressUI(progress);
+            if (!progress.active) {
+              clearInterval(interval);
+              resolve(progress.result || { success: progress.status === "success", message: progress.detail });
+            }
+          }
+        } catch (err) {
+          console.error("Lỗi cập nhật tiến trình:", err);
+          clearInterval(interval);
+          resolve({ success: false, message: String(err) });
+        }
+      }, 250);
+    });
+  },
+
   async startBrowserBackup() {
     const selected = this.getSelectedBrowsers();
     if (selected.length === 0) {
@@ -181,20 +267,49 @@ Object.assign(AppController.prototype, {
     const options = this.getBrowserBackupOptions();
     const targetDir = document.getElementById("bb-target-dir-input")?.value?.trim() || "";
 
+    this.setBrowserBackupUIBusy(true);
+    this.updateBrowserProgressUI({
+      active: true,
+      mode: "backup",
+      percent: 0,
+      status: "running",
+      step_title: "Đang khởi tạo tiến trình sao lưu...",
+      detail: "Chuẩn bị thư mục và kiểm tra dữ liệu...",
+      logs: [{ time: new Date().toTimeString().split(' ')[0], msg: `Bắt đầu sao lưu cho: ${selected.join(', ')}` }]
+    });
+
     this.addLog("info", `Đang tiến hành sao lưu ${selected.join(', ')}...`);
 
     if (window.pywebview && window.pywebview.api) {
-      const res = await window.pywebview.api.backup_browsers(selected, options, targetDir);
-      if (res && res.success) {
-        this.addLog("success", res.message);
-        alert(res.message);
+      try {
+        const startRes = await window.pywebview.api.backup_browsers(selected, options, targetDir);
+        if (!startRes || !startRes.success) {
+          this.setBrowserBackupUIBusy(false);
+          alert(startRes ? startRes.message : "Không thể bắt đầu sao lưu!");
+          return;
+        }
+
+        const finalRes = await this.pollBrowserBackupProgress();
+        this.setBrowserBackupUIBusy(false);
         this.loadBrowserBackupInfo();
-      } else {
-        this.addLog("error", res ? res.message : "Lỗi sao lưu trình duyệt!");
-        alert(res ? res.message : "Lỗi sao lưu!");
+
+        if (finalRes && finalRes.success) {
+          this.addLog("success", finalRes.message);
+          alert(finalRes.message);
+        } else {
+          this.addLog("error", finalRes ? finalRes.message : "Lỗi sao lưu trình duyệt!");
+          alert(finalRes ? finalRes.message : "Lỗi sao lưu!");
+        }
+      } catch (err) {
+        this.setBrowserBackupUIBusy(false);
+        this.addLog("error", `Lỗi: ${err}`);
+        alert(`Lỗi sao lưu: ${err}`);
       }
     } else {
-      alert("[MOCK] Đã hoàn tất sao lưu trình duyệt!");
+      setTimeout(() => {
+        this.setBrowserBackupUIBusy(false);
+        alert("[MOCK] Đã hoàn tất sao lưu trình duyệt!");
+      }, 1000);
     }
   },
 
@@ -224,19 +339,49 @@ Object.assign(AppController.prototype, {
     if (!confirmRestore) return;
 
     const options = this.getBrowserBackupOptions();
+    this.setBrowserBackupUIBusy(true);
+    this.updateBrowserProgressUI({
+      active: true,
+      mode: "restore",
+      percent: 0,
+      status: "running",
+      step_title: "Đang khởi tạo phục hồi...",
+      detail: `Đọc gói sao lưu từ ${backupDir}...`,
+      logs: [{ time: new Date().toTimeString().split(' ')[0], msg: `Bắt đầu phục hồi cho: ${selected.join(', ')}` }]
+    });
+
     this.addLog("info", `Đang phục hồi ${selected.join(', ')} từ: ${backupDir}...`);
 
     if (window.pywebview && window.pywebview.api) {
-      const res = await window.pywebview.api.restore_browsers(backupDir, selected, options);
-      if (res && res.success) {
-        this.addLog("success", res.message);
-        alert(res.message);
-      } else {
-        this.addLog("error", res ? res.message : "Lỗi phục hồi trình duyệt!");
-        alert(res ? res.message : "Lỗi phục hồi!");
+      try {
+        const startRes = await window.pywebview.api.restore_browsers(backupDir, selected, options);
+        if (!startRes || !startRes.success) {
+          this.setBrowserBackupUIBusy(false);
+          alert(startRes ? startRes.message : "Không thể bắt đầu phục hồi!");
+          return;
+        }
+
+        const finalRes = await this.pollBrowserBackupProgress();
+        this.setBrowserBackupUIBusy(false);
+        this.loadBrowserBackupInfo();
+
+        if (finalRes && finalRes.success) {
+          this.addLog("success", finalRes.message);
+          alert(finalRes.message);
+        } else {
+          this.addLog("error", finalRes ? finalRes.message : "Lỗi phục hồi trình duyệt!");
+          alert(finalRes ? finalRes.message : "Lỗi phục hồi!");
+        }
+      } catch (err) {
+        this.setBrowserBackupUIBusy(false);
+        this.addLog("error", `Lỗi: ${err}`);
+        alert(`Lỗi phục hồi: ${err}`);
       }
     } else {
-      alert("[MOCK] Đã hoàn tất phục hồi trình duyệt từ:\n" + backupDir);
+      setTimeout(() => {
+        this.setBrowserBackupUIBusy(false);
+        alert("[MOCK] Đã hoàn tất phục hồi trình duyệt từ:\n" + backupDir);
+      }, 1000);
     }
   },
 

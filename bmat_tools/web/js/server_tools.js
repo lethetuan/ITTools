@@ -1,5 +1,5 @@
 /**
- * IT-Tools 2026 - Server Tools Module
+ * IT Tool LTT 2026 - Server Tools Module
  * NIC Teaming SET, DHCP Backup/Restore, Active Directory Tools, iSCSI Manager
  */
 Object.assign(AppController.prototype, {

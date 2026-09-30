@@ -1,6 +1,6 @@
 /**
- * IT-Tools 2026 - Auto Shutdown & Task Scheduler Module
- * Author: Lê Thế Tuấn
+ * IT Tool LTT 2026 - Auto Shutdown & Task Scheduler Module
+ * Author: Lê Thế Tuấn | 0352 194 195 | https://lethetuanpc.blogspot.com | Telegram: https://t.me/lethetuanpc
  */
 
 Object.assign(AppController.prototype, {

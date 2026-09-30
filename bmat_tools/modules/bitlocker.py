@@ -273,77 +273,98 @@ def get_drive_status(drive):
 
 
 def set_bitlocker(drive, action):
-    """Executes manage-bde -off or -on for a drive with Admin elevation fallback."""
+    """Executes manage-bde -off or -on for a drive. Returns detailed status."""
     drive_clean = drive.upper().rstrip('\\')
     if not drive_clean.endswith(':'):
         drive_clean += ':'
 
+    CREATE_NO_WINDOW = 0x08000000
+
+    def run(cmd_list, timeout=20):
+        try:
+            r = subprocess.run(
+                cmd_list,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                creationflags=CREATE_NO_WINDOW,
+                encoding="utf-8",
+                errors="ignore"
+            )
+            out = ((r.stdout or "") + (r.stderr or "")).strip()
+            return r.returncode, out
+        except subprocess.TimeoutExpired:
+            return -1, "Lệnh quá thời gian chờ (timeout)."
+        except Exception as ex:
+            return -1, str(ex)
+
     try:
         if action == "disable":
-            cmd = f'manage-bde -off {drive_clean}'
-            res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
-            output = (res.stdout + res.stderr).strip()
-            if res.returncode == 0 or "in progress" in output.lower() or "decryption" in output.lower() or "disabled" in output.lower():
+            # Tắt BitLocker (giải mã ổ đĩa)
+            rc, out = run(["manage-bde", "-off", drive_clean])
+            ok_keywords = ["in progress", "decryption", "disabled", "đang", "giải mã", "protection"]
+            if rc == 0 or any(k in out.lower() for k in ok_keywords):
                 return {
                     "success": True,
-                    "message": f"Đã phát lệnh tắt BitLocker cho ổ {drive_clean}. Đang tiến hành giải mã dữ liệu!",
+                    "message": f"Đã phát lệnh tắt BitLocker cho ổ {drive_clean}. Đang tiến hành giải mã! Chi tiết: {out[:200]}",
                     "drive": drive_clean,
                     "action": "disable",
-                    "output": output
+                    "output": out
                 }
             else:
-                # Elevate via PowerShell Start-Process if needed
-                ps_elevate = f'Start-Process manage-bde -ArgumentList "-off {drive_clean}" -Verb RunAs -Wait'
-                res_elev = subprocess.run(["powershell", "-NoProfile", "-Command", ps_elevate], capture_output=True, text=True, timeout=20)
-                if res_elev.returncode == 0:
-                    return {
-                        "success": True,
-                        "message": f"Đã gửi lệnh tắt BitLocker với quyền Admin cho ổ {drive_clean}!",
-                        "drive": drive_clean,
-                        "action": "disable",
-                        "output": "Elevated execution completed."
-                    }
                 return {
                     "success": False,
-                    "message": f"Lỗi tắt BitLocker cho ổ {drive_clean}: {output}",
+                    "message": f"Lỗi tắt BitLocker ổ {drive_clean} (rc={rc}): {out[:300]}",
                     "drive": drive_clean,
                     "action": "disable",
-                    "output": output
+                    "output": out
                 }
+
         elif action == "enable":
-            cmd = f'manage-bde -on {drive_clean} -used'
-            res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
-            output = (res.stdout + res.stderr).strip()
-            if res.returncode == 0 or "in progress" in output.lower() or "encryption" in output.lower() or "password" in output.lower():
+            # Bật BitLocker — thử không cần TPM (SkipHardwareTest + RecoveryPassword)
+            # Bước 1: Thử -on với -skiphardwaretest để bỏ qua TPM
+            rc, out = run(["manage-bde", "-on", drive_clean, "-used", "-skiphardwaretest"])
+            ok_keywords = ["in progress", "encryption", "password", "protected", "bắt đầu", "đang"]
+            if rc == 0 or any(k in out.lower() for k in ok_keywords):
                 return {
                     "success": True,
-                    "message": f"Đã kích hoạt BitLocker cho ổ {drive_clean}. Đang tiến hành mã hóa dữ liệu!",
+                    "message": f"Đã kích hoạt BitLocker cho ổ {drive_clean}. Đang tiến hành mã hóa! Chi tiết: {out[:200]}",
                     "drive": drive_clean,
                     "action": "enable",
-                    "output": output
+                    "output": out
                 }
-            else:
-                ps_elevate = f'Start-Process manage-bde -ArgumentList "-on {drive_clean} -used" -Verb RunAs -Wait'
-                res_elev = subprocess.run(["powershell", "-NoProfile", "-Command", ps_elevate], capture_output=True, text=True, timeout=20)
-                if res_elev.returncode == 0:
-                    return {
-                        "success": True,
-                        "message": f"Đã phát lệnh bật BitLocker với quyền Admin cho ổ {drive_clean}!",
-                        "drive": drive_clean,
-                        "action": "enable",
-                        "output": "Elevated execution completed."
-                    }
+
+            # Bước 2: Nếu thất bại, thử PowerShell Enable-BitLocker với RecoveryPassword
+            ps_cmd = (
+                f'Enable-BitLocker -MountPoint "{drive_clean}" '
+                f'-EncryptionMethod XtsAes128 '
+                f'-RecoveryPasswordProtector -SkipHardwareTest'
+            )
+            rc2, out2 = run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd], timeout=25)
+            if rc2 == 0 or any(k in out2.lower() for k in ok_keywords):
                 return {
-                    "success": False,
-                    "message": f"Lỗi bật BitLocker cho ổ {drive_clean}: {output}",
+                    "success": True,
+                    "message": f"Đã bật BitLocker qua PowerShell cho ổ {drive_clean}! Chi tiết: {out2[:200]}",
                     "drive": drive_clean,
                     "action": "enable",
-                    "output": output
+                    "output": out2
                 }
+
+            # Cả hai đều thất bại — trả về lỗi chi tiết
+            combined = f"manage-bde: {out[:150]}\nPowerShell: {out2[:150]}"
+            return {
+                "success": False,
+                "message": f"Không thể bật BitLocker cho ổ {drive_clean}.\n{combined}\n\nLưu ý: Bật BitLocker trên ổ C: hệ thống thường cần TPM hoặc chính sách Group Policy cho phép.",
+                "drive": drive_clean,
+                "action": "enable",
+                "output": combined
+            }
         else:
-            return {"success": False, "message": "Hành động không hợp lệ."}
+            return {"success": False, "message": "Hành động không hợp lệ (phải là 'enable' hoặc 'disable')."}
     except Exception as e:
-        return {"success": False, "message": f"Ngoại lệ: {str(e)}"}
+        return {"success": False, "message": f"Ngoại lệ: {str(e)}", "output": str(e)}
+
+
 
 
 def get_bitlocker_recovery_key(drive):
@@ -437,7 +458,7 @@ def export_bitlocker_recovery_key(drive, save_path=None):
     if not save_path:
         desktop_dir = os.path.join(os.path.expanduser("~"), "Desktop")
         if not os.path.exists(desktop_dir):
-            desktop_dir = os.path.dirname(os.path.abspath(__file__))
+            desktop_dir = os.environ.get("USERPROFILE", os.getcwd())
         save_path = os.path.join(desktop_dir, f"BitLocker_Recovery_Key_{drive_letter}.txt")
 
     try:

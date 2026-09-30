@@ -1,5 +1,5 @@
 /**
- * IT-Tools 2026 - Hardware Driver Backup & Restore Module
+ * IT Tool LTT 2026 - Hardware Driver Backup & Restore Module
  */
 Object.assign(AppController.prototype, {
   async loadInstalledDrivers() {
@@ -119,6 +119,9 @@ Object.assign(AppController.prototype, {
         this.addLog("info", res.message);
         if (res.path) {
           this.lastBackupDriverPath = res.path;
+          try {
+            localStorage.setItem("last_driver_backup_path", res.path);
+          } catch (e) {}
         }
         this.showDriverProgressDrawer("backup");
         this.startDriverProgressPolling();
@@ -258,11 +261,24 @@ Object.assign(AppController.prototype, {
   },
 
   async openDriverFolder() {
+    let folderToOpen = this.lastBackupDriverPath;
+    if (!folderToOpen) {
+      try {
+        folderToOpen = localStorage.getItem("last_driver_backup_path") || "";
+      } catch (e) {}
+    }
+
     if (window.pywebview && window.pywebview.api) {
       try {
-        await window.pywebview.api.open_folder_explorer(this.lastBackupDriverPath || "C:\\Driver_Backup");
+        const res = await window.pywebview.api.open_driver_backup_folder(folderToOpen);
+        if (res && res.path) {
+          this.lastBackupDriverPath = res.path;
+          try {
+            localStorage.setItem("last_driver_backup_path", res.path);
+          } catch (e) {}
+        }
       } catch (err) {
-        console.error("Lỗi mở thư mục:", err);
+        console.error("Lỗi mở thư mục Driver:", err);
       }
     }
   }

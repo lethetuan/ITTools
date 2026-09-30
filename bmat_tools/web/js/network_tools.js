@@ -1,5 +1,5 @@
 /**
- * IT-Tools 2026 - Hosts File Editor, IP Manager & IP Scanner Module
+ * IT Tool LTT 2026 - Hosts File Editor, IP Manager & IP Scanner Module
  */
 Object.assign(AppController.prototype, {
   async loadHosts() {
@@ -7,13 +7,38 @@ Object.assign(AppController.prototype, {
     const infoEl = document.getElementById("hosts-status-info");
     if (!txt) return;
 
+    // Tự động đồng bộ các chỉnh sửa của người dùng vào file tạm
+    if (!txt.dataset.tempSyncAttached) {
+      txt.dataset.tempSyncAttached = "true";
+      let syncTimer = null;
+      txt.addEventListener("input", () => {
+        clearTimeout(syncTimer);
+        syncTimer = setTimeout(async () => {
+          if (window.pywebview && window.pywebview.api && window.pywebview.api.update_hosts_temp) {
+            try {
+              await window.pywebview.api.update_hosts_temp(txt.value);
+            } catch (e) {
+              console.error("Lỗi đồng bộ file tạm:", e);
+            }
+          }
+        }, 300);
+      });
+    }
+
     if (window.pywebview && window.pywebview.api) {
       try {
         const res = await window.pywebview.api.get_hosts_file();
         if (res && res.success) {
           txt.value = res.content || "";
           const lines = (res.content || "").split('\n').length;
-          if (infoEl) infoEl.innerHTML = `📍 Đường dẫn: <code style="color: #0284c7;">${res.path || 'C:\\Windows\\System32\\drivers\\etc\\hosts'}</code> (${lines} dòng)`;
+          if (infoEl) {
+            infoEl.innerHTML = `
+              <div style="display: flex; flex-direction: column; gap: 3px;">
+                <div>📝 <span style="font-weight:600; color:#0284c7;">File tạm đang sửa:</span> <code style="color: #0284c7; background: #f0f9ff; padding: 2px 6px; border-radius: 4px; border: 1px solid #bae6fd;">${res.temp_path || 'Thư mục tạm'}</code> (${lines} dòng)</div>
+                <div style="color: #64748b; font-size: 11px;">📍 Nguồn gốc hệ thống: <code>${res.path || 'C:\\Windows\\System32\\drivers\\etc\\hosts'}</code> <span style="color:#10b981; font-weight:600;">(Đã copy tự động ra file tạm)</span></div>
+              </div>
+            `;
+          }
         } else {
           if (infoEl) infoEl.innerHTML = `<span style="color:#ef4444">❌ Lỗi đọc Hosts: ${res ? res.message : 'Unknown'}</span>`;
         }
@@ -22,7 +47,7 @@ Object.assign(AppController.prototype, {
       }
     } else {
       txt.value = "# Copyright (c) 1993-2006 Microsoft Corp.\n127.0.0.1       localhost\n::1             localhost\n# Demo Mock Hosts File\n127.0.0.1       dev.local\n";
-      if (infoEl) infoEl.innerHTML = `📍 Đường dẫn: <code>C:\\Windows\\System32\\drivers\\etc\\hosts</code> (MOCK mode)`;
+      if (infoEl) infoEl.innerHTML = `📍 File tạm: <code>%TEMP%\\IT_Tools_Hosts_Temp\\hosts</code> (MOCK mode)`;
     }
   },
 
@@ -30,14 +55,19 @@ Object.assign(AppController.prototype, {
     const txt = document.getElementById("hosts-textarea") || document.getElementById("hosts-textarea-page");
     if (!txt) return;
     const content = txt.value;
-    this.addLog("info", "Đang lưu thay đổi vào file Hosts & Flush DNS...");
+    this.addLog("info", "Đang lưu thay đổi vào File Hosts hệ thống & Flush DNS...");
 
     if (window.pywebview && window.pywebview.api) {
       try {
         const res = await window.pywebview.api.save_hosts_file(content);
-        this.addLog(res.success ? "success" : "error", res.message);
-        alert(res.message);
-        this.loadHosts();
+        if (res && res.success) {
+          this.addLog("success", res.message);
+          alert(res.message);
+          this.loadHosts();
+        } else {
+          this.addLog("error", res ? res.message : "Lỗi lưu file Hosts");
+          alert(res ? res.message : "Lỗi lưu file Hosts");
+        }
       } catch (err) {
         alert(`Lỗi lưu Hosts file: ${err.message}`);
       }
@@ -46,15 +76,71 @@ Object.assign(AppController.prototype, {
     }
   },
 
+  async saveHostsAs() {
+    const txt = document.getElementById("hosts-textarea") || document.getElementById("hosts-textarea-page");
+    if (!txt) return;
+    const content = txt.value;
+
+    if (window.pywebview && window.pywebview.api) {
+      try {
+        const res = await window.pywebview.api.save_hosts_as(content);
+        if (res && res.success) {
+          this.addLog("success", `Đã lưu file hosts ra: ${res.path}`);
+          alert(res.message);
+        } else if (res && !res.canceled) {
+          alert(res.message || "Lỗi khi lưu file!");
+        }
+      } catch (err) {
+        alert(`Lỗi khi lưu file: ${err.message}`);
+      }
+    } else {
+      const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "hosts";
+      a.click();
+      alert("[MOCK] Đã kích hoạt tải file hosts về máy!");
+    }
+  },
+
+  async loadHostsFromFile() {
+    if (window.pywebview && window.pywebview.api) {
+      try {
+        const res = await window.pywebview.api.load_hosts_from_file();
+        if (res && res.success) {
+          const txt = document.getElementById("hosts-textarea") || document.getElementById("hosts-textarea-page");
+          if (txt) {
+            txt.value = res.content || "";
+            // Đồng bộ ngay nội dung mới nạp vào file tạm
+            if (window.pywebview.api.update_hosts_temp) {
+              await window.pywebview.api.update_hosts_temp(txt.value);
+            }
+            const lines = (res.content || "").split('\n').length;
+            const infoEl = document.getElementById("hosts-status-info");
+            if (infoEl) infoEl.innerHTML = `📍 Đã nạp từ: <code style="color: #10b981;">${res.path}</code> (${lines} dòng) - Đã đồng bộ sang file tạm`;
+            this.addLog("success", `Đã nạp file từ: ${res.path}`);
+          }
+        }
+      } catch (err) {
+        console.error("Lỗi nạp file:", err);
+      }
+    }
+  },
+
   async restoreHosts() {
-    if (confirm("Bạn có chắc chắn muốn khôi phục File Hosts về mặc định ban đầu của Windows?")) {
+    if (confirm("Bạn có chắc chắn muốn khôi phục File Hosts về mặc định ban đầu của Windows?\nThao tác này sẽ ghi đè nội dung file hosts gốc bằng mẫu chuẩn của Windows.")) {
       this.addLog("info", "Đang khôi phục File Hosts mặc định...");
       if (window.pywebview && window.pywebview.api) {
         try {
           const res = await window.pywebview.api.restore_hosts_default();
-          this.addLog(res.success ? "success" : "error", res.message);
-          alert(res.message);
-          this.loadHosts();
+          if (res && res.success) {
+            this.addLog("success", res.message);
+            alert(res.message);
+            this.loadHosts();
+          } else {
+            this.addLog("error", res ? res.message : "Khôi phục thất bại");
+            alert(res ? res.message : "Khôi phục thất bại");
+          }
         } catch (err) {
           alert(`Lỗi: ${err.message}`);
         }
@@ -70,7 +156,17 @@ Object.assign(AppController.prototype, {
       try {
         await window.pywebview.api.open_hosts_folder();
       } catch (err) {
-        console.error("Lỗi mở thư mục Hosts:", err);
+        console.error("Lỗi mở thư mục Hosts gốc:", err);
+      }
+    }
+  },
+
+  async openHostsTempFolder() {
+    if (window.pywebview && window.pywebview.api) {
+      try {
+        await window.pywebview.api.open_hosts_temp_folder();
+      } catch (err) {
+        console.error("Lỗi mở thư mục tạm Hosts:", err);
       }
     }
   },

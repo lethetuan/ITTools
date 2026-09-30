@@ -187,45 +187,99 @@ class HostsEditor:
                                                   f'{i}.{col2 + len(parts[1])}')
         self._update_line_nums()
 
+    def _get_temp_hosts_path(self):
+        import tempfile
+        temp_dir = os.path.join(tempfile.gettempdir(), "IT_Tools_Hosts_Temp")
+        os.makedirs(temp_dir, exist_ok=True)
+        return os.path.join(temp_dir, "hosts")
+
     def load_hosts(self):
         try:
-            with open(HOSTS_PATH, 'r', encoding='utf-8', errors='ignore') as f:
+            temp_path = self._get_temp_hosts_path()
+            if os.path.exists(HOSTS_PATH):
+                shutil.copy2(HOSTS_PATH, temp_path)
+            elif not os.path.exists(temp_path):
+                with open(temp_path, 'w', encoding='utf-8') as f:
+                    f.write(DEFAULT_HOSTS)
+
+            with open(temp_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
             self.text_editor.delete('1.0', 'end')
             self.text_editor.insert('1.0', content)
             self._highlight_syntax()
-            self.status.set(f'Loaded: {HOSTS_PATH}')
+            self.status.set(f'Temp: {temp_path} (Gốc: {HOSTS_PATH})')
         except PermissionError:
             messagebox.showerror('Permission Error',
                                   'Cần quyền Administrator để đọc/ghi hosts file!\n'
-                                  'Chạy BMAT-Tools với quyền Admin.')
+                                  'Chạy IT Tool LTT với quyền Admin.')
         except Exception as e:
             messagebox.showerror('Error', str(e))
 
     def save_hosts(self):
         content = self.text_editor.get('1.0', 'end-1c')
         try:
-            with open(HOSTS_PATH, 'w', encoding='utf-8') as f:
+            # 1. Lưu vào file tạm
+            temp_path = self._get_temp_hosts_path()
+            with open(temp_path, 'w', encoding='utf-8') as f:
                 f.write(content)
-            self.status.set(f'Saved at {datetime.datetime.now().strftime("%H:%M:%S")}')
-            messagebox.showinfo('Success', '✅ Đã lưu hosts file thành công!')
-        except PermissionError:
-            messagebox.showerror('Permission Error',
-                                  'Cần quyền Administrator!\n'
-                                  'Thử lưu bằng PowerShell...')
-            # Try via PowerShell
-            import tempfile
-            tmp = tempfile.mktemp(suffix='.txt')
-            with open(tmp, 'w') as f:
-                f.write(content)
-            result = subprocess.run(
-                ['powershell', '-Command',
-                 f'Copy-Item "{tmp}" "{HOSTS_PATH}" -Force'],
-                capture_output=True
-            )
-            if result.returncode == 0:
-                messagebox.showinfo('Success', 'Đã lưu qua PowerShell!')
-            os.remove(tmp)
+
+            # 2. Xóa thuộc tính Read-Only và tạo backup
+            if os.path.exists(HOSTS_PATH):
+                subprocess.run(f'attrib -r -s -h "{HOSTS_PATH}"', shell=True, capture_output=True)
+                try:
+                    shutil.copy2(HOSTS_PATH, HOSTS_BACKUP)
+                except Exception:
+                    pass
+
+            # 3. Thử ghi đè trực tiếp (nếu có quyền Admin)
+            saved = False
+            try:
+                with open(HOSTS_PATH, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                saved = True
+            except Exception:
+                pass
+
+            if not saved:
+                # 4. Fallback nâng quyền qua cmd runas nếu không có quyền trực tiếp
+                try:
+                    import ctypes
+                    from ctypes import wintypes
+                    class SHELLEXECUTEINFO(ctypes.Structure):
+                        _fields_ = [
+                            ('cbSize', wintypes.DWORD), ('fMask', wintypes.ULONG), ('hwnd', wintypes.HWND),
+                            ('lpVerb', wintypes.LPCWSTR), ('lpFile', wintypes.LPCWSTR), ('lpParameters', wintypes.LPCWSTR),
+                            ('lpDirectory', wintypes.LPCWSTR), ('nShow', ctypes.c_int), ('hInstApp', wintypes.HINSTANCE),
+                            ('lpIDList', wintypes.LPVOID), ('lpClass', wintypes.LPCWSTR), ('hkeyClass', wintypes.HKEY),
+                            ('dwHotKey', wintypes.DWORD), ('hIconOrMonitor', wintypes.HANDLE), ('hProcess', wintypes.HANDLE)
+                        ]
+                    sei = SHELLEXECUTEINFO()
+                    sei.cbSize = ctypes.sizeof(sei)
+                    sei.fMask = 0x00000040
+                    sei.lpVerb = "runas"
+                    sei.lpFile = "cmd.exe"
+                    sei.lpParameters = f'/c "attrib -r -s -h "{HOSTS_PATH}" & copy /y "{temp_path}" "{HOSTS_PATH}" & ipconfig /flushdns"'
+                    sei.nShow = 0
+                    if ctypes.windll.shell32.ShellExecuteExW(ctypes.byref(sei)):
+                        if sei.hProcess:
+                            ctypes.windll.kernel32.WaitForSingleObject(sei.hProcess, 30000)
+                            ctypes.windll.kernel32.CloseHandle(sei.hProcess)
+                except Exception:
+                    pass
+
+            # 5. Đối soát nội dung
+            is_ok = False
+            if os.path.exists(HOSTS_PATH):
+                with open(HOSTS_PATH, 'r', encoding='utf-8', errors='ignore') as f:
+                    if f.read().replace('\r\n', '\n').strip() == content.replace('\r\n', '\n').strip():
+                        is_ok = True
+
+            if is_ok:
+                subprocess.run(['ipconfig', '/flushdns'], capture_output=True)
+                self.status.set(f'Saved at {datetime.datetime.now().strftime("%H:%M:%S")}')
+                messagebox.showinfo('Success', '✅ Đã lưu file Hosts vào System32 & Flush DNS thành công!')
+            else:
+                messagebox.showerror('Error', '❌ Không thể ghi vào file Hosts hệ thống! Vui lòng cấp quyền Administrator hoặc kiểm tra Antivirus/Defender.')
         except Exception as e:
             messagebox.showerror('Error', str(e))
 

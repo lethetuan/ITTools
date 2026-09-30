@@ -1,13 +1,16 @@
 """
-IT-Tools Constants & Theme Configuration
+IT Tool LTT Constants & Theme Configuration
 """
 import os
 
-APP_NAME = "IT-Tools"
+APP_NAME = "IT Tool LTT"
 APP_VERSION = "1.0.0"
 APP_AUTHOR = "Lê Thế Tuấn"
 APP_PHONE = "0352 194 195"
-APP_WEBSITE = "https://lethetuanpc.blogspot.com/"
+APP_WEBSITE = "https://lethetuanpc.blogspot.com"
+APP_TELEGRAM = "https://t.me/lethetuanpc"
+AUTOSTART_KEY_NAME = "IT Tool LTT"
+SINGLE_INSTANCE_PORT = 49285
 
 # Color Theme
 COLORS = {

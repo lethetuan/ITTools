@@ -1,6 +1,6 @@
 """
 Browser Backup/Restore Module 2026 - Chrome, Edge, Brave, Cốc Cốc, Firefox, Opera
-Author: Lê Thế Tuấn | 0352 194 195 | https://lethetuanpc.blogspot.com/
+Author: Lê Thế Tuấn | 0352 194 195 | https://lethetuanpc.blogspot.com | Telegram: https://t.me/lethetuanpc
 """
 
 import os
@@ -129,33 +129,53 @@ def find_browser_exe_path(browser_key):
     # 1. Search Registry App Paths
     for proc in proc_names:
         for root in [winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER]:
-            try:
-                with winreg.OpenKey(root, f"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\{proc}") as k:
-                    val, _ = winreg.QueryValueEx(k, "")
-                    val = val.strip('"')
-                    if os.path.exists(val):
-                        return val
-            except Exception:
-                pass
+            for sub in [
+                f"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\{proc}",
+                f"SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\App Paths\\{proc}"
+            ]:
+                try:
+                    with winreg.OpenKey(root, sub) as k:
+                        val, _ = winreg.QueryValueEx(k, "")
+                        val = val.strip('"')
+                        if os.path.exists(val) and os.path.isfile(val):
+                            return val
+                except Exception:
+                    pass
 
     # 2. Search Registry StartMenuInternet
     for root in [winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER]:
-        try:
-            with winreg.OpenKey(root, r"SOFTWARE\Clients\StartMenuInternet") as key:
-                num_subkeys = winreg.QueryInfoKey(key)[0]
-                for i in range(num_subkeys):
-                    sname = winreg.EnumKey(key, i)
-                    if browser_key.lower() in sname.lower() or (browser_key == 'Edge' and 'msedge' in sname.lower()) or (browser_key == 'CocCoc' and 'coccoc' in sname.lower()):
-                        try:
-                            with winreg.OpenKey(key, rf"{sname}\shell\open\command") as cmd_k:
-                                val, _ = winreg.QueryValueEx(cmd_k, "")
-                                val = val.strip('"')
-                                if os.path.exists(val):
-                                    return val
-                        except Exception:
-                            pass
-        except Exception:
-            pass
+        for sub in [r"SOFTWARE\Clients\StartMenuInternet", r"SOFTWARE\WOW6432Node\Clients\StartMenuInternet"]:
+            try:
+                with winreg.OpenKey(root, sub) as key:
+                    num_subkeys = winreg.QueryInfoKey(key)[0]
+                    for i in range(num_subkeys):
+                        sname = winreg.EnumKey(key, i)
+                        sname_lower = sname.lower()
+                        b_key_lower = browser_key.lower()
+                        match = False
+                        if b_key_lower in sname_lower:
+                            match = True
+                        elif browser_key == 'Edge' and ('edge' in sname_lower or 'msedge' in sname_lower):
+                            match = True
+                        elif browser_key == 'CocCoc' and ('coccoc' in sname_lower or 'corom' in sname_lower):
+                            match = True
+                        elif browser_key == 'Chrome' and 'chrome' in sname_lower:
+                            match = True
+                        
+                        if match:
+                            try:
+                                with winreg.OpenKey(key, rf"{sname}\shell\open\command") as cmd_k:
+                                    val, _ = winreg.QueryValueEx(cmd_k, "")
+                                    val = val.strip('"')
+                                    if '.exe' in val.lower():
+                                        val = val.split('.exe')[0] + '.exe'
+                                        val = val.strip('"')
+                                    if os.path.exists(val) and os.path.isfile(val):
+                                        return val
+                            except Exception:
+                                pass
+            except Exception:
+                pass
 
     # 3. Search Common Glob Patterns
     glob_patterns = {
@@ -165,29 +185,38 @@ def find_browser_exe_path(browser_key):
             os.path.join(localappdata, r'Google\Chrome\Application\chrome.exe'),
         ],
         'Edge': [
-            r'C:\Program Files (x86)\Microsoft\Edge*\*\msedge.exe',
-            r'C:\Program Files\Microsoft\Edge*\*\msedge.exe',
             os.path.join(programfilesx86, r'Microsoft\Edge\Application\msedge.exe'),
             os.path.join(programfiles, r'Microsoft\Edge\Application\msedge.exe'),
+            r'C:\Program Files (x86)\Microsoft\Edge*\*\msedge.exe',
+            r'C:\Program Files\Microsoft\Edge*\*\msedge.exe',
+            os.path.join(localappdata, r'Microsoft\Edge\Application\msedge.exe'),
         ],
         'Brave': [
             os.path.join(programfiles, r'BraveSoftware\Brave-Browser\Application\brave.exe'),
+            os.path.join(programfilesx86, r'BraveSoftware\Brave-Browser\Application\brave.exe'),
             os.path.join(localappdata, r'BraveSoftware\Brave-Browser\Application\brave.exe'),
         ],
         'CocCoc': [
             os.path.join(localappdata, r'CocCoc\Browser\Application\browser.exe'),
+            os.path.join(localappdata, r'CocCoc\Browser\Application\coccoc.exe'),
             os.path.join(programfiles, r'CocCoc\Browser\Application\browser.exe'),
+            os.path.join(programfilesx86, r'CocCoc\Browser\Application\browser.exe'),
         ],
         'Firefox': [
             os.path.join(programfiles, r'Mozilla Firefox\firefox.exe'),
             os.path.join(programfilesx86, r'Mozilla Firefox\firefox.exe'),
+            os.path.join(localappdata, r'Mozilla Firefox\firefox.exe'),
         ],
         'Opera': [
             os.path.join(localappdata, r'Programs\Opera\opera.exe'),
+            os.path.join(localappdata, r'Programs\Opera Stable\opera.exe'),
             os.path.join(programfiles, r'Opera\opera.exe'),
+            os.path.join(programfilesx86, r'Opera\opera.exe'),
         ],
         'OperaGX': [
             os.path.join(localappdata, r'Programs\Opera GX\opera.exe'),
+            os.path.join(programfiles, r'Opera GX\opera.exe'),
+            os.path.join(programfilesx86, r'Opera GX\opera.exe'),
         ]
     }
 
@@ -195,8 +224,43 @@ def find_browser_exe_path(browser_key):
     for pat in patterns:
         matches = glob.glob(pat)
         for m in matches:
-            if os.path.exists(m):
+            if os.path.exists(m) and os.path.isfile(m):
                 return m
+
+    # 4. Search Windows Uninstall Registry
+    for root in [winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER]:
+        for sub in [
+            r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
+            r'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
+        ]:
+            try:
+                with winreg.OpenKey(root, sub) as ukey:
+                    for i in range(winreg.QueryInfoKey(ukey)[0]):
+                        try:
+                            kname = winreg.EnumKey(ukey, i)
+                            with winreg.OpenKey(ukey, kname) as sk:
+                                dn = winreg.QueryValueEx(sk, 'DisplayName')[0]
+                                b_name = info['name'].lower()
+                                if browser_key.lower() in dn.lower() or b_name in dn.lower():
+                                    try:
+                                        icon_val = winreg.QueryValueEx(sk, 'DisplayIcon')[0]
+                                        icon_clean = icon_val.split(',')[0].strip('"')
+                                        if os.path.exists(icon_clean) and icon_clean.lower().endswith('.exe'):
+                                            return icon_clean
+                                    except Exception:
+                                        pass
+                                    try:
+                                        loc_val = winreg.QueryValueEx(sk, 'InstallLocation')[0].strip('"')
+                                        for proc in proc_names:
+                                            cand = os.path.join(loc_val, proc)
+                                            if os.path.exists(cand) and os.path.isfile(cand):
+                                                return cand
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
+            except Exception:
+                pass
 
     return None
 
@@ -240,7 +304,11 @@ def get_detected_browsers():
 
     for key, info in definitions.items():
         root = info['profile_root']
-        is_installed = os.path.exists(root)
+        exe_p = find_browser_exe_path(key)
+        # Chỉ coi là đã cài đặt nếu file thực thi EXE của trình duyệt thực sự tồn tại trên máy
+        is_installed = bool(exe_p and os.path.exists(exe_p))
+        has_profile = bool(root and os.path.exists(root))
+
         size_str = "0 B"
         items = {
             'bookmarks': False,
@@ -253,57 +321,56 @@ def get_detected_browsers():
         real_icon = None
 
         if is_installed:
-            exe_p = find_browser_exe_path(key)
-            if exe_p:
-                real_icon = extract_exe_icon_base64(exe_p)
-
+            real_icon = extract_exe_icon_base64(exe_p)
             b_type = info['type']
-            items['full_profile'] = True
-            
-            if b_type == 'chromium':
-                # Check Default and Profile X
-                profile_dirs = glob.glob(os.path.join(root, 'Default')) + glob.glob(os.path.join(root, 'Profile *'))
-                if not profile_dirs and os.path.exists(root):
-                    profile_dirs = [root]
+
+            if has_profile:
+                items['full_profile'] = True
                 
-                for pd in profile_dirs:
-                    pname = os.path.basename(pd)
-                    profiles_found.append(pname)
-                    if os.path.exists(os.path.join(pd, 'Bookmarks')):
+                if b_type == 'chromium':
+                    profile_dirs = glob.glob(os.path.join(root, 'Default')) + glob.glob(os.path.join(root, 'Profile *'))
+                    if not profile_dirs and os.path.exists(root):
+                        profile_dirs = [root]
+                    
+                    for pd in profile_dirs:
+                        pname = os.path.basename(pd)
+                        profiles_found.append(pname)
+                        if os.path.exists(os.path.join(pd, 'Bookmarks')):
+                            items['bookmarks'] = True
+                        if os.path.exists(os.path.join(pd, 'Login Data')) or os.path.exists(os.path.join(pd, 'Login Data For Account')):
+                            items['passwords'] = True
+                        if os.path.exists(os.path.join(pd, 'History')):
+                            items['history'] = True
+                        if os.path.exists(os.path.join(pd, 'Extensions')):
+                            items['extensions'] = True
+                
+                elif b_type == 'firefox':
+                    p_dirs = [d for d in glob.glob(os.path.join(root, '*')) if os.path.isdir(d)]
+                    for pd in p_dirs:
+                        profiles_found.append(os.path.basename(pd))
+                        if os.path.exists(os.path.join(pd, 'places.sqlite')):
+                            items['bookmarks'] = True
+                            items['history'] = True
+                        if os.path.exists(os.path.join(pd, 'key4.db')) or os.path.exists(os.path.join(pd, 'logins.json')):
+                            items['passwords'] = True
+                        if os.path.exists(os.path.join(pd, 'extensions')):
+                            items['extensions'] = True
+
+                elif b_type == 'opera':
+                    profiles_found.append('Default')
+                    if os.path.exists(os.path.join(root, 'Bookmarks')):
                         items['bookmarks'] = True
-                    if os.path.exists(os.path.join(pd, 'Login Data')) or os.path.exists(os.path.join(pd, 'Login Data For Account')):
+                    if os.path.exists(os.path.join(root, 'Login Data')):
                         items['passwords'] = True
-                    if os.path.exists(os.path.join(pd, 'History')):
+                    if os.path.exists(os.path.join(root, 'History')):
                         items['history'] = True
-                    if os.path.exists(os.path.join(pd, 'Extensions')):
-                        items['extensions'] = True
-            
-            elif b_type == 'firefox':
-                # Check Firefox profiles
-                p_dirs = [d for d in glob.glob(os.path.join(root, '*')) if os.path.isdir(d)]
-                for pd in p_dirs:
-                    profiles_found.append(os.path.basename(pd))
-                    if os.path.exists(os.path.join(pd, 'places.sqlite')):
-                        items['bookmarks'] = True
-                        items['history'] = True
-                    if os.path.exists(os.path.join(pd, 'key4.db')) or os.path.exists(os.path.join(pd, 'logins.json')):
-                        items['passwords'] = True
-                    if os.path.exists(os.path.join(pd, 'extensions')):
+                    if os.path.exists(os.path.join(root, 'Extensions')):
                         items['extensions'] = True
 
-            elif b_type == 'opera':
-                profiles_found.append('Default')
-                if os.path.exists(os.path.join(root, 'Bookmarks')):
-                    items['bookmarks'] = True
-                if os.path.exists(os.path.join(root, 'Login Data')):
-                    items['passwords'] = True
-                if os.path.exists(os.path.join(root, 'History')):
-                    items['history'] = True
-                if os.path.exists(os.path.join(root, 'Extensions')):
-                    items['extensions'] = True
-
-            size_bytes = get_dir_size_fast(root)
-            size_str = fmt_bytes(size_bytes)
+                size_bytes = get_dir_size_fast(root)
+                size_str = fmt_bytes(size_bytes)
+            else:
+                size_str = "Chưa có profile"
 
         results.append({
             'key': key,
@@ -312,6 +379,8 @@ def get_detected_browsers():
             'real_icon': real_icon,
             'type': info['type'],
             'is_installed': is_installed,
+            'has_profile': has_profile,
+            'exe_path': exe_p,
             'profile_root': root,
             'size': size_str,
             'items': items,
@@ -322,22 +391,34 @@ def get_detected_browsers():
 
 
 def close_browser_processes(process_names):
-    """Closes running processes for specified browsers."""
+    """Closes running processes and child process trees for specified browsers."""
+    import time
     for proc in process_names:
         try:
-            subprocess.run(f'taskkill /f /im "{proc}"', shell=True, capture_output=True)
+            subprocess.run(f'taskkill /f /t /im "{proc}"', shell=True, capture_output=True)
         except Exception:
             pass
+    time.sleep(0.5)
 
 
 def _copy_file_safe(src, dst):
-    """Safely copies file ignoring locks."""
+    """Safely copies file ignoring locks and removing read-only attributes."""
     try:
         os.makedirs(os.path.dirname(dst), exist_ok=True)
+        if os.path.exists(dst):
+            try:
+                os.chmod(dst, 0o777)
+            except Exception:
+                pass
         shutil.copy2(src, dst)
         return True
     except Exception:
         try:
+            if os.path.exists(dst):
+                try:
+                    os.chmod(dst, 0o777)
+                except Exception:
+                    pass
             # Fallback byte copy
             with open(src, 'rb') as f_in:
                 data = f_in.read()
@@ -368,12 +449,36 @@ def _copy_tree_safe(src, dst, ignore_patterns=None):
             dst_file = os.path.join(dest_dir, f)
             if _copy_file_safe(src_file, dst_file):
                 copied_count += 1
-
     return copied_count
 
 
-def backup_browser_data(selected_browsers, options, target_dir="", logger=None):
-    """Performs full backup of selected browsers based on options."""
+def get_default_backup_dir():
+    """
+    Finds the optimal default backup directory.
+    Prefers non-system drives (D:, E:, F:, G:) over system drive (C:) so that
+    backups are safe across OS re-installations.
+    """
+    for letter in ['D', 'E', 'F', 'G', 'H']:
+        drive = f"{letter}:\\"
+        if os.path.exists(drive):
+            try:
+                candidate = os.path.join(drive, 'Browser_Backups')
+                os.makedirs(candidate, exist_ok=True)
+                return candidate
+            except Exception:
+                continue
+
+    user_profile = os.environ.get('USERPROFILE', 'C:\\')
+    default_c = os.path.join(user_profile, 'Desktop', 'Browser_Backups')
+    try:
+        os.makedirs(default_c, exist_ok=True)
+    except Exception:
+        pass
+    return default_c
+
+
+def backup_browser_data(selected_browsers, options, target_dir="", logger=None, progress_callback=None):
+    """Performs full backup of selected browsers based on options with real-time progress callbacks."""
     definitions = get_browser_definitions()
     
     def log(msg, level="INFO"):
@@ -383,16 +488,24 @@ def backup_browser_data(selected_browsers, options, target_dir="", logger=None):
             elif callable(logger):
                 logger(msg)
 
-    if not target_dir:
-        user_profile = os.environ.get('USERPROFILE', 'C:\\')
-        target_dir = os.path.join(user_profile, 'Desktop', 'Browser_Backups')
+    def report(percent, browser_name, step_title, detail, log_msg=None):
+        if log_msg:
+            log(log_msg)
+        if progress_callback and callable(progress_callback):
+            try:
+                progress_callback(percent, browser_name, step_title, detail, log_msg)
+            except Exception:
+                pass
+
+    if not target_dir or not target_dir.strip():
+        target_dir = get_default_backup_dir()
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_folder_name = f"BrowserBackup_{timestamp}"
     backup_path = os.path.join(target_dir, backup_folder_name)
     os.makedirs(backup_path, exist_ok=True)
 
-    log(f"Bắt đầu sao lưu trình duyệt vào thư mục: {backup_path}...", "INFO")
+    report(5, "", "Khởi tạo thư mục sao lưu", f"Tạo thư mục: {backup_folder_name}", f"Bắt đầu sao lưu trình duyệt vào thư mục: {backup_path}...")
 
     manifest = {
         'timestamp': timestamp,
@@ -402,17 +515,23 @@ def backup_browser_data(selected_browsers, options, target_dir="", logger=None):
     }
 
     success_count = 0
+    valid_browsers = [b for b in selected_browsers if b in definitions]
+    total_browsers = max(1, len(valid_browsers))
 
-    for b_key in selected_browsers:
-        if b_key not in definitions:
-            continue
+    for idx, b_key in enumerate(valid_browsers):
         info = definitions[b_key]
         root = info['profile_root']
+        b_name = info['name']
+
+        b_pct_start = 5 + int((idx / total_browsers) * 85)
+        b_pct_end = 5 + int(((idx + 1) / total_browsers) * 85)
+        b_range = b_pct_end - b_pct_start
+
         if not os.path.exists(root):
-            log(f"Bỏ qua {info['name']}: Không tìm thấy thư mục profile ({root})", "WARN")
+            report(b_pct_end, b_name, f"Bỏ qua {b_name}", f"Chưa có dữ liệu profile ({root})", f"Bỏ qua {b_name}: Không tìm thấy thư mục profile ({root})")
             continue
 
-        log(f"Đang sao lưu {info['name']}...", "INFO")
+        report(b_pct_start, b_name, f"Đang chuẩn bị {b_name}", f"Kiểm tra và đóng tiến trình {b_name}...", f"Đang sao lưu {b_name}...")
         b_backup_dir = os.path.join(backup_path, b_key)
         os.makedirs(b_backup_dir, exist_ok=True)
         
@@ -432,38 +551,42 @@ def backup_browser_data(selected_browsers, options, target_dir="", logger=None):
                 os.makedirs(pd_dest, exist_ok=True)
 
                 if options.get('full_profile'):
-                    log(f"  ➜ Sao lưu Toàn Bộ Hồ Sơ (Full Profile) {pname}...", "INFO")
+                    report(b_pct_start + int(b_range * 0.4), b_name, f"Sao lưu Toàn Bộ Hồ Sơ {pname}", f"Đang sao chép các tệp hồ sơ người dùng...", f"  ➜ Sao lưu Toàn Bộ Hồ Sơ (Full Profile) {pname}...")
                     count = _copy_tree_safe(pd, pd_dest)
                     b_manifest['files_backed_up'] += count
                 else:
                     if options.get('bookmarks'):
+                        report(b_pct_start + int(b_range * 0.2), b_name, f"Sao lưu Dấu trang (Bookmarks)", f"{pname} - Đang sao chép Bookmarks...", None)
                         bm = os.path.join(pd, 'Bookmarks')
                         if os.path.exists(bm):
                             _copy_file_safe(bm, os.path.join(pd_dest, 'Bookmarks'))
                             b_manifest['files_backed_up'] += 1
-                            log(f"  ✅ [Bookmarks] {pname}", "SUCCESS")
+                            report(b_pct_start + int(b_range * 0.3), b_name, f"Đã lưu Bookmarks", f"{pname} - Bookmarks hoàn tất", f"  ✅ [Bookmarks] {b_name} ({pname})")
 
                     if options.get('passwords'):
+                        report(b_pct_start + int(b_range * 0.4), b_name, f"Sao lưu Mật khẩu & Đăng nhập", f"{pname} - Đang sao chép Login Data...", None)
                         for pass_file in ['Login Data', 'Login Data For Account', 'Web Data']:
                             pf = os.path.join(pd, pass_file)
                             if os.path.exists(pf):
                                 _copy_file_safe(pf, os.path.join(pd_dest, pass_file))
                                 b_manifest['files_backed_up'] += 1
-                        log(f"  ✅ [Passwords & Login Data] {pname}", "SUCCESS")
+                        report(b_pct_start + int(b_range * 0.5), b_name, f"Đã lưu Mật khẩu", f"{pname} - Mật khẩu hoàn tất", f"  ✅ [Passwords & Login Data] {b_name} ({pname})")
 
                     if options.get('history'):
+                        report(b_pct_start + int(b_range * 0.6), b_name, f"Sao lưu Lịch sử duyệt web", f"{pname} - Đang sao chép History...", None)
                         hf = os.path.join(pd, 'History')
                         if os.path.exists(hf):
                             _copy_file_safe(hf, os.path.join(pd_dest, 'History'))
                             b_manifest['files_backed_up'] += 1
-                            log(f"  ✅ [History] {pname}", "SUCCESS")
+                        report(b_pct_start + int(b_range * 0.7), b_name, f"Đã lưu Lịch sử", f"{pname} - History hoàn tất", f"  ✅ [History] {b_name} ({pname})")
 
                     if options.get('extensions'):
+                        report(b_pct_start + int(b_range * 0.8), b_name, f"Sao lưu Tiện ích mở rộng", f"{pname} - Đang sao chép Extensions...", None)
                         ext_dir = os.path.join(pd, 'Extensions')
                         if os.path.exists(ext_dir):
                             count = _copy_tree_safe(ext_dir, os.path.join(pd_dest, 'Extensions'))
                             b_manifest['files_backed_up'] += count
-                            log(f"  ✅ [Extensions] {pname} ({count} files)", "SUCCESS")
+                        report(b_pct_start + int(b_range * 0.9), b_name, f"Đã lưu Tiện ích", f"{pname} - Extensions hoàn tất", f"  ✅ [Extensions] {b_name} ({pname})")
 
         elif info['type'] == 'firefox':
             p_dirs = [d for d in glob.glob(os.path.join(root, '*')) if os.path.isdir(d)]
@@ -473,7 +596,7 @@ def backup_browser_data(selected_browsers, options, target_dir="", logger=None):
                 os.makedirs(pd_dest, exist_ok=True)
 
                 if options.get('full_profile'):
-                    log(f"  ➜ Sao lưu Toàn Bộ Hồ Sơ Firefox {pname}...", "INFO")
+                    report(b_pct_start + int(b_range * 0.5), b_name, f"Sao lưu Toàn Bộ Hồ Sơ Firefox {pname}", "Đang sao chép toàn bộ tệp profile...", f"  ➜ Sao lưu Toàn Bộ Hồ Sơ Firefox {pname}...")
                     count = _copy_tree_safe(pd, pd_dest)
                     b_manifest['files_backed_up'] += count
                 else:
@@ -483,7 +606,7 @@ def backup_browser_data(selected_browsers, options, target_dir="", logger=None):
                             if os.path.exists(fp):
                                 _copy_file_safe(fp, os.path.join(pd_dest, f))
                                 b_manifest['files_backed_up'] += 1
-                        log(f"  ✅ [Bookmarks & History] Firefox {pname}", "SUCCESS")
+                        report(b_pct_start + int(b_range * 0.4), b_name, f"Đã lưu Bookmarks & History", f"Firefox {pname}", f"  ✅ [Bookmarks & History] Firefox {pname}")
 
                     if options.get('passwords'):
                         for f in ['key4.db', 'logins.json']:
@@ -491,7 +614,7 @@ def backup_browser_data(selected_browsers, options, target_dir="", logger=None):
                             if os.path.exists(fp):
                                 _copy_file_safe(fp, os.path.join(pd_dest, f))
                                 b_manifest['files_backed_up'] += 1
-                        log(f"  ✅ [Passwords] Firefox {pname}", "SUCCESS")
+                        report(b_pct_start + int(b_range * 0.8), b_name, f"Đã lưu Mật khẩu Firefox", f"Firefox {pname}", f"  ✅ [Passwords] Firefox {pname}")
 
         elif info['type'] == 'opera':
             pd_dest = os.path.join(b_backup_dir, 'Default')
@@ -509,13 +632,16 @@ def backup_browser_data(selected_browsers, options, target_dir="", logger=None):
 
         manifest['browsers'][b_key] = b_manifest
         success_count += 1
+        report(b_pct_end, b_name, f"Hoàn tất {b_name}", f"Đã sao lưu thành công {b_name}", f"Hoàn tất sao lưu {b_name}")
 
     # Save manifest.json
+    report(95, "", "Đang ghi Manifest", "Lưu thông tin gói sao lưu manifest.json...", "Đang lưu manifest.json...")
     manifest_path = os.path.join(backup_path, 'manifest.json')
     with open(manifest_path, 'w', encoding='utf-8') as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
 
-    log(f"Hoàn tất sao lưu {success_count} trình duyệt! Lưu tại: {backup_path}", "SUCCESS")
+    package_size = fmt_bytes(get_dir_size_fast(backup_path))
+    report(100, "", "Sao lưu hoàn tất!", f"Đã lưu thành công {success_count} trình duyệt ({package_size})", f"🎉 Hoàn tất sao lưu {success_count} trình duyệt! Dung lượng: {package_size}")
 
     return {
         'success': True,
@@ -523,12 +649,120 @@ def backup_browser_data(selected_browsers, options, target_dir="", logger=None):
         'folder_name': backup_folder_name,
         'timestamp': timestamp,
         'browsers_count': success_count,
-        'message': f"Đã sao lưu thành công {success_count} trình duyệt vào:\n{backup_path}"
+        'size': package_size,
+        'message': f"Đã sao lưu thành công {success_count} trình duyệt ({package_size}) vào:\n{backup_path}"
     }
 
 
-def restore_browser_data(backup_folder, selected_browsers, options, logger=None):
-    """Restores browser data from backup folder."""
+def resolve_restore_plan(backup_folder, selected_browsers, definitions):
+    """
+    Intelligently maps backup sources to browser definitions and profiles.
+    Accommodates:
+    - User selected the Root backup package (e.g. BrowserBackup_YYYYMMDD_HHMMSS)
+    - User selected a Browser folder directly (e.g. BrowserBackup_.../Brave or C:/MyBackups/Brave)
+    - User selected a Profile folder directly (e.g. BrowserBackup_.../Brave/Default)
+    - User selected a folder where backup files (Bookmarks, History...) are located directly
+    """
+    plan = {}
+    norm_folder = os.path.normpath(backup_folder.strip().strip('"'))
+    folder_name = os.path.basename(norm_folder)
+    parent_dir = os.path.dirname(norm_folder)
+    parent_name = os.path.basename(parent_dir) if parent_dir else ""
+
+    # Detect if selected folder name or its parent name matches any known browser
+    matched_browser_by_folder = None
+    matched_browser_by_parent = None
+    for b_k, b_inf in definitions.items():
+        if folder_name.lower() in [b_k.lower(), b_inf['name'].lower()]:
+            matched_browser_by_folder = b_k
+        if parent_name and parent_name.lower() in [b_k.lower(), b_inf['name'].lower()]:
+            matched_browser_by_parent = b_k
+
+    # Determine candidate browser keys to examine
+    candidates = list(selected_browsers) if selected_browsers else []
+    if matched_browser_by_folder and matched_browser_by_folder not in candidates:
+        candidates.append(matched_browser_by_folder)
+    if matched_browser_by_parent and matched_browser_by_parent not in candidates:
+        candidates.append(matched_browser_by_parent)
+
+    valid_candidates = [b for b in candidates if b in definitions]
+    if not valid_candidates:
+        valid_candidates = list(definitions.keys())
+
+    for b_key in valid_candidates:
+        info = definitions[b_key]
+        b_name = info['name']
+
+        src_dir = None
+        is_direct_profile = False
+
+        # 1. Direct subfolder matching browser key or browser name inside norm_folder
+        c_sub = os.path.join(norm_folder, b_key)
+        c_name = os.path.join(norm_folder, b_name)
+        if os.path.isdir(c_sub):
+            src_dir = c_sub
+        elif os.path.isdir(c_name):
+            src_dir = c_name
+        
+        # 2. norm_folder IS the browser's backup folder (e.g. ".../Brave")
+        elif matched_browser_by_folder == b_key:
+            src_dir = norm_folder
+
+        # 3. norm_folder is a profile folder inside browser folder (e.g. ".../Brave/Default")
+        elif matched_browser_by_parent == b_key:
+            src_dir = norm_folder
+            is_direct_profile = True
+
+        # 4. Sibling folder under parent_dir
+        # (e.g. user selected ".../BrowserBackup_.../Brave" but also wants Edge, and parent has "Edge")
+        elif parent_dir and os.path.isdir(os.path.join(parent_dir, b_key)):
+            src_dir = os.path.join(parent_dir, b_key)
+
+        # 5. Fallback: norm_folder contains profile data (Default, Bookmarks, History, Login Data...)
+        # and user only selected 1 browser or b_key is the first/only candidate
+        elif not src_dir and len(valid_candidates) == 1:
+            if os.path.isdir(os.path.join(norm_folder, 'Default')):
+                src_dir = norm_folder
+            elif any(os.path.exists(os.path.join(norm_folder, x)) for x in ['Bookmarks', 'History', 'Login Data', 'Web Data', 'prefs.js']):
+                src_dir = norm_folder
+                is_direct_profile = True
+
+        if not src_dir or not os.path.exists(src_dir):
+            continue
+
+        # Now extract list of profiles from src_dir
+        profiles = []
+        if is_direct_profile:
+            pname = folder_name if folder_name.lower().startswith(('default', 'profile')) else 'Default'
+            profiles.append({'src': src_dir, 'target_profile': pname})
+        else:
+            # Check subdirectories
+            sub_dirs = [d for d in glob.glob(os.path.join(src_dir, '*')) if os.path.isdir(d)]
+            p_subdirs = [d for d in sub_dirs if os.path.basename(d).lower().startswith(('default', 'profile'))]
+            if not p_subdirs and info['type'] == 'firefox' and sub_dirs:
+                p_subdirs = sub_dirs
+            elif not p_subdirs and sub_dirs:
+                p_subdirs = sub_dirs
+
+            if p_subdirs:
+                for pd in p_subdirs:
+                    profiles.append({'src': pd, 'target_profile': os.path.basename(pd)})
+            else:
+                # Direct files in src_dir
+                profiles.append({'src': src_dir, 'target_profile': 'Default'})
+
+        if profiles:
+            plan[b_key] = {
+                'info': info,
+                'src_dir': src_dir,
+                'profiles': profiles
+            }
+
+    return plan
+
+
+def restore_browser_data(backup_folder, selected_browsers, options=None, logger=None, progress_callback=None):
+    """Restores browser data from backup folder with real-time progress callbacks."""
     definitions = get_browser_definitions()
     
     def log(msg, level="INFO"):
@@ -538,86 +772,129 @@ def restore_browser_data(backup_folder, selected_browsers, options, logger=None)
             elif callable(logger):
                 logger(msg)
 
+    def report(percent, browser_name, step_title, detail, log_msg=None):
+        if log_msg:
+            log(log_msg)
+        if progress_callback and callable(progress_callback):
+            try:
+                progress_callback(percent, browser_name, step_title, detail, log_msg)
+            except Exception:
+                pass
+
     if not backup_folder or not os.path.exists(backup_folder):
         return {'success': False, 'message': 'Thư mục Sao Lưu không tồn tại!'}
 
-    manifest_path = os.path.join(backup_folder, 'manifest.json')
-    manifest = {}
-    if os.path.exists(manifest_path):
-        try:
-            with open(manifest_path, 'r', encoding='utf-8') as f:
-                manifest = json.load(f)
-        except Exception:
-            pass
+    norm_folder = os.path.normpath(backup_folder.strip().strip('"'))
+    report(5, "", "Đọc thông tin bản sao lưu", f"Kiểm tra thư mục: {norm_folder}", f"Đang tiến hành phân tích thư mục: {norm_folder}...")
 
-    log(f"Đang tiến hành phục hồi dữ liệu từ: {backup_folder}...", "INFO")
+    # Plan restore
+    plan = resolve_restore_plan(norm_folder, selected_browsers, definitions)
+
+    if not plan:
+        report(100, "", "Không tìm thấy dữ liệu", "Thư mục không chứa bản sao lưu hợp lệ", f"❌ Không tìm thấy bản sao lưu trình duyệt hợp lệ trong: {norm_folder}")
+        return {
+            'success': False,
+            'browsers_count': 0,
+            'message': f"Không tìm thấy bản sao lưu trình duyệt hợp lệ trong:\n{norm_folder}\n\nVui lòng kiểm tra lại thư mục đã chọn!"
+        }
+
     restored_count = 0
+    total_browsers = max(1, len(plan))
 
-    for b_key in selected_browsers:
-        if b_key not in definitions:
-            continue
-        info = definitions[b_key]
-        b_backup_src = os.path.join(backup_folder, b_key)
-        if not os.path.exists(b_backup_src):
-            log(f"Bỏ qua {info['name']}: Không tìm thấy bản sao lưu trong thư mục.", "WARN")
-            continue
+    for idx, (b_key, p_data) in enumerate(plan.items()):
+        info = p_data['info']
+        b_name = info['name']
+        profiles = p_data['profiles']
+        
+        b_pct_start = 5 + int((idx / total_browsers) * 90)
+        b_pct_end = 5 + int(((idx + 1) / total_browsers) * 90)
 
         target_root = info['profile_root']
         os.makedirs(target_root, exist_ok=True)
 
-        # Close running processes
+        report(b_pct_start, b_name, f"Đang phục hồi {b_name}", f"Đóng tiến trình {b_name} và sao chép dữ liệu...", f"Đang phục hồi cho {b_name}...")
         close_browser_processes(info['process'])
-        log(f"Đang phục hồi cho {info['name']}...", "INFO")
 
-        # Copy backed up files back into profile directories
-        sub_dirs = [d for d in glob.glob(os.path.join(b_backup_src, '*')) if os.path.isdir(d)]
-        if not sub_dirs:
-            sub_dirs = [b_backup_src]
-
-        for s_dir in sub_dirs:
-            pname = os.path.basename(s_dir)
-            target_profile = os.path.join(target_root, pname) if info['type'] in ['chromium', 'firefox'] else target_root
+        browser_files_count = 0
+        for p_idx, prof in enumerate(profiles):
+            src_p = prof['src']
+            target_profile_name = prof['target_profile']
+            target_profile = os.path.join(target_root, target_profile_name) if info['type'] in ['chromium', 'firefox'] else target_root
             os.makedirs(target_profile, exist_ok=True)
 
-            count = _copy_tree_safe(s_dir, target_profile)
-            log(f"  ✅ [Khôi phục] {info['name']} -> {pname} ({count} files)", "SUCCESS")
+            step_sub_pct = b_pct_start + int((p_idx + 0.5) / len(profiles) * (b_pct_end - b_pct_start))
+            report(step_sub_pct, b_name, f"Đang phục hồi hồ sơ {target_profile_name}", f"Sao chép dữ liệu từ {os.path.basename(src_p)}...", None)
+
+            count = _copy_tree_safe(src_p, target_profile)
+            browser_files_count += count
+            
+            step_done_pct = b_pct_start + int((p_idx + 1) / len(profiles) * (b_pct_end - b_pct_start))
+            report(step_done_pct, b_name, f"Đã phục hồi {target_profile_name}", f"Đã sao chép {count} tệp tin", f"  ✅ [Khôi phục] {b_name} -> {target_profile_name} ({count} tệp tin)")
 
         restored_count += 1
+        report(b_pct_end, b_name, f"Hoàn tất {b_name}", f"Đã phục hồi {browser_files_count} tệp tin cho {b_name}", f"Hoàn tất phục hồi {b_name} ({browser_files_count} tệp)")
 
-    log(f"Hoàn tất phục hồi cho {restored_count} trình duyệt!", "SUCCESS")
+    if restored_count == 0:
+        report(100, "", "Phục hồi thất bại", "0 trình duyệt được phục hồi", f"❌ Không có trình duyệt nào được phục hồi!")
+        return {
+            'success': False,
+            'browsers_count': 0,
+            'message': f"Không thể phục hồi trình duyệt từ thư mục:\n{norm_folder}"
+        }
+
+    report(100, "", "Phục hồi hoàn tất!", f"Đã khôi phục thành công {restored_count} trình duyệt!", f"🎉 Hoàn tất phục hồi thành công cho {restored_count} trình duyệt!")
     return {
         'success': True,
         'browsers_count': restored_count,
-        'message': f"Đã phục hồi thành công {restored_count} trình duyệt từ:\n{backup_folder}"
+        'message': f"Đã phục hồi thành công {restored_count} trình duyệt từ:\n{norm_folder}"
     }
 
 
 def get_backup_history(search_dir=""):
-    """Scans for previous backup packages."""
-    if not search_dir:
-        user_profile = os.environ.get('USERPROFILE', 'C:\\')
-        search_dir = os.path.join(user_profile, 'Desktop', 'Browser_Backups')
+    """Scans for previous backup packages across all candidate drives and search_dir."""
+    candidate_dirs = []
+    if search_dir and os.path.exists(search_dir):
+        candidate_dirs.append(search_dir)
+        
+    def_dir = get_default_backup_dir()
+    if def_dir not in candidate_dirs:
+        candidate_dirs.append(def_dir)
+
+    for letter in ['D', 'E', 'F', 'G']:
+        p = f"{letter}:\\Browser_Backups"
+        if os.path.exists(p) and p not in candidate_dirs:
+            candidate_dirs.append(p)
+
+    user_profile = os.environ.get('USERPROFILE', 'C:\\')
+    desktop_backup = os.path.join(user_profile, 'Desktop', 'Browser_Backups')
+    if desktop_backup not in candidate_dirs and os.path.exists(desktop_backup):
+        candidate_dirs.append(desktop_backup)
 
     history = []
-    if not os.path.exists(search_dir):
-        return history
-
-    try:
-        subfolders = [os.path.join(search_dir, d) for d in os.listdir(search_dir) if os.path.isdir(os.path.join(search_dir, d))]
-        for folder in subfolders:
-            manifest_p = os.path.join(folder, 'manifest.json')
-            if os.path.exists(manifest_p):
-                try:
-                    with open(manifest_p, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    data['path'] = folder
-                    data['folder_name'] = os.path.basename(folder)
-                    data['size'] = fmt_bytes(get_dir_size_fast(folder))
-                    history.append(data)
-                except Exception:
-                    pass
-    except Exception:
-        pass
+    seen_paths = set()
+    for s_dir in candidate_dirs:
+        if not os.path.exists(s_dir):
+            continue
+        try:
+            subfolders = [os.path.join(s_dir, d) for d in os.listdir(s_dir) if os.path.isdir(os.path.join(s_dir, d))]
+            for folder in subfolders:
+                folder_norm = os.path.normpath(folder).lower()
+                if folder_norm in seen_paths:
+                    continue
+                manifest_p = os.path.join(folder, 'manifest.json')
+                if os.path.exists(manifest_p):
+                    try:
+                        with open(manifest_p, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                        data['path'] = folder
+                        data['folder_name'] = os.path.basename(folder)
+                        data['size'] = fmt_bytes(get_dir_size_fast(folder))
+                        history.append(data)
+                        seen_paths.add(folder_norm)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
     history.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
     return history

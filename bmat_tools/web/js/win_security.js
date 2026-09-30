@@ -1,5 +1,5 @@
 /**
- * IT-Tools 2026 - Windows Security & Activation Audit Module
+ * IT Tool LTT 2026 - Windows Security & Activation Audit Module
  */
 Object.assign(AppController.prototype, {
   async runWinCheckAudit() {
@@ -137,11 +137,58 @@ Object.assign(AppController.prototype, {
     }
   },
 
+  async deactivateDigitalLicense() {
+    const confirmMsg = "CẢNH BÁO HỦY KÍCH HOẠT DIGITAL LICENSE:\n\n" +
+      "Hệ thống sẽ ngắt liên kết bản quyền kỹ thuật số (HWID), gỡ key và chuyển Windows về trạng thái 'Chưa Kích Hoạt' (Not Active).\n\n" +
+      "Bạn có chắc chắn muốn thực hiện không?\n(Bạn có thể khôi phục lại bất kỳ lúc nào bằng nút 'Khôi Phục Digital License')";
+    if (!confirm(confirmMsg)) return;
+    this.addLog("warn", "Đang hủy kích hoạt Digital License và đưa Windows về trạng thái Chưa kích hoạt...");
+    if (window.pywebview && window.pywebview.api) {
+      const res = await window.pywebview.api.deactivate_win_digital();
+      this.addLog(res.success ? "success" : "error", res.message);
+      alert(res.message);
+      this.runWinCheckAudit();
+    }
+  },
+
+  async restoreDigitalLicense() {
+    if (!confirm("Bạn muốn khôi phục lại kích hoạt Bản Quyền Kỹ Thuật Số (Digital License) theo máy tính?")) return;
+    this.addLog("info", "Đang nạp lại khóa mặc định và kích hoạt Digital License (slmgr /ato)...");
+    if (window.pywebview && window.pywebview.api) {
+      const res = await window.pywebview.api.restore_win_digital();
+      this.addLog(res.success ? "success" : "error", res.message);
+      alert(res.message);
+      this.runWinCheckAudit();
+    }
+  },
+
   async rearmWindows() {
-    if (!confirm("Bạn CHẮC CHẮN muốn đặt lại thời gian dùng thử (slmgr /rearm)?")) return;
-    this.addLog("info", "Đang đặt lại thời gian dùng thử (slmgr /rearm)...");
+    if (!confirm("Bạn CHẮC CHẮN muốn đặt lại thời gian dùng thử Windows (slmgr /rearm)?")) return;
+    this.addLog("info", "Đang đặt lại thời gian dùng thử Windows (slmgr /rearm)...");
     if (window.pywebview && window.pywebview.api) {
       const res = await window.pywebview.api.rearm_windows();
+      this.addLog(res.success ? "success" : "error", res.message);
+      alert(res.message);
+      this.runWinCheckAudit();
+    }
+  },
+
+  async rearmOffice() {
+    if (!confirm("Bạn CHẮC CHẮN muốn đặt lại thời gian dùng thử Microsoft Office (ospp.vbs /rearm)?")) return;
+    this.addLog("info", "Đang đặt lại thời gian dùng thử Office...");
+    if (window.pywebview && window.pywebview.api) {
+      const res = await window.pywebview.api.rearm_office();
+      this.addLog(res.success ? "success" : "error", res.message);
+      alert(res.message);
+    }
+  },
+
+  async installOfficeKeyPrompt() {
+    const key = prompt("Nhập Product Key Microsoft Office mới (25 ký tự):", "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX");
+    if (!key) return;
+    this.addLog("info", `Đang cài đặt Product Key Office: ${key}...`);
+    if (window.pywebview && window.pywebview.api) {
+      const res = await window.pywebview.api.install_office_key(key);
       this.addLog(res.success ? "success" : "error", res.message);
       alert(res.message);
     }
@@ -174,8 +221,16 @@ Object.assign(AppController.prototype, {
     const wuCard = document.getElementById("wu-status-card");
     if (wuText) wuText.innerText = status.wu_status_text;
     if (wuBadge) {
-      if (status.wu_enabled) {
-        wuBadge.innerText = "🟢 ĐANG BẬT";
+      if (status.wu_badge === "⏸️ TẠM DỪNG" || (!status.wu_enabled && status.wu_status_text.includes("TẠM DỪNG"))) {
+        wuBadge.innerText = status.wu_badge || "⏸️ TẠM DỪNG";
+        wuBadge.style.background = "#fef3c7";
+        wuBadge.style.color = "#b45309";
+        if (wuCard) {
+          wuCard.style.background = "#fffbeb";
+          wuCard.style.borderColor = "#fde68a";
+        }
+      } else if (status.wu_enabled) {
+        wuBadge.innerText = status.wu_badge || "🟢 ĐANG BẬT";
         wuBadge.style.background = "#dcfce7";
         wuBadge.style.color = "#15803d";
         if (wuCard) {
@@ -183,7 +238,7 @@ Object.assign(AppController.prototype, {
           wuCard.style.borderColor = "#bbf7d0";
         }
       } else {
-        wuBadge.innerText = "🔴 ĐÃ TẮT";
+        wuBadge.innerText = status.wu_badge || "🔴 ĐÃ TẮT";
         wuBadge.style.background = "#fee2e2";
         wuBadge.style.color = "#b91c1c";
         if (wuCard) {
@@ -193,14 +248,22 @@ Object.assign(AppController.prototype, {
       }
     }
 
-    // Defender Card
+    // Defender / Antivirus Card
     const wdText = document.getElementById("wd-status-text");
     const wdBadge = document.getElementById("wd-status-badge");
     const wdCard = document.getElementById("wd-status-card");
     if (wdText) wdText.innerText = status.defender_status_text;
     if (wdBadge) {
-      if (status.defender_enabled) {
-        wdBadge.innerText = "🟢 ĐANG BẬT";
+      if (status.has_third_party) {
+        wdBadge.innerText = status.defender_badge || "🟢 AN TOÀN";
+        wdBadge.style.background = "#e0f2fe";
+        wdBadge.style.color = "#0369a1";
+        if (wdCard) {
+          wdCard.style.background = "#f0f9ff";
+          wdCard.style.borderColor = "#bae6fd";
+        }
+      } else if (status.defender_enabled) {
+        wdBadge.innerText = status.defender_badge || "🟢 ĐANG BẬT";
         wdBadge.style.background = "#dcfce7";
         wdBadge.style.color = "#15803d";
         if (wdCard) {
@@ -208,7 +271,7 @@ Object.assign(AppController.prototype, {
           wdCard.style.borderColor = "#bbf7d0";
         }
       } else {
-        wdBadge.innerText = "🔴 ĐÃ TẮT";
+        wdBadge.innerText = status.defender_badge || "🔴 ĐÃ TẮT";
         wdBadge.style.background = "#fee2e2";
         wdBadge.style.color = "#b91c1c";
         if (wdCard) {
@@ -338,12 +401,12 @@ Object.assign(AppController.prototype, {
 
   // ── FIREWALL MANAGER DASHBOARD ─────────────────────────────────────────
   async loadFirewallStatus() {
-    this.addLog("info", "Đang kiểm tra trạng thái Windows Firewall các profile...");
+    this.addLog("info", "Đang kiểm tra trạng thái Windows Firewall các profile và quy tắc...");
     let st = null;
     if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_firewall_status === 'function') {
       st = await window.pywebview.api.get_firewall_status();
     } else {
-      st = { success: true, domain: true, private: true, public: false, all_on: false, any_on: true };
+      st = { success: true, domain: true, private: true, public: true, all_on: true, any_on: true, allow_inbound: false, file_sharing: true, file_sharing_count: 43, rdp: true, rdp_count: 3 };
     }
 
     if (!st) return;
@@ -351,6 +414,9 @@ Object.assign(AppController.prototype, {
     const domBadge = document.getElementById("fw-status-domain");
     const privBadge = document.getElementById("fw-status-private");
     const pubBadge = document.getElementById("fw-status-public");
+    const inBadge = document.getElementById("fw-status-inbound");
+    const sharingBadge = document.getElementById("fw-status-sharing");
+    const rdpBadge = document.getElementById("fw-status-rdp");
 
     if (domBadge) {
       domBadge.className = st.domain ? "badge badge-success" : "badge badge-danger";
@@ -364,8 +430,20 @@ Object.assign(AppController.prototype, {
       pubBadge.className = st.public ? "badge badge-success" : "badge badge-danger";
       pubBadge.innerText = st.public ? "🛡️ BẬT (Active)" : "🚫 TẮT (Disabled)";
     }
+    if (inBadge) {
+      inBadge.className = st.allow_inbound ? "badge badge-danger" : "badge badge-success";
+      inBadge.innerText = st.allow_inbound ? "🔓 Cho phép tất cả" : "🔒 Chặn (Mặc định)";
+    }
+    if (sharingBadge) {
+      sharingBadge.className = st.file_sharing ? "badge badge-success" : "badge badge-danger";
+      sharingBadge.innerText = st.file_sharing ? `🟢 ĐANG BẬT (${st.file_sharing_count || 'Active'} quy tắc)` : "🚫 ĐANG TẮT";
+    }
+    if (rdpBadge) {
+      rdpBadge.className = st.rdp ? "badge badge-success" : "badge badge-danger";
+      rdpBadge.innerText = st.rdp ? `🟢 ĐANG BẬT (${st.rdp_count || 'Active'} quy tắc)` : "🚫 ĐANG TẮT";
+    }
 
-    this.addLog("success", "Đã nạp trạng thái Windows Firewall!");
+    this.addLog("success", "Đã nạp trạng thái Windows Firewall thực tế!");
   },
 
   async setFirewallAction(action) {
@@ -373,10 +451,125 @@ Object.assign(AppController.prototype, {
     if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.set_firewall_action === 'function') {
       const res = await window.pywebview.api.set_firewall_action(action);
       this.addLog(res.success ? "success" : "error", res.message);
+      // Cập nhật ngay trạng thái trên giao diện trước khi alert
+      await this.loadFirewallStatus();
       alert(res.message);
-      this.loadFirewallStatus();
     } else {
       alert(`[MOCK] Đã thực hiện ${action} cho Firewall!`);
     }
+  },
+
+  currentFwRulesList: [],
+
+  async showFirewallRulesDetail(type = 'fps') {
+    const modal = document.getElementById("fw-rules-detail-modal");
+    if (!modal) return;
+
+    const titleElem = document.getElementById("fw-rules-modal-title");
+    const subElem = document.getElementById("fw-rules-modal-subtitle");
+    const tbody = document.getElementById("fw-rules-modal-tbody");
+    const searchInput = document.getElementById("fw-rules-search-input");
+
+    if (searchInput) searchInput.value = "";
+
+    const typeName = type === 'fps' ? 'Chia Sẻ File & Máy In (LAN)' : 'Remote Desktop (RDP)';
+    if (titleElem) titleElem.innerText = `Chi Tiết Quy Tắc Firewall: ${typeName}`;
+    if (subElem) subElem.innerText = `Đang quét danh sách quy tắc thời gian thực từ Windows...`;
+
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 20px; color: #64748b;">⏳ Đang tải dữ liệu quy tắc thời gian thực từ máy tính...</td></tr>`;
+    modal.style.display = "flex";
+
+    let res = null;
+    if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_firewall_rules_detail === 'function') {
+      res = await window.pywebview.api.get_firewall_rules_detail(type);
+    } else {
+      res = { success: true, rules: [] };
+    }
+
+    this.currentFwRulesList = (res && res.rules) ? res.rules : [];
+    if (subElem) subElem.innerText = `Thời gian thực từ hệ thống (${this.currentFwRulesList.length} quy tắc được tìm thấy)`;
+
+    this.renderFirewallRulesModal(this.currentFwRulesList);
+  },
+
+  renderFirewallRulesModal(rules) {
+    const tbody = document.getElementById("fw-rules-modal-tbody");
+    const countLabel = document.getElementById("fw-rules-count-label");
+    const summaryBadges = document.getElementById("fw-rules-summary-badges");
+    if (!tbody) return;
+
+    if (!rules || rules.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 20px; color: #94a3b8;">Không có quy tắc nào phù hợp.</td></tr>`;
+      if (countLabel) countLabel.innerText = "Hiển thị 0 quy tắc";
+      return;
+    }
+
+    const enabledCount = rules.filter(r => (r.enabled || '').toLowerCase() === 'yes').length;
+    if (summaryBadges) {
+      summaryBadges.innerHTML = `
+        <span class="badge badge-success" style="font-size: 11px;">🟢 Bật: ${enabledCount}</span>
+        <span class="badge badge-danger" style="font-size: 11px;">🚫 Tắt: ${rules.length - enabledCount}</span>
+      `;
+    }
+    if (countLabel) countLabel.innerText = `Đang hiển thị ${rules.length} quy tắc`;
+
+    tbody.innerHTML = rules.map((r, idx) => {
+      const isEn = (r.enabled || '').toLowerCase() === 'yes';
+      const isOut = (r.direction || '').toLowerCase() === 'out';
+      const port = r.local_port || r.remote_port || 'Tất cả';
+
+      return `
+        <tr style="border-bottom: 1px solid #f1f5f9; background: ${idx % 2 === 0 ? '#ffffff' : '#fafafa'};">
+          <td style="padding: 6px 10px; color: #94a3b8; font-size: 11px;">${idx + 1}</td>
+          <td style="padding: 6px 10px;">
+            <span style="font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: ${isOut ? '#e0f2fe' : '#fef3c7'}; color: ${isOut ? '#0369a1' : '#b45309'};">
+              ${isOut ? '📤 OUT' : '📥 IN'}
+            </span>
+          </td>
+          <td style="padding: 6px 10px; font-weight: 600; color: #1e293b;">
+            ${r.name || 'N/A'}
+          </td>
+          <td style="padding: 6px 10px; color: #475569; font-size: 11.5px;">
+            ${r.category || 'Khác'}
+          </td>
+          <td style="padding: 6px 10px; color: #64748b; font-size: 11px;">
+            ${r.profiles || 'All'}
+          </td>
+          <td style="padding: 6px 10px; font-family: monospace; font-size: 11.5px;">
+            ${r.protocol || 'Any'}
+          </td>
+          <td style="padding: 6px 10px; font-family: monospace; font-size: 11.5px; color: #0284c7;">
+            ${port}
+          </td>
+          <td style="padding: 6px 10px;">
+            <span class="badge ${isEn ? 'badge-success' : 'badge-danger'}" style="font-size: 11px;">
+              ${isEn ? 'BẬT' : 'TẮT'}
+            </span>
+          </td>
+        </tr>
+      `;
+    }).join("");
+  },
+
+  filterFirewallRulesModal() {
+    const q = (document.getElementById("fw-rules-search-input")?.value || "").toLowerCase().trim();
+    if (!q) {
+      this.renderFirewallRulesModal(this.currentFwRulesList);
+      return;
+    }
+    const filtered = this.currentFwRulesList.filter(r => {
+      const matchName = (r.name || '').toLowerCase().includes(q);
+      const matchCat = (r.category || '').toLowerCase().includes(q);
+      const matchPort = (r.local_port || '' + r.remote_port || '').toLowerCase().includes(q);
+      const matchProto = (r.protocol || '').toLowerCase().includes(q);
+      const matchDir = (r.direction || '').toLowerCase().includes(q);
+      return matchName || matchCat || matchPort || matchProto || matchDir;
+    });
+    this.renderFirewallRulesModal(filtered);
+  },
+
+  closeFirewallRulesDetail() {
+    const modal = document.getElementById("fw-rules-detail-modal");
+    if (modal) modal.style.display = "none";
   }
 });

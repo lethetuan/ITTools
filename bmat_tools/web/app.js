@@ -1,6 +1,6 @@
 /**
- * IT-Tools 2026 Modern Application Logic - Core Controller
- * Author: Lê Thế Tuấn | 0352 194 195 | https://lethetuanpc.blogspot.com/
+ * IT Tool LTT 2026 Modern Application Logic - Core Controller
+ * Author: Lê Thế Tuấn | 0352 194 195 | https://lethetuanpc.blogspot.com | Telegram: https://t.me/lethetuanpc
  */
 
 class AppController {
@@ -23,6 +23,7 @@ class AppController {
   init() {
     this.bindEvents();
     this.startClock();
+    this.updateZoomUI();
     this.checkPyWebViewApi();
   }
 
@@ -60,6 +61,7 @@ class AppController {
     if (typeof this.runWinCheckAudit === 'function') this.runWinCheckAudit();
     if (typeof this.checkExistingOfficeInstall === 'function') this.checkExistingOfficeInstall();
     if (typeof this.loadScheduledShutdownTasks === 'function') this.loadScheduledShutdownTasks();
+    this.loadAutostartStatus();
   }
 
   bindEvents() {
@@ -138,6 +140,8 @@ class AppController {
             if (typeof this.loadCurrencyRates === 'function') this.loadCurrencyRates();
           } else if (tabId === "tab-office") {
             if (typeof this.checkExistingOfficeInstall === 'function') this.checkExistingOfficeInstall();
+          } else if (tabId === "tab-sendto") {
+            if (typeof this.loadSendToEntries === 'function') this.loadSendToEntries();
           }
         } catch (err) {
           console.error("Lỗi chuyển tab chính:", err);
@@ -145,7 +149,7 @@ class AppController {
       });
     });
 
-    // Sub-Tabs inside Printer Fix page
+    // Sub-Tabs handler (scoped per parent section)
     const subtabBtns = document.querySelectorAll(".subtab-btn");
     subtabBtns.forEach(btn => {
       btn.addEventListener("click", (e) => {
@@ -156,11 +160,12 @@ class AppController {
           }
 
           const subtabId = btn.getAttribute("data-subtab");
+          const section = btn.closest(".page-section") || document;
 
-          subtabBtns.forEach(b => b.classList.remove("active"));
+          section.querySelectorAll(".subtab-btn").forEach(b => b.classList.remove("active"));
           btn.classList.add("active");
 
-          document.querySelectorAll(".subtab-content").forEach(c => c.classList.remove("active"));
+          section.querySelectorAll(".subtab-content").forEach(c => c.classList.remove("active"));
           const targetSubtab = document.getElementById(subtabId);
           if (targetSubtab) {
             targetSubtab.classList.add("active");
@@ -171,6 +176,10 @@ class AppController {
             if (typeof this.scanCredentials === 'function') this.scanCredentials();
           } else if (subtabId === "subtab-printer-lan") {
             if (typeof this.scanPrinters === 'function') this.scanPrinters();
+          } else if (subtabId === "subtab-boot-bcd") {
+            if (typeof this.loadBootEntries === 'function') this.loadBootEntries();
+          } else if (subtabId === "subtab-boot-winpe") {
+            if (typeof this.loadPartitions === 'function') this.loadPartitions();
           }
         } catch (err) {
           console.error("Lỗi chuyển subtab:", err);
@@ -198,21 +207,40 @@ class AppController {
     setInterval(update, 1000);
   }
 
+  updateZoomUI() {
+    if (this.currentZoom > 100) this.currentZoom = 100;
+    if (this.currentZoom < 70) this.currentZoom = 70;
+    document.body.style.zoom = `${this.currentZoom}%`;
+    const valEl = document.getElementById("zoom-value");
+    if (valEl) valEl.innerText = `${this.currentZoom}%`;
+
+    const btnIn = document.getElementById("btn-zoom-in");
+    const btnOut = document.getElementById("btn-zoom-out");
+    if (btnIn) {
+      const isMax = this.currentZoom >= 100;
+      btnIn.disabled = isMax;
+      btnIn.style.opacity = isMax ? "0.35" : "1";
+      btnIn.style.cursor = isMax ? "not-allowed" : "pointer";
+    }
+    if (btnOut) {
+      const isMin = this.currentZoom <= 70;
+      btnOut.disabled = isMin;
+      btnOut.style.opacity = isMin ? "0.35" : "1";
+      btnOut.style.cursor = isMin ? "not-allowed" : "pointer";
+    }
+  }
+
   zoomIn() {
-    if (this.currentZoom < 140) {
+    if (this.currentZoom < 100) {
       this.currentZoom += 10;
-      document.body.style.zoom = `${this.currentZoom}%`;
-      const valEl = document.getElementById("zoom-value");
-      if (valEl) valEl.innerText = `${this.currentZoom}%`;
+      this.updateZoomUI();
     }
   }
 
   zoomOut() {
-    if (this.currentZoom > 80) {
+    if (this.currentZoom > 70) {
       this.currentZoom -= 10;
-      document.body.style.zoom = `${this.currentZoom}%`;
-      const valEl = document.getElementById("zoom-value");
-      if (valEl) valEl.innerText = `${this.currentZoom}%`;
+      this.updateZoomUI();
     }
   }
 
@@ -231,16 +259,78 @@ class AppController {
       const current = logBody.children.length;
       countBadge.innerText = `${current} entries`;
     }
+    const headerLogCount = document.getElementById("header-log-count");
+    if (headerLogCount) {
+      headerLogCount.innerText = logBody.children.length;
+    }
   }
 
-  toggleLogDrawer() {
+  toggleLogDrawer(forceState) {
+    const drawer = document.getElementById("log-drawer");
+    const workspace = document.querySelector(".main-workspace");
+    const toggleBtn = document.getElementById("btn-toggle-log-drawer");
+    if (!drawer) return;
+
+    if (drawer.classList.contains("hidden")) {
+      drawer.classList.remove("hidden");
+      if (workspace) workspace.classList.remove("log-hidden");
+    }
+
+    if (forceState === "expand") {
+      drawer.classList.remove("collapsed");
+    } else if (forceState === "collapse") {
+      drawer.classList.add("collapsed");
+    } else {
+      drawer.classList.toggle("collapsed");
+    }
+
+    const isCollapsed = drawer.classList.contains("collapsed");
+    if (workspace) {
+      workspace.classList.toggle("log-expanded", !isCollapsed);
+    }
+    if (toggleBtn) {
+      toggleBtn.innerText = isCollapsed ? "▲ Mở rộng" : "▼ Thu gọn";
+    }
+  }
+
+  hideLogDrawer() {
     const drawer = document.getElementById("log-drawer");
     const workspace = document.querySelector(".main-workspace");
     if (drawer) {
-      drawer.classList.toggle("collapsed");
-      if (workspace) {
-        workspace.classList.toggle("log-expanded", !drawer.classList.contains("collapsed"));
-      }
+      drawer.classList.add("hidden");
+    }
+    if (workspace) {
+      workspace.classList.remove("log-expanded");
+      workspace.classList.add("log-hidden");
+    }
+  }
+
+  showLogDrawer() {
+    const drawer = document.getElementById("log-drawer");
+    const workspace = document.querySelector(".main-workspace");
+    const toggleBtn = document.getElementById("btn-toggle-log-drawer");
+    if (drawer) {
+      drawer.classList.remove("hidden");
+      drawer.classList.remove("collapsed");
+    }
+    if (workspace) {
+      workspace.classList.remove("log-hidden");
+      workspace.classList.add("log-expanded");
+    }
+    if (toggleBtn) {
+      toggleBtn.innerText = "▼ Thu gọn";
+    }
+  }
+
+  toggleLogVisibility() {
+    const drawer = document.getElementById("log-drawer");
+    if (!drawer) return;
+    if (drawer.classList.contains("hidden")) {
+      this.showLogDrawer();
+    } else if (!drawer.classList.contains("collapsed")) {
+      this.toggleLogDrawer("collapse");
+    } else {
+      this.hideLogDrawer();
     }
   }
 
@@ -249,13 +339,82 @@ class AppController {
     if (logBody) logBody.innerHTML = "";
     const countBadge = document.getElementById("log-count");
     if (countBadge) countBadge.innerText = "0 entries";
+    const headerLogCount = document.getElementById("header-log-count");
+    if (headerLogCount) headerLogCount.innerText = "0";
   }
 
   openWebsite() {
     if (window.pywebview && window.pywebview.api) {
       window.pywebview.api.open_website();
     } else {
-      window.open("https://lethetuanpc.blogspot.com/", "_blank");
+      window.open("https://lethetuanpc.blogspot.com", "_blank");
+    }
+  }
+
+  openTelegram() {
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.open_telegram) {
+      window.pywebview.api.open_telegram();
+    } else {
+      window.open("https://t.me/lethetuanpc", "_blank");
+    }
+  }
+
+  async loadAutostartStatus() {
+    try {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.get_autostart_status) {
+        const res = await window.pywebview.api.get_autostart_status();
+        this.updateAutostartUI(res && res.enabled);
+      }
+    } catch (e) {
+      console.error("Lỗi lấy trạng thái autostart:", e);
+    }
+  }
+
+  updateAutostartUI(enabled) {
+    const isEn = !!enabled;
+    const headerToggle = document.getElementById("header-autostart-checkbox");
+    const headerBadge = document.getElementById("autostart-status-badge");
+    const startupToggle = document.getElementById("tab-startup-autostart-checkbox");
+    const startupBadge = document.getElementById("tab-startup-autostart-badge");
+    const sidebarBadge = document.getElementById("sidebar-autostart-badge");
+
+    if (headerToggle) headerToggle.checked = isEn;
+    if (startupToggle) startupToggle.checked = isEn;
+
+    const labelText = isEn ? "BẬT" : "TẮT";
+    const clsName = "autostart-badge " + (isEn ? "on" : "off");
+
+    if (headerBadge) {
+      headerBadge.textContent = labelText;
+      headerBadge.className = clsName;
+    }
+    if (startupBadge) {
+      startupBadge.textContent = labelText;
+      startupBadge.className = clsName;
+    }
+    if (sidebarBadge) {
+      sidebarBadge.textContent = labelText;
+      sidebarBadge.className = clsName;
+    }
+  }
+
+  async setAutostart(enable) {
+    try {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.set_autostart) {
+        const res = await window.pywebview.api.set_autostart(enable);
+        this.updateAutostartUI(res && res.enabled);
+        if (res && res.success) {
+          this.addLog("ok", res.message || (enable ? "Đã bật khởi động cùng Windows" : "Đã tắt khởi động cùng Windows"));
+        } else {
+          this.addLog("error", (res && res.message) || "Lỗi cài đặt khởi động cùng Windows");
+        }
+      } else {
+        this.updateAutostartUI(enable);
+        this.addLog("info", `Khởi động cùng Windows: ${enable ? "BẬT" : "TẮT"}`);
+      }
+    } catch (e) {
+      console.error("Lỗi đặt autostart:", e);
+      this.addLog("error", "Lỗi cài đặt khởi động: " + e);
     }
   }
 }

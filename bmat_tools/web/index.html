@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IT-Tools 2026 ver 1.0 - Lê Thế Tuấn</title>
+  <title>IT Tool LTT 2026 - Lê Thế Tuấn | Zalo: 0352 194 195</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" href="logo.png">
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,11 +18,11 @@
     <aside class="sidebar">
       <div class="brand-header">
         <div class="brand-logo">
-          <span class="logo-text">LTT</span>
+          <img src="logo.png" alt="IT Tool LTT" class="brand-logo-img">
         </div>
         <div class="brand-info">
-          <h1 class="brand-name">LÊ THẾ TUẤN</h1>
-          <span class="brand-sub">SOFTWARE 2026</span>
+          <h1 class="brand-name">IT Tool LTT</h1>
+          <span class="brand-sub">LÊ THẾ TUẤN • 2026</span>
         </div>
       </div>
 
@@ -60,15 +62,27 @@
         <button class="nav-item" data-tab="tab-free-software"><span class="nav-icon">📦</span><span class="nav-label">Kho Phần Mềm Free</span></button>
       </nav>
 
-      <div class="sidebar-footer">
-        <button class="footer-btn btn-password" onclick="app.showModal('change-password')">
-          <span>🔑</span> Đổi Mật Khẩu
-        </button>
-        <button class="footer-btn btn-logout" onclick="app.logOut()">
-          <span>🚪</span> Đăng Xuất
-        </button>
-        <div class="author-credit" onclick="app.openWebsite()">
-          🩵 Developed By Lê Thế Tuấn
+      <div class="sidebar-footer" style="padding: 10px 12px; background: #f8fafc; border-top: 1px solid #e2e8f0; font-size: 11px; display: flex; flex-direction: column; gap: 5px;">
+        <div style="font-weight: 700; color: #0284c7; font-size: 12px; display: flex; align-items: center; gap: 5px;">
+          <span>🛠️</span> <span>IT Tool LTT 2026</span>
+        </div>
+        <div style="color: #334155; display: flex; align-items: center; gap: 5px;">
+          <span>👤</span> <span>Tác giả: <strong>Lê Thế Tuấn</strong></span>
+        </div>
+        <div style="color: #334155; display: flex; align-items: center; gap: 5px;">
+          <span>📞</span> <span>SĐT / Zalo: <strong style="color: #0284c7;">0352 194 195</strong></span>
+        </div>
+        <div style="color: #334155; display: flex; align-items: center; justify-content: space-between; font-size: 11px; padding: 2px 0;">
+          <span style="display: flex; align-items: center; gap: 4px;">🚀 <span>Khởi động cùng Win:</span></span>
+          <span class="autostart-badge off" id="sidebar-autostart-badge" style="cursor: pointer;" onclick="document.getElementById('header-autostart-checkbox').click()">TẮT</span>
+        </div>
+        <div style="display: flex; gap: 6px; margin-top: 4px;">
+          <button class="btn btn-xs btn-sky-outline" onclick="app.openWebsite()" style="flex: 1; padding: 4px 6px; font-size: 10px; font-weight: 600;" title="Website: https://lethetuanpc.blogspot.com">
+            🌐 Website
+          </button>
+          <button class="btn btn-xs btn-sky-outline" onclick="app.openTelegram()" style="flex: 1; padding: 4px 6px; font-size: 10px; font-weight: 600;" title="Telegram: https://t.me/lethetuanpc">
+            ✈️ Telegram
+          </button>
         </div>
       </div>
     </aside>
@@ -93,12 +107,30 @@
             <span id="clock-display">Đang tải...</span>
           </div>
 
+          <!-- 🚀 Khởi Động Cùng Windows (Hiển thị trên tất cả danh mục) -->
+          <div class="status-pill autostart-pill" id="header-autostart-pill" title="Cài đặt tự động khởi động IT Tool LTT cùng Windows khi bật máy">
+            <label class="autostart-toggle-label" for="header-autostart-checkbox">
+              <span class="autostart-icon">🚀</span>
+              <span class="autostart-text">Khởi Động Cùng Win:</span>
+              <span class="autostart-badge off" id="autostart-status-badge">TẮT</span>
+              <div class="switch-toggle-wrap">
+                <input type="checkbox" id="header-autostart-checkbox" onchange="app.setAutostart(this.checked)">
+                <span class="switch-slider"></span>
+              </div>
+            </label>
+          </div>
+
+          <button class="status-pill log-pill-btn" onclick="app.toggleLogVisibility()" title="Ẩn / Hiện Bảng Nhật Ký Hệ Thống">
+            <span>📋 Nhật Ký:</span>
+            <span class="badge" id="header-log-count" style="margin-left: 2px; padding: 1px 7px; font-size: 10.5px; background: #0284c7; color: white; border-radius: 10px;">0</span>
+          </button>
+
           <div class="control-pills">
             <button class="icon-pill-btn" title="Toggle Dark/Light Mode" id="theme-toggle">🌙</button>
             <div class="zoom-pill">
-              <button class="zoom-btn" onclick="app.zoomOut()">-</button>
+              <button class="zoom-btn" id="btn-zoom-out" onclick="app.zoomOut()" title="Thu nhỏ giao diện">-</button>
               <span id="zoom-value">100%</span>
-              <button class="zoom-btn" onclick="app.zoomIn()">+</button>
+              <button class="zoom-btn" id="btn-zoom-in" onclick="app.zoomIn()" title="Phóng to (tối đa 100%)">+</button>
             </div>
             <div class="flag-pill" title="Việt Nam">🇻🇳</div>
           </div>
@@ -375,12 +407,13 @@
                 <form class="credential-form" novalidate onsubmit="event.preventDefault(); app.saveCredential();">
                   <div class="form-group">
                     <label class="form-label">Target (Tên máy chủ / IP):</label>
-                    <input type="text" class="form-control" id="cred-target" placeholder="VD: MAY-CHU hoặc 192.168.1.100">
+                    <input type="text" class="form-control" id="cred-target" placeholder="VD: 192.168.1.100 hoặc MAY-CHU (hỗ trợ tự động lọc bỏ dấu \\)">
+                    <small class="text-muted" style="font-size: 0.8rem; margin-top: 4px; display: block;">💡 Nhập IP hoặc tên máy chủ cắm máy in/share folder (VD: <code>192.168.1.100</code>). Hệ thống tự làm sạch nếu bạn dán kèm dấu <code>\\</code>.</small>
                   </div>
 
                   <div class="form-group">
                     <label class="form-label">User name (Tên người dùng):</label>
-                    <input type="text" class="form-control" id="cred-user" placeholder="VD: guest hoặc Administrator">
+                    <input type="text" class="form-control" id="cred-user" placeholder="VD: SharePrinter, guest hoặc Administrator">
                   </div>
 
                   <div class="form-group">
@@ -454,8 +487,8 @@
                 <div class="inst-section mt-2">
                   <h5 class="inst-title text-primary">📑 Hướng Dẫn Nhập Chuẩn Xác (Dành Cho Người Mới):</h5>
                   <ul class="inst-list">
-                    <li><strong>Target (Mục tiêu là gì?):</strong> Là Tên Máy Chủ (VD: <code class="code-badge">MAY-CHU</code> hoặc <code class="code-badge">DESKTOP-ABC1234</code>) hoặc Địa Chỉ IP Máy Chủ (VD: <code class="code-badge">192.168.1.100</code>) nơi cắm máy in hoặc chia sẻ thư mục (⚠️ <em>Không cần gõ thêm dấu \\</em>).</li>
-                    <li><strong>User name:</strong> Tên tài khoản trên máy chủ (VD: <code class="code-badge">guest</code>, <code class="code-badge">Administrator</code> hoặc <code class="code-badge">User Share</code> vừa tạo).</li>
+                    <li><strong>Target (Mục tiêu là gì?):</strong> Là Tên Máy Chủ (VD: <code class="code-badge">MAY-CHU</code> hoặc <code class="code-badge">DESKTOP-ABC1234</code>) hoặc Địa Chỉ IP Máy Chủ (VD: <code class="code-badge">192.168.1.100</code>) nơi cắm máy in hoặc chia sẻ thư mục.</li>
+                    <li><strong>User name:</strong> Tên tài khoản trên máy chủ (VD: <code class="code-badge">SharePrinter</code>, <code class="code-badge">guest</code> hoặc <code class="code-badge">Administrator</code>).</li>
                     <li><strong>Password:</strong> Mật khẩu tài khoản máy chủ (Nếu máy chủ không đặt mật khẩu, hãy để trống ô này).</li>
                   </ul>
                 </div>
@@ -481,12 +514,17 @@
 
                 <div class="form-group">
                   <label class="form-label">Mật Khẩu (Password):</label>
-                  <input type="password" class="form-control" id="share-password" value="123456">
+                  <input type="text" class="form-control" id="share-password" value="Printer@123456">
+                  <small class="text-muted" style="font-size: 0.8rem; margin-top: 4px; display: block;">🔒 Mật khẩu tối thiểu 8 ký tự, bao gồm chữ hoa, chữ thường và số (VD: <code>Printer@123456</code>) để đáp ứng chính sách bảo mật Windows.</small>
                 </div>
 
                 <div class="form-group">
                   <label class="form-label">Ghi Chú Mô Tả:</label>
                   <input type="text" class="form-control" id="share-desc" value="Tài khoản dùng để kết nối và chia sẻ máy in LAN">
+                </div>
+
+                <div class="alert alert-info mt-3 p-2" style="font-size: 0.85rem; border-radius: 6px; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3);">
+                  ℹ️ <strong>Lưu ý:</strong> Cần chạy phần mềm với quyền <strong>Run as Administrator</strong> để Windows cho phép tạo tài khoản và phân quyền mạng LAN.
                 </div>
 
                 <button type="submit" class="btn btn-primary-gradient w-100 mt-4">
@@ -579,6 +617,9 @@
                   <strong style="color: #2563eb; font-size: 11.5px;" id="hw-gauge-cpu-pct">N/A</strong>
                 </div>
                 <div style="color: #334155; font-size: 10px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;" id="hw-gauge-cpu-clock">N/A</div>
+                <div style="height: 3px; background: #e2e8f0; border-radius: 2px; margin-top: 3px; overflow: hidden;">
+                  <div id="hw-gauge-cpu-bar" style="height: 100%; width: 0%; background: #3b82f6; border-radius: 2px; transition: width 0.6s ease;"></div>
+                </div>
                 <span id="hw-gauge-cpu-name" style="display:none;"></span>
               </div>
 
@@ -589,6 +630,9 @@
                   <strong style="color: #0891b2; font-size: 11.5px;" id="hw-gauge-ram-pct">N/A</strong>
                 </div>
                 <div style="color: #334155; font-size: 10px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;" id="hw-gauge-ram-detail">N/A</div>
+                <div style="height: 3px; background: #e2e8f0; border-radius: 2px; margin-top: 3px; overflow: hidden;">
+                  <div id="hw-gauge-ram-bar" style="height: 100%; width: 0%; background: #06b6d4; border-radius: 2px; transition: width 0.6s ease;"></div>
+                </div>
                 <span id="hw-gauge-ram-total" style="display:none;"></span>
               </div>
 
@@ -609,6 +653,9 @@
                   <strong style="color: #d97706; font-size: 11.5px;" id="hw-gauge-net-pct">N/A</strong>
                 </div>
                 <div style="color: #334155; font-size: 10px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;" id="hw-gauge-net-speed">N/A</div>
+                <div style="height: 3px; background: #e2e8f0; border-radius: 2px; margin-top: 3px; overflow: hidden;">
+                  <div id="hw-gauge-net-bar" style="height: 100%; width: 0%; background: #f59e0b; border-radius: 2px; transition: width 0.6s ease;"></div>
+                </div>
                 <span id="hw-gauge-net-name" style="display:none;"></span>
               </div>
 
@@ -619,6 +666,9 @@
                   <strong style="color: #db2777; font-size: 11.5px;" id="hw-gauge-disk-pct">N/A</strong>
                 </div>
                 <div style="color: #334155; font-size: 10px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;" id="hw-gauge-disk-summary">N/A</div>
+                <div style="height: 3px; background: #e2e8f0; border-radius: 2px; margin-top: 3px; overflow: hidden;">
+                  <div id="hw-gauge-disk-bar" style="height: 100%; width: 0%; background: #ec4899; border-radius: 2px; transition: width 0.6s ease;"></div>
+                </div>
               </div>
 
             </div>
@@ -1283,6 +1333,24 @@
             </div>
             <p class="text-muted mb-3">Tự động quét các ứng dụng khởi động từ Registry HKLM, HKCU, RunOnce, User Startup & Common Startup. Cho phép Bật/Tắt, Chỉnh sửa, Xóa và Chạy trực tiếp.</p>
 
+            <!-- IT Tool LTT Quick Startup Card -->
+            <div class="d-flex align-items-center justify-content-between p-3 mb-3" style="background: linear-gradient(135deg, rgba(2, 132, 199, 0.08), rgba(6, 182, 212, 0.08)); border: 1px solid #BAE6FD; border-radius: var(--radius-md);">
+              <div class="d-flex align-items-center gap-3">
+                <img src="logo.png" alt="Logo" style="width: 38px; height: 38px; object-fit: contain;">
+                <div>
+                  <div style="font-weight: 700; font-size: 13.5px; color: #0284c7;">🚀 Tự Động Khởi Động IT Tool LTT Cùng Windows</div>
+                  <div class="text-muted" style="font-size: 11px;">Khi bật, phần mềm sẽ tự khởi động ngay khi Windows bật máy. Nếu đang mở thu nhỏ/chạy ngầm, mở lại sẽ gọi đúng tiến trình đó.</div>
+                </div>
+              </div>
+              <div class="d-flex align-items-center gap-2">
+                <span class="autostart-badge off" id="tab-startup-autostart-badge">TẮT</span>
+                <div class="switch-toggle-wrap">
+                  <input type="checkbox" id="tab-startup-autostart-checkbox" onchange="app.setAutostart(this.checked)">
+                  <span class="switch-slider"></span>
+                </div>
+              </div>
+            </div>
+
             <!-- Location Filter Category Buttons -->
             <div class="d-flex gap-2 flex-wrap mb-3" id="startup-filter-bar">
               <button class="btn btn-primary btn-sm active-filter" data-filter="all" onclick="app.filterStartupList('all', this)">Tất Cả (All)</button>
@@ -1401,14 +1469,24 @@
             <!-- Apps Table -->
             <div class="table-responsive" style="max-height: 520px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
               <table class="table" style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                <thead style="position: sticky; top: 0; background: #f8fafc; z-index: 10; border-bottom: 2px solid #e2e8f0;">
+                <thead id="uninstall-thead" style="position: sticky; top: 0; background: #f8fafc; z-index: 10; border-bottom: 2px solid #e2e8f0;">
                   <tr>
                     <th style="width: 32px; text-align: center; padding: 10px;">#</th>
-                    <th style="text-align: left; padding: 10px;">Tên Phần Mềm</th>
-                    <th style="text-align: left; padding: 10px;">Nhà Phát Hành</th>
-                    <th style="text-align: center; padding: 10px;">Ngày Cài</th>
-                    <th style="text-align: center; padding: 10px;">Dung Lượng</th>
-                    <th style="text-align: center; padding: 10px;">Phiên Bản</th>
+                    <th class="sort-col" data-col="display_name" onclick="app.sortUninstallBy('display_name')" style="text-align: left; padding: 10px; cursor:pointer; user-select:none; white-space:nowrap;">
+                      Tên Phần Mềm <span class="sort-arrow" id="sort-arrow-display_name"></span>
+                    </th>
+                    <th class="sort-col" data-col="publisher" onclick="app.sortUninstallBy('publisher')" style="text-align: left; padding: 10px; cursor:pointer; user-select:none; white-space:nowrap;">
+                      Nhà Phát Hành <span class="sort-arrow" id="sort-arrow-publisher"></span>
+                    </th>
+                    <th class="sort-col" data-col="install_date" onclick="app.sortUninstallBy('install_date')" style="text-align: center; padding: 10px; cursor:pointer; user-select:none; white-space:nowrap;">
+                      Ngày Cài <span class="sort-arrow" id="sort-arrow-install_date"></span>
+                    </th>
+                    <th class="sort-col" data-col="estimated_size" onclick="app.sortUninstallBy('estimated_size')" style="text-align: center; padding: 10px; cursor:pointer; user-select:none; white-space:nowrap;">
+                      Dung Lượng <span class="sort-arrow" id="sort-arrow-estimated_size"></span>
+                    </th>
+                    <th class="sort-col" data-col="display_version" onclick="app.sortUninstallBy('display_version')" style="text-align: center; padding: 10px; cursor:pointer; user-select:none; white-space:nowrap;">
+                      Phiên Bản <span class="sort-arrow" id="sort-arrow-display_version"></span>
+                    </th>
                     <th style="text-align: right; padding: 10px; min-width: 190px;">Thao Tác</th>
                   </tr>
                 </thead>
@@ -1572,6 +1650,7 @@
                 <span id="bl-drawer-pct">0% hoàn tất</span>
                 <button class="btn btn-slate-light btn-sm" id="bl-drawer-close" onclick="app.closeBitlockerProgressDrawer()" style="padding: 2px 10px; display: none;">Đóng</button>
               </div>
+            </div>
             <!-- BitLocker Recovery Key Modal -->
             <div id="bitlocker-key-modal" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center;">
               <div class="modal-content" style="background: #ffffff; border-radius: 14px; width: 520px; max-width: 90vw; padding: 24px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); animation: modalFadeIn 0.2s ease-out;">
@@ -1971,20 +2050,118 @@
               <button class="btn btn-slate-light py-2.5" onclick="app.setFirewallAction('reset_defaults')">
                 <span>⚙️</span> Khôi Phục Cài Đặt Mặc Định (Reset)
               </button>
-              <button class="btn btn-sky-outline py-2.5" onclick="app.setFirewallAction('allow_inbound')">
-                <span>🔓</span> Allow All Inbound Traffic
-              </button>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 12px; display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                  <div style="font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700;">Inbound Traffic</div>
+                  <span id="fw-status-inbound" class="badge badge-secondary" style="font-size: 11px;">Checking...</span>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <button class="btn btn-sky-outline btn-sm" onclick="app.setFirewallAction('allow_inbound')" title="Cho phép toàn bộ kết nối đến (Inbound)">
+                    🔓 Allow All
+                  </button>
+                  <button class="btn btn-slate-light btn-sm" onclick="app.setFirewallAction('block_inbound')" title="Chặn kết nối đến không yêu cầu (Mặc định an toàn)">
+                    🔒 Chặn Mặc Định
+                  </button>
+                </div>
+              </div>
             </div>
 
             <!-- Quick Rule Toggles -->
-            <div style="font-weight: 700; font-size: 13px; color: #334155; margin-bottom: 8px;">📂 MỞ QUY TẮC FIREWALL THÔNG DỤNG</div>
-            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
-              <button class="btn btn-slate-light py-2.5" onclick="app.setFirewallAction('enable_sharing')" style="text-align: left; padding-left: 14px;">
-                <span>📂</span> Mở FW Chia Sẻ File & Máy In (LAN)
-              </button>
-              <button class="btn btn-slate-light py-2.5" onclick="app.setFirewallAction('enable_rdp')" style="text-align: left; padding-left: 14px;">
-                <span>🖥️</span> Mở FW Remote Desktop (RDP)
-              </button>
+            <div style="font-weight: 700; font-size: 13px; color: #334155; margin-bottom: 8px;">📂 QUY TẮC FIREWALL THÔNG DỤNG</div>
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+              <!-- File & Printer Sharing Card -->
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <div style="font-weight: 600; font-size: 13px; color: #1e293b; display: flex; align-items: center; gap: 6px;">
+                    <span>📂</span> Chia Sẻ File & Máy In (LAN)
+                  </div>
+                  <div style="margin-top: 4px; display: flex; align-items: center; gap: 8px;">
+                    <span id="fw-status-sharing" class="badge badge-secondary">Checking...</span>
+                    <button class="btn btn-sky-outline" style="padding: 1px 7px; font-size: 11px;" onclick="app.showFirewallRulesDetail('fps')" title="Xem chi tiết danh sách tất cả quy tắc File & Printer Sharing">
+                      🔍 Chi tiết
+                    </button>
+                  </div>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <button class="btn btn-success-solid btn-sm" onclick="app.setFirewallAction('enable_sharing')" title="Mở Firewall cho Chia Sẻ File & Máy In">
+                    Mở
+                  </button>
+                  <button class="btn btn-danger-solid btn-sm" onclick="app.setFirewallAction('disable_sharing')" title="Đóng/Tắt Firewall cho Chia Sẻ File & Máy In">
+                    Đóng
+                  </button>
+                </div>
+              </div>
+
+              <!-- Remote Desktop Card -->
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <div style="font-weight: 600; font-size: 13px; color: #1e293b; display: flex; align-items: center; gap: 6px;">
+                    <span>🖥️</span> Remote Desktop (RDP)
+                  </div>
+                  <div style="margin-top: 4px; display: flex; align-items: center; gap: 8px;">
+                    <span id="fw-status-rdp" class="badge badge-secondary">Checking...</span>
+                    <button class="btn btn-sky-outline" style="padding: 1px 7px; font-size: 11px;" onclick="app.showFirewallRulesDetail('rdp')" title="Xem chi tiết danh sách tất cả quy tắc Remote Desktop">
+                      🔍 Chi tiết
+                    </button>
+                  </div>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <button class="btn btn-success-solid btn-sm" onclick="app.setFirewallAction('enable_rdp')" title="Mở Firewall cho Remote Desktop">
+                    Mở
+                  </button>
+                  <button class="btn btn-danger-solid btn-sm" onclick="app.setFirewallAction('disable_rdp')" title="Đóng/Tắt Firewall cho Remote Desktop">
+                    Đóng
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 🛡️ Firewall Rules Detail Modal -->
+          <div id="fw-rules-detail-modal" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center;">
+            <div class="modal-content" style="background: #ffffff; border-radius: 14px; width: 900px; max-width: 95vw; max-height: 88vh; padding: 20px 24px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15); display: flex; flex-direction: column;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 22px;">📋</span>
+                  <div>
+                    <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #1e293b;" id="fw-rules-modal-title">Chi Tiết Quy Tắc Windows Firewall</h3>
+                    <span id="fw-rules-modal-subtitle" style="font-size: 12px; color: #64748b;">Thời gian thực trực tiếp từ hệ thống Windows</span>
+                  </div>
+                </div>
+                <button onclick="app.closeFirewallRulesDetail()" style="background: none; border: none; font-size: 24px; color: #64748b; cursor: pointer; line-height: 1;">&times;</button>
+              </div>
+
+              <!-- Filter & Search Toolbar -->
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px;">
+                <input type="text" id="fw-rules-search-input" placeholder="🔍 Tìm kiếm quy tắc, cổng (VD: 445, SMB, RPC, Echo, In, Out)..." style="flex: 1; padding: 7px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12.5px;" oninput="app.filterFirewallRulesModal()">
+                <div id="fw-rules-summary-badges" style="display: flex; gap: 6px;"></div>
+              </div>
+
+              <!-- Scrollable Table -->
+              <div style="flex: 1; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; max-height: 55vh;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+                  <thead style="background: #f8fafc; position: sticky; top: 0; z-index: 2; border-bottom: 1px solid #e2e8f0;">
+                    <tr>
+                      <th style="padding: 8px 10px; width: 35px;">#</th>
+                      <th style="padding: 8px 10px; width: 60px;">Chiều</th>
+                      <th style="padding: 8px 10px;">Tên Quy Tắc</th>
+                      <th style="padding: 8px 10px;">Nhóm Chức Năng</th>
+                      <th style="padding: 8px 10px;">Profile</th>
+                      <th style="padding: 8px 10px;">Giao Thức</th>
+                      <th style="padding: 8px 10px;">Cổng</th>
+                      <th style="padding: 8px 10px;">Trạng Thái</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fw-rules-modal-tbody">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px;">
+                <span id="fw-rules-count-label" style="font-size: 12px; color: #64748b;"></span>
+                <button class="btn btn-slate-light btn-sm" onclick="app.closeFirewallRulesDetail()">Đóng</button>
+              </div>
             </div>
           </div>
         </section>
@@ -2110,7 +2287,7 @@
                     <input type="text" class="form-control form-control-sm" id="iscsi-target-port" value="3260" placeholder="Port">
                     <button class="btn btn-primary-gradient btn-sm" onclick="app.connectIscsiTarget()">🔌 Connect</button>
                   </div>
-                  <textarea id="iscsi-output" readonly class="form-control form-control-sm" style="font-family: monospace; font-size: 11px; height: 60px; background: #0f172a; color: #38bdf8; resize: none;" placeholder="Kết quả lệnh iSCSI sẽ hiển thị tại đây..."></textarea>
+                  <textarea id="iscsi-output" readonly class="form-control form-control-sm" style="width: 100%; box-sizing: border-box; font-family: monospace; font-size: 11px; height: 60px; background: #0f172a; color: #38bdf8; resize: none;" placeholder="Kết quả lệnh iSCSI sẽ hiển thị tại đây..."></textarea>
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
                   <button class="btn btn-sky-outline btn-sm" onclick="app.listIscsiTargets()">
@@ -2390,11 +2567,17 @@
                 <span class="card-icon">📝</span>
                 <span>Hosts File Editor - Quản Lý & Chỉnh Sửa File Hosts System32</span>
               </div>
-              <div style="display: flex; gap: 8px; align-items: center;">
-                <button class="btn btn-sky-outline btn-sm" onclick="app.openHostsFolder()" title="Mở thư mục chứa file Hosts">
-                  <span>📂</span> Mở Thư Mục Hosts
+              <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <button class="btn btn-sky-outline btn-sm" onclick="app.loadHostsFromFile()" title="Nạp nội dung từ file khác">
+                  <span>📂</span> Nạp Từ File...
                 </button>
-                <button class="btn btn-sky-outline btn-sm" onclick="app.loadHosts()" title="Tải lại nội dung file">
+                <button class="btn btn-sky-outline btn-sm" onclick="app.openHostsTempFolder()" title="Mở thư mục tạm của người dùng đang chứa bản sao file Hosts">
+                  <span>📁</span> Mở Thư Mục Tạm
+                </button>
+                <button class="btn btn-sky-outline btn-sm" onclick="app.openHostsFolder()" title="Mở thư mục gốc System32 chứa file Hosts">
+                  <span>🗂️</span> Mở Thư Mục Gốc
+                </button>
+                <button class="btn btn-sky-outline btn-sm" onclick="app.loadHosts()" title="Tải lại nội dung từ file gốc sang file tạm">
                   <span>🔄</span> Tải Lại
                 </button>
               </div>
@@ -2419,12 +2602,15 @@
                 📍 Thư mục: <code style="color: #0284c7;">C:\Windows\System32\drivers\etc\hosts</code>
               </div>
 
-              <div style="display: flex; gap: 10px;">
-                <button class="btn btn-success-solid px-4 py-2.5 font-bold" onclick="app.saveHosts()">
+              <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button class="btn btn-success-solid px-4 py-2.5 font-bold" onclick="app.saveHosts()" title="Lưu thay đổi trực tiếp vào file Hosts hệ thống và Flush DNS">
                   <span>💾</span> LƯU THAY ĐỔI & FLUSH DNS
                 </button>
-                <button class="btn btn-danger-solid px-3 py-2.5 font-semibold" onclick="app.restoreHosts()">
-                  <span>🔄</span> KHÔI PHỤC MẶC ĐỊNH WINDOWS
+                <button class="btn btn-primary-solid px-3.5 py-2.5 font-bold" onclick="app.saveHostsAs()" title="Lưu nội dung ra file ở vị trí khác (Save As...)">
+                  <span>📥</span> LƯU THÀNH (SAVE AS...)
+                </button>
+                <button class="btn btn-danger-solid px-3 py-2.5 font-semibold" onclick="app.restoreHosts()" title="Khôi phục file hosts gốc mặc định của Windows">
+                  <span>🔄</span> KHÔI PHỤC MẶC ĐỊNH
                 </button>
               </div>
             </div>
@@ -2434,18 +2620,105 @@
 
         <!-- 📤 SendTo Editor -->
         <section class="page-section" id="tab-sendto">
-          <div class="ui-card">
-            <div class="card-header">
+
+          <!-- HEADER CARD -->
+          <div class="ui-card mb-3" style="border-left: 4px solid #3b82f6;">
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
               <div class="card-title">
                 <span class="card-icon">📤</span>
-                <span>SendTo Editor (Quản Lý Menu SendTo)</span>
+                <span>SendTo Editor — Quản Lý Menu "Gửi Đến"</span>
+              </div>
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <button class="btn btn-sky-outline btn-sm" onclick="app.loadSendToEntries()" title="Tải lại danh sách">
+                  🔄 Tải Lại
+                </button>
+                <button class="btn btn-sky-outline btn-sm" onclick="app.openSendToFolder()" title="Mở thư mục SendTo trong Explorer">
+                  📂 Mở Thư Mục
+                </button>
               </div>
             </div>
-            <p class="text-muted">Thêm, xóa, chạy, duyệt thư mục và lưu danh sách ứng dụng trong Menu "Send to".</p>
-            <button class="btn btn-primary-gradient py-2.5 mt-2" onclick="app.runModule('sendto_editor', 'open')">
-              <span>📤</span> Quản Lý Lối Tắt SendTo
-            </button>
+            <p class="text-muted" style="margin:4px 0 0 0; font-size:12px;">
+              Quản lý các shortcut trong menu <strong>"Gửi đến" (Send To)</strong> khi chuột phải vào file/thư mục. 
+              Thư mục: <code id="sendto-path-display" onclick="app.openSendToFolder()" style="color:#3b82f6; font-size:11px; cursor:pointer; text-decoration:underline;" title="Bấm để mở thư mục trong File Explorer">Đang tải...</code>
+            </p>
           </div>
+
+          <!-- ADD SHORTCUT FORM -->
+          <div class="ui-card mb-3" style="border-left: 4px solid #10b981;">
+            <div class="card-header" style="margin-bottom:8px;">
+              <div class="card-title" style="font-size:13px;">
+                <span>➕</span>
+                <span>Tạo Shortcut Mới Vào SendTo</span>
+              </div>
+            </div>
+            <div style="display:grid; grid-template-columns: 220px 1fr auto auto auto; gap:8px; align-items:end;">
+              <div>
+                <label style="font-size:11px; color:#64748b; font-weight:600; display:block; margin-bottom:4px;">Tên hiển thị</label>
+                <input type="text" id="sendto-new-name" placeholder="Ví dụ: Notepad++"
+                  style="width:100%; padding:6px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:12px; box-sizing:border-box; outline:none;"
+                  onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#e2e8f0'">
+              </div>
+              <div>
+                <label style="font-size:11px; color:#64748b; font-weight:600; display:block; margin-bottom:4px;">Đường dẫn Target (chương trình, file hoặc thư mục)</label>
+                <input type="text" id="sendto-new-target" placeholder="C:\Program Files\Notepad++\notepad++.exe hoặc D:\Backup"
+                  style="width:100%; padding:6px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:12px; box-sizing:border-box; outline:none;"
+                  onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#e2e8f0'">
+              </div>
+              <button class="btn btn-sky-outline btn-sm" onclick="app.browseSendToFile()" style="white-space:nowrap; padding:7px 12px;" title="Duyệt tìm file .exe / script trên máy tính">
+                📄 Chọn File...
+              </button>
+              <button class="btn btn-sky-outline btn-sm" onclick="app.browseSendToFolder()" style="white-space:nowrap; padding:7px 12px;" title="Duyệt chọn thư mục trên máy tính">
+                📁 Chọn Thư Mục...
+              </button>
+              <button class="btn btn-primary-gradient btn-sm" onclick="app.createSendToShortcut()" style="white-space:nowrap; padding:7px 16px; font-weight:600;">
+                💾 Tạo Shortcut
+              </button>
+            </div>
+            <p style="font-size:11px; color:#94a3b8; margin-top:6px;">
+              💡 <em>Mẹo:</em> Bấm <strong>"Chọn File"</strong> hoặc <strong>"Chọn Thư Mục"</strong> để tự động điền đường dẫn và tên hiển thị một cách nhanh chóng.
+            </p>
+          </div>
+
+          <!-- SENDTO LIST TABLE -->
+          <div class="ui-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <h4 style="margin:0; font-size:13px; font-weight:700; color:#1e293b;">
+                📋 Danh Sách Lối Tắt SendTo
+                <span id="sendto-count-badge" style="background:#e0f2fe; color:#0369a1; padding:1px 8px; border-radius:10px; font-size:11px; margin-left:6px;">0 mục</span>
+              </h4>
+              <button class="btn btn-danger-outline btn-sm" id="sendto-delete-btn" onclick="app.deleteSendToEntry()" disabled title="Chọn một mục trong danh sách rồi bấm xóa">
+                🗑 Xóa Mục Đã Chọn
+              </button>
+            </div>
+
+            <!-- Table -->
+            <div style="border:1px solid #e2e8f0; border-radius:8px; overflow:hidden;">
+              <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                <thead>
+                  <tr style="background:#f8fafc; border-bottom:2px solid #e2e8f0;">
+                    <th style="padding:8px 10px; text-align:center; color:#64748b; font-weight:700; width:36px;"></th>
+                    <th style="padding:8px 12px; text-align:left; color:#64748b; font-weight:700; width:220px;">Tên Lối Tắt</th>
+                    <th style="padding:8px 10px; text-align:left; color:#64748b; font-weight:700;">Đích Đến (Target)</th>
+                    <th style="padding:8px 10px; text-align:left; color:#64748b; font-weight:700; width:90px;">Loại</th>
+                    <th style="padding:8px 10px; text-align:right; color:#64748b; font-weight:700; width:70px;">Kích Cỡ</th>
+                    <th style="padding:8px 12px; text-align:center; color:#64748b; font-weight:700; width:110px;">Thao Tác</th>
+                  </tr>
+                </thead>
+                <tbody id="sendto-entries-tbody">
+                  <tr>
+                    <td colspan="6" style="padding:24px; text-align:center; color:#94a3b8; font-size:13px;">
+                      ⏳ Đang tải danh sách...
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <p style="font-size:11px; color:#94a3b8; margin-top:8px;">
+              ⚠ Các mục hệ thống (desktop.ini, .desklink) được bảo vệ và không thể xóa để tránh lỗi Windows.
+            </p>
+          </div>
+
         </section>
 
         <!-- 🪟 Classic Win10 Menu -->
@@ -2773,82 +3046,195 @@
 
         <!-- ⚙️ Boot Manager -->
         <section class="page-section" id="tab-boot-manager">
-          <div class="ui-card">
-            <!-- Header -->
-            <div class="card-header border-none" style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 0;">
-              <div class="card-title">
-                <span class="card-icon">⚙️</span>
-                <span>Boot Manager - Quản Lý BCD Boot & WinPE</span>
-              </div>
-              <div style="display: flex; gap: 8px; align-items: center;">
-                <div style="display: flex; align-items: center; gap: 4px; background: #f1f5f9; padding: 4px 8px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 12px;">
-                  <span style="font-weight: 600; color: #475569;">Timeout (s):</span>
-                  <input type="number" id="boot-timeout-input" value="30" min="0" max="999" style="width: 50px; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 4px; font-weight: 600;">
-                  <button class="btn btn-xs btn-sky-outline" onclick="app.setBootTimeout()">Lưu Timeout</button>
+
+          <!-- Sub-Tab Header Bar -->
+          <div class="subtab-bar">
+            <button class="subtab-btn active" data-subtab="subtab-boot-bcd">
+              <span>⚙️</span> Quản Lý Menu Boot Windows BCD
+            </button>
+            <button class="subtab-btn" data-subtab="subtab-boot-winpe">
+              <span>🛡️</span> Tích Hợp WinPE Cứu Hộ Vào Ổ Cứng
+            </button>
+          </div>
+
+          <!-- ── SUBTAB 1: QUẢN LÝ BCD BOOT ────────────────────────────────── -->
+          <div class="subtab-content active" id="subtab-boot-bcd">
+            <div class="ui-card">
+              <div class="card-header border-none" style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 0;">
+                <div class="card-title">
+                  <span class="card-icon">⚙️</span>
+                  <span>Danh Sách Khởi Động BCD (Boot Menu)</span>
                 </div>
-                <button class="btn btn-sky-outline btn-sm" onclick="app.loadBootEntries()">
-                  🔄 Refresh Status
-                </button>
-                <button class="btn btn-primary-gradient btn-sm" onclick="app.openBootManagerGui()">
-                  🖥️ Giao Diện GUI (Tkinter)
-                </button>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <div style="display: flex; align-items: center; gap: 4px; background: #f8fafc; padding: 4px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 12px;">
+                    <span style="font-weight: 600; color: #475569;">⏱️ Chờ boot:</span>
+                    <input type="number" id="boot-timeout-input" value="30" min="0" max="999" style="width: 48px; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 4px; font-weight: 700; text-align: center;">
+                    <span style="color: #64748b; font-size: 11px;">giây</span>
+                    <button class="btn btn-xs btn-sky-outline" onclick="app.setBootTimeout()" style="margin-left: 2px;">💾 Lưu</button>
+                  </div>
+                  <button class="btn btn-sky-outline btn-sm" onclick="app.loadBootEntries()" title="Đọc lại danh sách từ hệ thống BCD">
+                    🔄 Làm Mới
+                  </button>
+                  <button class="btn btn-primary-gradient btn-sm" onclick="app.openBootManagerGui()" title="Mở giao diện Boot Manager Tkinter truyền thống">
+                    🖥️ Mở GUI Cổ Điển
+                  </button>
+                </div>
               </div>
-            </div>
-            <p class="text-muted" style="padding-left: 36px; margin-top: 4px; margin-bottom: 16px;">
-              Quản lý danh sách khởi động Windows BCD, thêm menu boot file WinPE (.wim), đặt hệ điều hành mặc định và tùy chỉnh thời gian chờ boot.
-            </p>
+              <p class="text-muted" style="padding-left: 36px; margin-top: 4px; margin-bottom: 12px; font-size: 12px;">
+                Quản lý danh sách các hệ điều hành trong BCD Boot menu, chọn HĐH khởi động mặc định, đổi tên hiển thị và cấu hình thời gian chờ.
+              </p>
 
-            <!-- Main Boot Entries Table -->
-            <div class="table-responsive" style="max-height: 240px; overflow-y: auto; margin-bottom: 16px; background: white; border: 1px solid #cbd5e1; border-radius: 8px;">
-              <table class="ui-table" style="width: 100%; font-size: 13px;">
-                <thead>
-                  <tr style="background: #f1f5f9;">
-                    <th style="padding: 10px;">Boot Name / Tên Menu</th>
-                    <th style="padding: 10px; width: 340px;">GUID / Mã Định Danh</th>
-                    <th style="padding: 10px; text-align: center; width: 140px;">Trạng Thái Mặc Định</th>
-                    <th style="padding: 10px; text-align: right; width: 90px;">Thao Tác</th>
-                  </tr>
-                </thead>
-                <tbody id="boot-entries-body">
-                  <tr><td colspan="4" class="text-center py-3 text-muted">Bấm "Refresh Status" để đọc danh sách BCD...</td></tr>
-                </tbody>
-              </table>
-            </div>
-
-            <!-- Form: Add WIM Boot Entry & Edit Entry Name -->
-            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; margin-bottom: 16px;">
-              <div style="font-weight: 700; color: #1e293b; font-size: 14px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-                <span>➕ Thêm Menu Boot File WinPE (.wim) Hoặc Đổi Tên Mục Boot</span>
+              <!-- Table -->
+              <div class="table-responsive" style="max-height: 240px; overflow-y: auto; margin-bottom: 12px; background: white; border: 1px solid #cbd5e1; border-radius: 8px;">
+                <table class="ui-table" style="width: 100%; font-size: 13px;">
+                  <thead>
+                    <tr style="background: #f1f5f9; position: sticky; top: 0; z-index: 2;">
+                      <th style="padding: 9px 12px;">Boot Name / Tên Menu</th>
+                      <th style="padding: 9px 12px; width: 330px;">GUID / Mã Định Danh</th>
+                      <th style="padding: 9px 12px; text-align: center; width: 140px;">Trạng Thái</th>
+                      <th style="padding: 9px 12px; text-align: right; width: 90px;">Thao Tác</th>
+                    </tr>
+                  </thead>
+                  <tbody id="boot-entries-body">
+                    <tr><td colspan="4" class="text-center py-3 text-muted">Bấm "Làm Mới" để đọc danh sách BCD...</td></tr>
+                  </tbody>
+                </table>
               </div>
-              <div style="display: grid; grid-template-columns: 2.5fr 2fr auto; gap: 10px; align-items: center; margin-bottom: 12px;">
-                <div>
-                  <label style="font-size: 12px; font-weight: 600; color: #475569; display: block; margin-bottom: 4px;">WinPE Path (.wim):</label>
-                  <div style="display: flex; gap: 4px;">
-                    <input type="text" class="form-control form-control-sm" id="winpe-path-input" placeholder="Ví dụ: D:\WinPE\boot.wim">
-                    <button class="btn btn-sm btn-slate-solid" onclick="app.browseWimFile()">📁 Browse</button>
+
+              <!-- Action Bar for Selected Boot Entry -->
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+                  <div style="font-size: 13px; color: #1e293b; display: flex; align-items: center; gap: 6px;">
+                    <span style="font-weight: 700; color: #0284c7;">🎯 Mục đang chọn:</span>
+                    <span id="selected-boot-display-name" style="font-weight: 700; color: #0f172a;">(Chưa chọn)</span>
+                    <span style="color: #94a3b8; font-size: 11px;">• GUID:</span>
+                    <code id="selected-boot-display-guid" style="font-size: 11px; background: #e2e8f0; padding: 2px 6px; border-radius: 4px; color: #475569;">none</code>
+                  </div>
+                  <div style="display: flex; gap: 6px;">
+                    <button class="btn btn-xs btn-slate-light" id="btn-toggle-raw-bcd" onclick="app.toggleRawBcdDetail()" title="Xem chi tiết kỹ thuật raw output từ BCDEDIT">
+                      📋 Chi Tiết Raw BCD ▼
+                    </button>
                   </div>
                 </div>
-                <div>
-                  <label style="font-size: 12px; font-weight: 600; color: #475569; display: block; margin-bottom: 4px;">Boot Name (Tên hiển thị):</label>
-                  <input type="text" class="form-control form-control-sm" id="boot-name-input" placeholder="Ví dụ: WinPE 11 Pro Mini">
-                </div>
-                <div style="display: flex; gap: 8px; align-self: end;">
-                  <button class="btn btn-emerald-solid btn-sm" onclick="app.addWimBootEntry()">
-                    ➕ Add .wim
+
+                <!-- Controls row for selected entry -->
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                  <div style="display: flex; align-items: center; gap: 6px; flex: 1; min-width: 280px;">
+                    <span style="font-size: 12px; font-weight: 600; color: #475569; white-space: nowrap;">Đổi tên:</span>
+                    <input type="text" class="form-control form-control-sm" id="edit-boot-name-input" placeholder="Nhập tên mới cho mục boot này..." style="flex: 1;">
+                    <button class="btn btn-sm btn-sky-outline" onclick="app.saveBootEntryName()" style="white-space: nowrap;">
+                      ✏️ Lưu Tên Mới
+                    </button>
+                  </div>
+                  <button class="btn btn-sm btn-amber-outline" id="btn-set-default-selected" onclick="app.setDefaultBoot()">
+                    ⭐ Đặt Mặc Định
                   </button>
-                  <button class="btn btn-sky-outline btn-sm" onclick="app.saveBootEntryName()">
-                    💾 Save Boot Name
+                  <button class="btn btn-sm btn-rose-outline" id="btn-delete-selected" onclick="app.deleteBootEntry()">
+                    ❌ Xóa Mục Này
+                  </button>
+                </div>
+
+                <!-- Collapsible Raw BCD output -->
+                <div id="raw-bcd-container" style="display: none; margin-top: 12px; border-top: 1px dashed #cbd5e1; padding-top: 10px; width: 100%;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <div style="font-size: 12px; font-weight: 600; color: #475569; display: flex; align-items: center; gap: 6px;">
+                      <span>📄</span>
+                      <span>Chi tiết BCDEDIT của mục đang chọn (Raw Output):</span>
+                    </div>
+                    <button class="btn btn-xs btn-slate-light" onclick="app.copyBootEntryDetail()" title="Sao chép toàn bộ thông tin chi tiết vào bộ nhớ tạm">
+                      📋 Sao Chép
+                    </button>
+                  </div>
+                  <textarea id="boot-entry-detail" readonly class="form-control" style="width: 100%; box-sizing: border-box; min-height: 180px; height: 220px; font-family: 'Consolas', 'Courier New', monospace; font-size: 13px; line-height: 1.6; padding: 12px 14px; background: #0f172a; color: #38bdf8; border: 1px solid #334155; border-radius: 8px; resize: vertical; white-space: pre; overflow: auto;" placeholder="Nhấp vào một dòng trong bảng trên để xem chi tiết BCD..."></textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── SUBTAB 2: TÍCH HỢP WINPE ────────────────────────────────────── -->
+          <div class="subtab-content" id="subtab-boot-winpe">
+            <div class="ui-card" style="box-shadow: 0 4px 14px rgba(0,0,0,0.03);">
+              <div class="card-header border-none" style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 0;">
+                <div class="card-title">
+                  <span class="card-icon">🛡️</span>
+                  <span>Tích Hợp WinPE Cứu Hộ Vào Ổ Cứng (Boot Trực Tiếp Không Cần USB)</span>
+                </div>
+                <span class="badge" style="background: #e0f2fe; color: #0284c7; font-size: 11px; padding: 4px 8px; border-radius: 6px;">Hỗ trợ file .ISO và .WIM</span>
+              </div>
+              <p class="text-muted text-xs" style="padding-left: 36px; margin-top: 4px; margin-bottom: 16px;">
+                Trích xuất WinPE từ file ISO hoặc WIM (Anhdv, DLC Boot, MCBoot...) vào một phân vùng ổ cứng (C:, D:,...) và tự động thêm vào BCD để cứu hộ khi Windows bị lỗi mà không cần cắm USB.
+              </p>
+
+              <!-- Progress Banner -->
+              <div id="winpe-progress-banner" style="display: none; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; color: #1e40af; font-size: 12px; align-items: center; gap: 10px;">
+                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                <span id="winpe-progress-text">⏳ Đang xử lý file WinPE và tích hợp vào ổ cứng... Vui lòng đợi trong giây lát...</span>
+              </div>
+
+              <!-- Form Grid -->
+              <div style="display: grid; grid-template-columns: 1.8fr 1.2fr; gap: 16px; margin-bottom: 16px;">
+                <!-- Source WinPE file -->
+                <div>
+                  <label style="font-size: 12.5px; font-weight: 600; color: #334155; display: block; margin-bottom: 6px;">
+                    📂 File WinPE Nguồn (<span style="color: #0284c7;">.iso</span> hoặc <span style="color: #0284c7;">.wim</span>):
+                  </label>
+                  <div style="display: flex; gap: 6px;">
+                    <input type="text" class="form-control" id="winpe-path-input" placeholder="Chọn file WinPE ISO (Anhdv, DLC,...) hoặc WIM (boot.wim)..." onchange="app.onWinpePathChange(this.value)">
+                    <button class="btn btn-primary-solid" onclick="app.browseWinpeFile()" style="white-space: nowrap; padding: 6px 16px;">
+                      📁 Chọn File
+                    </button>
+                  </div>
+                  <div id="winpe-inspect-status" style="font-size: 11px; color: #64748b; margin-top: 4px;"></div>
+                </div>
+
+                <!-- Target Partition -->
+                <div>
+                  <label style="font-size: 12.5px; font-weight: 600; color: #334155; display: block; margin-bottom: 6px;">
+                    💾 Phân Vùng Ổ Cứng Lưu WinPE:
+                  </label>
+                  <select class="form-control" id="winpe-target-drive" style="background: white; font-weight: 600; color: #1e293b;">
+                    <option value="C:">C: [Hệ thống Windows]</option>
+                  </select>
+                  <div style="font-size: 11px; color: #64748b; margin-top: 4px;">WinPE sẽ được lưu vào thư mục <code>\WinPE\boot.wim</code> trên phân vùng này.</div>
+                </div>
+              </div>
+
+              <!-- Row 2: Sub-WIM dropdown & WinPE Boot Name -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                <!-- Sub-WIM selector inside ISO -->
+                <div id="winpe-subwim-container" style="display: none;">
+                  <label style="font-size: 12.5px; font-weight: 600; color: #334155; display: block; margin-bottom: 6px;">
+                    🎯 Phiên Bản WinPE Bên Trong ISO:
+                  </label>
+                  <select class="form-control" id="winpe-subwim-select" style="background: white;" onchange="app.onSubWimChange(this.value)">
+                  </select>
+                </div>
+
+                <!-- WinPE Boot Menu Name -->
+                <div id="winpe-bootname-container" style="grid-column: 1 / -1;">
+                  <label style="font-size: 12.5px; font-weight: 600; color: #334155; display: block; margin-bottom: 6px;">
+                    🏷️ Tên Hiển Thị Của WinPE Trên Menu Boot:
+                  </label>
+                  <input type="text" class="form-control" id="winpe-boot-name-input" placeholder="Ví dụ: WinPE Rescue - Cứu Hộ Máy Tính (Ổ Cứng)">
+                </div>
+              </div>
+
+              <!-- Row 3: Checkbox & Big Action Button -->
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; padding-top: 14px; border-top: 1px dashed #e2e8f0; margin-top: 8px;">
+                <div id="winpe-copy-apps-container" style="display: flex; align-items: center; gap: 8px;">
+                  <input type="checkbox" id="winpe-copy-apps" checked style="cursor: pointer; width: 18px; height: 18px;">
+                  <label for="winpe-copy-apps" style="font-size: 12.5px; color: #334155; cursor: pointer; margin: 0; font-weight: 500;">
+                    Sao chép kèm thư mục <b>Apps / Tools</b> cứu hộ (nếu có trong ISO) để WinPE đầy đủ phần mềm
+                  </label>
+                </div>
+
+                <div style="display: flex; gap: 8px; margin-left: auto;">
+                  <button class="btn btn-emerald-solid" id="btn-integrate-winpe" onclick="app.integrateWinpeBoot()" style="font-weight: 700; padding: 10px 24px; font-size: 13px;">
+                    ➕ Tích Hợp WinPE Vào Ổ Cứng
                   </button>
                 </div>
               </div>
             </div>
-
-            <!-- Detail Raw BCD Text Box -->
-            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
-              <div style="font-weight: 600; font-size: 13px; color: #475569; margin-bottom: 6px;">📋 Chi Tiết Mục Boot Đang Chọn (Raw BCD Output):</div>
-              <textarea id="boot-entry-detail" readonly class="form-control form-control-sm" style="font-family: monospace; font-size: 11px; height: 110px; background: #FFF8DC; color: #333333; resize: vertical;" placeholder="Nhấp vào một dòng trong bảng trên để xem chi tiết BCD..."></textarea>
-            </div>
-
           </div>
         </section>
 
@@ -2993,20 +3379,20 @@
           </div>
 
           <!-- Scan Results Summary Bar -->
-          <div class="ui-card mb-3 hidden" id="folder-scan-summary" style="display: none;">
-            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-              <div>
-                <span class="badge bg-primary text-white me-2" id="folder-summary-path" style="background: var(--primary); padding: 4px 8px; border-radius: 4px; color: white;">-</span>
-                <span class="text-muted text-sm" id="folder-summary-counts">Đang chuẩn bị...</span>
+          <div class="ui-card mb-3 hidden" id="folder-scan-summary" style="display: none; padding: 14px 18px;">
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <span class="badge" id="folder-summary-path" style="background: #0284c7; padding: 4px 10px; border-radius: 6px; color: white; font-weight: 600; font-size: 12px;">-</span>
+                <span id="folder-summary-counts" style="color: #475569; font-size: 13px;">Đang chuẩn bị...</span>
               </div>
-              <div>
-                <span class="text-muted text-sm me-1">Tổng dung lượng:</span>
-                <strong class="text-rose text-lg" id="folder-summary-total" style="color: var(--accent-rose); font-size: 16px;">...</strong>
+              <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                <span style="color: #64748b; font-size: 13px; font-weight: 500;">Tổng dung lượng:</span>
+                <strong id="folder-summary-total" style="color: #e11d48; font-size: 16px; font-weight: 700;">...</strong>
               </div>
             </div>
             <!-- Progress Indicator Bar -->
-            <div class="progress mt-2" id="folder-scan-progress" style="height: 4px; background: #e2e8f0; border-radius: 2px; overflow: hidden; display: none;">
-              <div class="progress-bar" style="width: 100%; height: 100%; background: linear-gradient(90deg, var(--primary), #06b6d4); animation: pulse 1.5s infinite;"></div>
+            <div class="progress" id="folder-scan-progress" style="height: 5px; background: #e2e8f0; border-radius: 3px; overflow: hidden; display: none; margin-top: 14px;">
+              <div class="progress-bar" style="width: 100%; height: 100%; background: linear-gradient(90deg, #0284c7, #06b6d4); animation: pulse 1.5s infinite;"></div>
             </div>
           </div>
 
@@ -3346,7 +3732,10 @@
 
               <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 12px; color: #64748b;">
                 <span id="office-install-pct">0% hoàn tất</span>
-                <button class="btn btn-slate-light btn-sm" id="office-install-close" onclick="app.closeOfficeInstallDrawer()" style="padding: 2px 10px; display: none;">Đóng</button>
+                <div style="display: flex; gap: 8px;">
+                  <button class="btn btn-danger btn-sm" id="office-install-cancel" onclick="app.cancelOfficeInstall()" style="padding: 2px 10px; font-size: 11px; background: #ef4444; color: #fff; border: none; border-radius: 4px; cursor: pointer; display: none;">🛑 Hủy Cài Đặt</button>
+                  <button class="btn btn-slate-light btn-sm" id="office-install-close" onclick="app.closeOfficeInstallDrawer()" style="padding: 2px 10px; display: none;">Đóng</button>
+                </div>
               </div>
 
               <!-- Terminal Log Output -->
@@ -3380,40 +3769,65 @@
             <div class="keys-info-box mt-3" id="wincheck-keys-box"></div>
           </div>
 
-          <!-- Remediation & Tools Grid Card -->
-          <div class="ui-card mt-3">
-            <div class="card-header">
-              <div class="card-title">
-                <span class="card-icon">🛠️</span>
-                <span>Công Cụ Xử Lý Bản Quyền & Dọn Dẹp Crack</span>
+          <!-- Remediation & Tools Grid (Split Windows & Office) -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px;" class="mt-3">
+            <!-- Khu vực 1: Công Cụ Bản Quyền Windows -->
+            <div class="ui-card" style="margin-top: 0; display: flex; flex-direction: column; justify-content: space-between;">
+              <div>
+                <div class="card-header">
+                  <div class="card-title">
+                    <span class="card-icon">🪟</span>
+                    <span>Xử Lý Bản Quyền Windows</span>
+                  </div>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 8px;" class="mt-2">
+                  <button class="btn btn-danger-solid py-2.5 font-semibold" onclick="app.cleanWinCrack()" title="Dọn sạch triệt để các loại crack, KMS giả lập, IFEO hook và Registry lậu">
+                    <span>🧹</span> ★ Dọn Sạch Crack & KMS Lậu Toàn Diện
+                  </button>
+                  <div class="grid-buttons-2col gap-2">
+                    <button class="btn btn-action-card text-gold" onclick="app.installKeyPrompt()" title="Cài đặt Product Key bản quyền mới vào hệ thống">
+                      <span>🔑</span> Nhập Key Mới (slmgr /ipk)
+                    </button>
+                    <button class="btn btn-action-card text-rose" onclick="app.uninstallWinKey()" title="Gỡ bỏ Product Key và xóa sạch bộ nhớ đệm Registry">
+                      <span>🗑️</span> Gỡ Key Hiện Tại (slmgr /upk)
+                    </button>
+                  </div>
+                  <div class="grid-buttons-2col gap-2">
+                    <button class="btn btn-action-card text-danger" onclick="app.deactivateDigitalLicense()" title="Ngắt kết nối Digital License và đưa Windows về trạng thái Chưa Kích Hoạt (Not Active) hoàn toàn">
+                      <span>⛔</span> Hủy Kích Hoạt Digital License
+                    </button>
+                    <button class="btn btn-action-card text-primary" onclick="app.restoreDigitalLicense()" title="Khôi phục kích hoạt Bản quyền Kỹ thuật số theo máy (HWID) từ máy chủ Microsoft">
+                      <span>✨</span> Khôi Phục Digital License
+                    </button>
+                  </div>
+                  <button class="btn btn-action-card" onclick="app.rearmWindows()" title="Đặt lại thời gian dùng thử của Windows về ban đầu">
+                    <span>🔄</span> Đặt Lại Dùng Thử (slmgr /rearm)
+                  </button>
+                </div>
               </div>
             </div>
 
-            <div class="grid-buttons-2col gap-2 mt-2">
-              <button class="btn btn-danger-solid py-3 grid-col-span-2" onclick="app.cleanWinCrack()">
-                <span>🧹</span> ★ Dọn Sạch Crack & KMS Lậu Toàn Diện (Clean Crack)
-              </button>
-
-              <button class="btn btn-action-card border-warning text-warning" onclick="app.cleanOfficeKeys()">
-                <span>🧹</span> Gỡ Sạch Key Office Lậu (OSPP)
-              </button>
-              <button class="btn btn-action-card" onclick="app.rearmWindows()">
-                <span>🔄</span> Đặt Lại Thời Gian Dùng Thử (Rearm)
-              </button>
-
-              <button class="btn btn-action-card text-gold" onclick="app.installKeyPrompt()">
-                <span>🔑</span> Nhập Product Key Mới (slmgr /ipk)
-              </button>
-              <button class="btn btn-action-card text-rose" onclick="app.uninstallWinKey()">
-                <span>🗑️</span> Gỡ Key Hiện Tại (slmgr /upk)
-              </button>
-
-              <button class="btn btn-slate-light" onclick="app.runPrinterFixFunc('open_devmgmt')">
-                <span>🔧</span> Device Manager
-              </button>
-              <button class="btn btn-slate-light" onclick="app.runPrinterFixFunc('open_printmgmt')">
-                <span>🖨️</span> Print Management
-              </button>
+            <!-- Khu vực 2: Công Cụ Bản Quyền Microsoft Office -->
+            <div class="ui-card" style="margin-top: 0; display: flex; flex-direction: column; justify-content: space-between;">
+              <div>
+                <div class="card-header">
+                  <div class="card-title">
+                    <span class="card-icon">📑</span>
+                    <span>Xử Lý Bản Quyền Microsoft Office</span>
+                  </div>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 8px;" class="mt-2">
+                  <button class="btn btn-action-card border-warning text-warning py-2.5 font-semibold" onclick="app.cleanOfficeKeys()" title="Dọn dẹp tất cả các key Office lậu tồn đọng trong OSPP">
+                    <span>🧹</span> Gỡ Sạch Key Office Lậu (OSPP Clean)
+                  </button>
+                  <button class="btn btn-action-card text-gold" onclick="app.installOfficeKeyPrompt()" title="Nhập mã Product Key bản quyền Office và kích hoạt">
+                    <span>🔑</span> Nhập Product Key Office Mới
+                  </button>
+                  <button class="btn btn-action-card" onclick="app.rearmOffice()" title="Đặt lại thời gian dùng thử của Microsoft Office">
+                    <span>🔄</span> Đặt Lại Dùng Thử Office (ospp /rearm)
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -3616,11 +4030,7 @@
                     <span>🌐</span> Danh Sách Trình Duyệt Đã Cài Đặt
                   </h4>
                   <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 11px; font-weight: 600; color: #166534; background: #f0fdf4; padding: 2px 8px; border-radius: 12px; border: 1px solid #bbf7d0;" id="bb-detected-count">Đang kiểm tra...</span>
-                    <label style="font-size: 11px; color: #64748b; cursor: pointer; display: flex; align-items: center; gap: 4px; user-select: none;">
-                      <input type="checkbox" id="bb-show-uninstalled-toggle" onchange="app.renderBrowsersList()" style="accent-color: #2563eb;">
-                      <span>Hiện chưa cài</span>
-                    </label>
+                    <span style="font-size: 11.5px; font-weight: 600; color: #166534; background: #f0fdf4; padding: 3px 10px; border-radius: 12px; border: 1px solid #bbf7d0;" id="bb-detected-count">Đang kiểm tra...</span>
                   </div>
                 </div>
 
@@ -3671,19 +4081,45 @@
                       🎯 Nơi Lưu Bản Sao Lưu (Target Directory):
                     </label>
                     <div style="display: flex; gap: 6px;">
-                      <input type="text" id="bb-target-dir-input" placeholder="Mặc định: Desktop\Browser_Backups" style="flex: 1; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; font-family: monospace;">
+                      <input type="text" id="bb-target-dir-input" placeholder="Mặc định: D:\Browser_Backups (hoặc E:\, F:\...)" style="flex: 1; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; font-family: monospace;">
                       <button class="btn btn-secondary-outline btn-sm" onclick="app.browseBrowserBackupDir()">📂 Chọn</button>
                     </div>
                   </div>
                 </div>
 
+                <!-- Live Progress Card -->
+                <div id="bb-progress-card" style="display: none; margin-top: 14px; background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 10px; padding: 12px 14px; box-shadow: 0 4px 12px rgba(22, 101, 52, 0.08);">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <div class="spinner-border spinner-border-sm text-success" role="status" id="bb-progress-spinner" style="width: 16px; height: 16px; border-width: 2px;"></div>
+                      <span id="bb-progress-title" style="font-weight: 700; font-size: 13px; color: #166534;">Đang chuẩn bị sao lưu...</span>
+                    </div>
+                    <span id="bb-progress-percent" style="font-weight: 800; font-size: 14px; color: #15803d; font-family: monospace;">0%</span>
+                  </div>
+
+                  <!-- Progress Bar -->
+                  <div style="width: 100%; height: 8px; background: #dcfce7; border-radius: 999px; overflow: hidden; margin-bottom: 8px; border: 1px solid #bbf7d0;">
+                    <div id="bb-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #16a34a, #22c55e); transition: width 0.3s ease; border-radius: 999px;"></div>
+                  </div>
+
+                  <!-- Detail Text -->
+                  <div id="bb-progress-detail" style="font-size: 12px; color: #374151; margin-bottom: 8px; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    Khởi tạo tác vụ...
+                  </div>
+
+                  <!-- Mini Live Log -->
+                  <div id="bb-progress-log-box" style="max-height: 100px; overflow-y: auto; background: #0f172a; color: #38bdf8; font-family: 'Consolas', 'Courier New', monospace; font-size: 11px; padding: 8px 10px; border-radius: 6px; line-height: 1.5; border: 1px solid #334155;">
+                    <div style="color: #94a3b8;">[Sẵn sàng] Bắt đầu tác vụ...</div>
+                  </div>
+                </div>
+
                 <!-- Action Controls -->
-                <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 8px;">
-                  <button class="btn btn-primary-solid py-3" onclick="app.startBrowserBackup()" style="font-size: 14px; font-weight: 700;">
+                <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 8px;">
+                  <button class="btn btn-primary-solid py-3" id="bb-btn-backup" onclick="app.startBrowserBackup()" style="font-size: 14px; font-weight: 700;">
                     <span>💾</span> Bắt Đầu Sao Lưu (Backup Now)
                   </button>
                   
-                  <button class="btn btn-success-solid py-3" onclick="app.startBrowserRestore()" style="font-size: 14px; font-weight: 700;">
+                  <button class="btn btn-success-solid py-3" id="bb-btn-restore" onclick="app.startBrowserRestore()" style="font-size: 14px; font-weight: 700;">
                     <span>📥</span> Bắt Đầu Phục Hồi Từ Thư Mục (Restore Now)
                   </button>
                 </div>
@@ -3855,6 +4291,11 @@
                   <div class="text-muted text-xs mt-1 text-center" id="install-progress-text">
                     0% • 0 / 0 phần mềm
                   </div>
+                  <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
+                    <button class="btn btn-slate-light btn-xs" onclick="app.resetWingetSession()" title="Làm mới hàng đợi và xóa tiến trình bị kẹt" style="font-size: 11px; padding: 2px 8px; border-radius: 4px;">
+                      🔄 Đặt lại hàng đợi
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -3899,16 +4340,17 @@
   <div class="log-drawer collapsed" id="log-drawer">
     <div class="log-drawer-header" onclick="app.toggleLogDrawer()">
       <div class="log-drawer-title">
-        <span>📋 LOGS & NHẬT KÝ HỆ THỐNG</span>
+        <span>📋 NHẬT KÝ HỆ THỐNG & LOGS</span>
         <span class="log-badge" id="log-count">0 entries</span>
       </div>
-      <div class="log-drawer-actions">
-        <button class="log-action-btn" onclick="event.stopPropagation(); app.clearLogs();">Xóa Log</button>
-        <span class="toggle-icon">▲</span>
+      <div class="log-drawer-actions" style="display: flex; align-items: center; gap: 6px;">
+        <button class="log-action-btn" onclick="event.stopPropagation(); app.clearLogs();" title="Xóa toàn bộ dòng nhật ký">🗑️ Xóa</button>
+        <button class="log-action-btn" id="btn-toggle-log-drawer" onclick="event.stopPropagation(); app.toggleLogDrawer();" title="Mở rộng hoặc Thu gọn">▲ Mở rộng</button>
+        <button class="log-action-btn log-close-btn" onclick="event.stopPropagation(); app.hideLogDrawer();" title="Ẩn thanh nhật ký này (bấm nút Nhật Ký trên đỉnh để mở lại)">✕ Ẩn</button>
       </div>
     </div>
     <div class="log-drawer-body" id="log-body">
-      <div class="log-line info">[SYS] Đã khởi tạo hệ thống IT-Tools 2026...</div>
+      <div class="log-line info">[SYS] Đã khởi tạo hệ thống IT Tool LTT 2026...</div>
     </div>
   </div>
 
@@ -3928,6 +4370,7 @@
   <script src="js/boot_manager.js"></script>
   <script src="js/currency_converter.js"></script>
   <script src="js/auto_shutdown.js"></script>
+  <script src="js/sendto_editor.js"></script>
   <script>
     var app;
     document.addEventListener("DOMContentLoaded", () => {

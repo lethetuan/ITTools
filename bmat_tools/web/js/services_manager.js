@@ -1,5 +1,5 @@
 /**
- * IT-Tools 2026 - Windows Services Manager Module
+ * IT Tool LTT 2026 - Windows Services Manager Module
  */
 Object.assign(AppController.prototype, {
   async loadServices() {

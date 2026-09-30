@@ -1,5 +1,5 @@
 """
-IT-Tools Main Window
+IT Tool LTT Main Window
 """
 
 import tkinter as tk
@@ -9,7 +9,7 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from constants import COLORS, FONTS, APP_NAME, APP_VERSION, APP_AUTHOR, APP_PHONE, APP_WEBSITE
+from constants import COLORS, FONTS, APP_NAME, APP_VERSION, APP_AUTHOR, APP_PHONE, APP_WEBSITE, APP_TELEGRAM
 from modules.printer_fix import PrinterFix
 
 
@@ -21,7 +21,7 @@ class MainWindow:
         self.create_layout()
 
     def setup_window(self):
-        self.root.title(f"IT-Tools v{APP_VERSION}")
+        self.root.title(f"{APP_NAME} v{APP_VERSION} - {APP_AUTHOR} | Zalo: {APP_PHONE}")
         self.root.geometry("920x720")
         self.root.minsize(750, 580)
         self.root.resizable(True, True)
@@ -256,6 +256,7 @@ class MainWindow:
             f"Điện thoại: {APP_PHONE}\n"
             f"Zalo     : {APP_PHONE}\n"
             f"Website  : {APP_WEBSITE}\n"
+            f"Telegram : {APP_TELEGRAM}\n"
             f"─────────────────────────────\n"
             "Windows System Management Utility\n"
             "Built with Python & Tkinter\n\n"

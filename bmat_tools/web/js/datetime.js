@@ -1,5 +1,5 @@
 /**
- * IT-Tools 2026 - Date & Time Config Module
+ * IT Tool LTT 2026 - Date & Time Config Module
  */
 Object.assign(AppController.prototype, {
   async loadDateTimeInfo() {

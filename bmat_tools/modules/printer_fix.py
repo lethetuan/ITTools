@@ -574,7 +574,7 @@ def open_printserver(log=None):
 # ══ MAIN UI CLASS ══════════════════════════════════════════
 
 class PrinterFix:
-    """Fix Print tab - tích hợp vào IT-Tools."""
+    """Fix Print tab - tích hợp vào IT Tool LTT."""
 
     def __init__(self, parent):
         self.parent = parent
@@ -799,7 +799,7 @@ class PrinterFix:
 
         self.log.insert(tk.END,
             "╔══════════════════════════════════════════════════════╗\n"
-            "║        🖨  SỬA LỖI MÁY IN  -  IT-Tools               ║\n"
+            "║        🖨  SỬA LỖI MÁY IN  -  IT Tool LTT            ║\n"
             "║        LAN & USB  |  Lê Thế Tuấn  |  0352 194 195    ║\n"
             "╚══════════════════════════════════════════════════════╝\n\n", "title")
 
@@ -808,5 +808,5 @@ class PrinterFix:
         else:
             self.log.insert(tk.END,
                 "  ✘  CẢNH BÁO: Không có quyền Administrator!\n"
-                "     Chuột phải vào IT-Tools > Run as administrator.\n\n", "error")
+                "     Chuột phải vào IT Tool LTT > Run as administrator.\n\n", "error")
         self.log.insert(tk.END, "  Chọn chức năng bên trái để bắt đầu.\n\n", "info")

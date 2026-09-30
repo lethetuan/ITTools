@@ -281,7 +281,7 @@ class AutoShutdown:
                 else:
                     messagebox.showwarning('Warning', 'Chọn ứng dụng cần chạy!')
             elif action == 'message':
-                msg = self.app_entry.get().strip() or 'BMAT-Tools Notification'
+                msg = self.app_entry.get().strip() or 'IT Tool LTT Notification'
                 messagebox.showinfo('Thông báo', msg)
         except Exception as e:
             messagebox.showerror('Error', f'Lỗi thực thi: {e}')
@@ -341,7 +341,7 @@ def create_quick_timer_task(action, minutes, message=""):
     dt_str = target_dt.strftime("%Y-%m-%d %H:%M:%S")
 
     # Sanitize message to prevent PowerShell injection
-    safe_msg = (message.strip() or f"Tu dong {action} boi IT-Tools Quick Timer").replace('"', '').replace("'", "").replace("`", "")
+    safe_msg = (message.strip() or f"Tu dong {action} boi IT Tool LTT Quick Timer").replace('"', '').replace("'", "").replace("`", "")
 
     if action == "shutdown":
         exe = "shutdown.exe"
@@ -408,7 +408,7 @@ def cancel_quick_timer_task():
 
 
 def get_scheduled_shutdown_tasks():
-    """Returns all scheduled shutdown tasks created by IT-Tools."""
+    """Returns all scheduled shutdown tasks created by IT Tool LTT."""
     ps_code = """
     $tasks = Get-ScheduledTask -TaskPath '\\' -ErrorAction SilentlyContinue | Where-Object { $_.TaskName -like 'ITTools_Shutdown_*' }
     if (-not $tasks) { Write-Output "[]"; exit }
@@ -482,7 +482,7 @@ def create_scheduled_shutdown_task(name, action, freq, time_str, days=None, date
     full_name = f"ITTools_Shutdown_{clean_name}"
     
     # Sanitize message to prevent PowerShell injection
-    safe_msg = (message.strip() or f"Tu dong {action} boi IT-Tools").replace('"', '').replace("'", "").replace("`", "")
+    safe_msg = (message.strip() or f"Tu dong {action} boi IT Tool LTT").replace('"', '').replace("'", "").replace("`", "")
 
     if action == "shutdown":
         exe = "shutdown.exe"

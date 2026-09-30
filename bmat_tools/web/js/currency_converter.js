@@ -1,6 +1,6 @@
 /**
- * Currency Converter Module - Realtime Exchange Rates & Calculator
- * Author: Lê Thế Tuấn
+ * IT Tool LTT 2026 - Currency Converter Module - Realtime Exchange Rates & Calculator
+ * Author: Lê Thế Tuấn | 0352 194 195 | https://lethetuanpc.blogspot.com | Telegram: https://t.me/lethetuanpc
  */
 
 Object.assign(AppController.prototype, {

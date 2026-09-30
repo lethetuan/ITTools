@@ -198,23 +198,75 @@ class FirewallManager:
 
 
 def get_firewall_status():
-    """Returns real-time status of Domain, Private, and Public Firewall profiles."""
+    """Returns real-time status of Domain, Private, and Public Firewall profiles, inbound policy, and common rule groups."""
+    from concurrent.futures import ThreadPoolExecutor
+
     profiles = {"domain": False, "private": False, "public": False}
+    policies = {"domain": "BlockInbound", "private": "BlockInbound", "public": "BlockInbound"}
+    inbound_allowed = False
+    fps_active = False
+    fps_count = 0
+    rdp_active = False
+    rdp_count = 0
+
+    def _fetch_profiles():
+        nonlocal profiles, policies, inbound_allowed
+        try:
+            res = subprocess.run(["netsh", "advfirewall", "show", "allprofiles"], capture_output=True, text=True, timeout=8)
+            current_prof = None
+            for line in res.stdout.splitlines():
+                line_s = line.strip()
+                for p in ["Domain", "Private", "Public"]:
+                    if f"{p} Profile Settings:" in line_s or f"{p.lower()} profile" in line_s.lower():
+                        current_prof = p.lower()
+                if current_prof:
+                    if line_s.startswith("State"):
+                        profiles[current_prof] = "on" in line_s.lower()
+                    elif line_s.startswith("Firewall Policy"):
+                        policies[current_prof] = line_s.split(None, 2)[-1].strip()
+            inbound_allowed = any("allowinbound" in pol.lower() for pol in policies.values())
+        except Exception:
+            pass
+
+    def _fetch_rules():
+        nonlocal fps_active, fps_count, rdp_active, rdp_count
+        try:
+            res = subprocess.run(["netsh", "advfirewall", "firewall", "show", "rule", "name=all"], capture_output=True, text=True, timeout=8)
+            for block in res.stdout.split("Rule Name:"):
+                if not block.strip():
+                    continue
+                is_enabled = False
+                is_fps = False
+                is_rdp = False
+                for line in block.splitlines():
+                    line_s = line.strip()
+                    if line_s.startswith("Enabled:"):
+                        is_enabled = (line_s.split(":", 1)[1].strip().lower() == "yes")
+                    elif line_s.startswith("Grouping:"):
+                        grp = line_s.split(":", 1)[1].strip()
+                        if "File and Printer Sharing" in grp or "@FirewallAPI.dll,-28502" in grp or "@FirewallAPI.dll,-28672" in grp:
+                            is_fps = True
+                        elif "Remote Desktop" in grp or "@FirewallAPI.dll,-28752" in grp or "@FirewallAPI.dll,-28753" in grp:
+                            is_rdp = True
+                if is_enabled:
+                    if is_fps:
+                        fps_count += 1
+                    if is_rdp:
+                        rdp_count += 1
+            fps_active = fps_count > 0
+            rdp_active = rdp_count > 0
+        except Exception:
+            pass
+
     try:
-        res = subprocess.run(["netsh", "advfirewall", "show", "allprofiles", "state"], capture_output=True, text=True, timeout=10)
-        current_prof = None
-        for line in res.stdout.splitlines():
-            line_str = line.strip()
-            if "domain profile" in line_str.lower():
-                current_prof = "domain"
-            elif "private profile" in line_str.lower():
-                current_prof = "private"
-            elif "public profile" in line_str.lower():
-                current_prof = "public"
-            if current_prof and "state" in line_str.lower():
-                profiles[current_prof] = "on" in line_str.lower()
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            f1 = executor.submit(_fetch_profiles)
+            f2 = executor.submit(_fetch_rules)
+            f1.result()
+            f2.result()
     except Exception:
-        pass
+        _fetch_profiles()
+        _fetch_rules()
 
     return {
         "success": True,
@@ -222,7 +274,13 @@ def get_firewall_status():
         "private": profiles["private"],
         "public": profiles["public"],
         "all_on": all(profiles.values()),
-        "any_on": any(profiles.values())
+        "any_on": any(profiles.values()),
+        "allow_inbound": inbound_allowed,
+        "policies": policies,
+        "file_sharing": fps_active,
+        "file_sharing_count": fps_count,
+        "rdp": rdp_active,
+        "rdp_count": rdp_count
     }
 
 
@@ -241,14 +299,93 @@ def set_firewall_action(action):
         elif action == "allow_inbound":
             subprocess.run("netsh advfirewall set allprofiles firewallpolicy allowinbound,allowoutbound", shell=True)
             return {"success": True, "message": "🔓 Đã Cho Phép tất cả kết nối Inbound!"}
+        elif action == "block_inbound":
+            subprocess.run("netsh advfirewall set allprofiles firewallpolicy blockinbound,allowoutbound", shell=True)
+            return {"success": True, "message": "🔒 Đã Chặn Inbound (Khôi phục mặc định an toàn)!"}
         elif action == "enable_sharing":
-            subprocess.run('netsh advfirewall firewall set rule group="File and Printer Sharing" new enable=Yes', shell=True)
-            subprocess.run('netsh advfirewall firewall set rule group="Network Discovery" new enable=Yes', shell=True)
-            return {"success": True, "message": "📂 Đã mở Firewall cho File Sharing & Network Discovery!"}
+            # Tối ưu an toàn tuyệt đối: Chỉ mở Inbound cho Private và Domain, loại bỏ hoàn toàn Public và Outbound
+            ps_enable = (
+                "$privRules = @('FPS-SMB-In-TCP','FPS-SpoolSvc-In-TCP','FPS-SpoolWorker-In-TCP','FPS-RPCSS-In-TCP','FPS-NB_Name-In-UDP','FPS-NB_Datagram-In-UDP','FPS-NB_Session-In-TCP','FPS-ICMP4-ERQ-In'); "
+                "foreach ($r in $privRules) { Set-NetFirewallRule -Name $r -Profile Private -Enabled True }; "
+                "$domRules = @('FPS-SMB-In-TCP-NoScope','FPS-SpoolSvc-In-TCP-NoScope','FPS-SpoolWorker-In-TCP-NoScope','FPS-RPCSS-In-TCP-NoScope','FPS-NB_Name-In-UDP-NoScope','FPS-NB_Datagram-In-UDP-NoScope','FPS-NB_Session-In-TCP-NoScope','FPS-ICMP4-ERQ-In-NoScope'); "
+                "foreach ($r in $domRules) { Set-NetFirewallRule -Name $r -Profile Domain -Enabled True }"
+            )
+            subprocess.run(["powershell", "-NoProfile", "-Command", ps_enable], capture_output=True, text=True)
+            return {"success": True, "message": "📂 Đã kích hoạt 16 quy tắc File & Printer Sharing an toàn (Chỉ chiều IN trên Private & Domain, đóng hoàn toàn Public & Outbound)!"}
+        elif action == "disable_sharing":
+            subprocess.run('netsh advfirewall firewall set rule group="File and Printer Sharing" new enable=No', shell=True)
+            subprocess.run('netsh advfirewall firewall set rule group="File and Printer Sharing (Restrictive)" new enable=No', shell=True)
+            return {"success": True, "message": "🔒 Đã tắt/chặn toàn bộ Firewall cho File Sharing & Máy In!"}
         elif action == "enable_rdp":
             subprocess.run('netsh advfirewall firewall set rule group="Remote Desktop" new enable=Yes', shell=True)
+            subprocess.run('netsh advfirewall firewall set rule group="Remote Desktop (WebSocket)" new enable=Yes', shell=True)
             return {"success": True, "message": "🖥️ Đã mở Firewall cho Remote Desktop (RDP)!"}
+        elif action == "disable_rdp":
+            subprocess.run('netsh advfirewall firewall set rule group="Remote Desktop" new enable=No', shell=True)
+            subprocess.run('netsh advfirewall firewall set rule group="Remote Desktop (WebSocket)" new enable=No', shell=True)
+            return {"success": True, "message": "🔒 Đã tắt/chặn Firewall cho Remote Desktop (RDP)!"}
         else:
             return {"success": False, "message": "Hành động không hợp lệ."}
     except Exception as e:
         return {"success": False, "message": str(e)}
+
+
+def get_firewall_rules_detail(filter_type="fps"):
+    """Returns detailed list of firewall rules matching the filter_type."""
+    try:
+        res = subprocess.run(["netsh", "advfirewall", "firewall", "show", "rule", "name=all"], capture_output=True, text=True, timeout=10)
+        rules = []
+        for block in res.stdout.split("Rule Name:"):
+            if not block.strip():
+                continue
+            r = {}
+            lines = block.splitlines()
+            r["name"] = lines[0].strip()
+            for line in lines[1:]:
+                line_s = line.strip()
+                for field, key in [
+                    ("Enabled:", "enabled"),
+                    ("Direction:", "direction"),
+                    ("Profiles:", "profiles"),
+                    ("Grouping:", "grouping"),
+                    ("LocalIP:", "local_ip"),
+                    ("RemoteIP:", "remote_ip"),
+                    ("Protocol:", "protocol"),
+                    ("LocalPort:", "local_port"),
+                    ("RemotePort:", "remote_port"),
+                    ("Action:", "action")
+                ]:
+                    if line_s.startswith(field):
+                        r[key] = line_s.split(":", 1)[1].strip()
+
+            grp = r.get("grouping", "")
+            is_fps = "File and Printer Sharing" in grp or "@FirewallAPI.dll,-28502" in grp or "@FirewallAPI.dll,-28672" in grp
+            is_rdp = "Remote Desktop" in grp or "@FirewallAPI.dll,-28752" in grp or "@FirewallAPI.dll,-28753" in grp
+
+            # Category detection for UX
+            name_u = r["name"].upper()
+            if "SMB" in name_u:
+                r["category"] = "SMB (Chia sẻ File & In)"
+            elif "SPOOLER" in name_u or "RPC" in name_u:
+                r["category"] = "Print Spooler RPC (Máy in)"
+            elif "NB-" in name_u or "NETBIOS" in name_u:
+                r["category"] = "NetBIOS (Định danh LAN)"
+            elif "LLMNR" in name_u:
+                r["category"] = "LLMNR (Dò tìm Hostname)"
+            elif "ECHO REQUEST" in name_u or "ICMP" in name_u:
+                r["category"] = "ICMP Ping (Kiểm tra kết nối)"
+            elif "REMOTE DESKTOP" in name_u or "RDP" in name_u:
+                r["category"] = "Remote Desktop (RDP)"
+            else:
+                r["category"] = "Khác"
+
+            if filter_type == "fps" and is_fps:
+                rules.append(r)
+            elif filter_type == "rdp" and is_rdp:
+                rules.append(r)
+            elif filter_type == "all":
+                rules.append(r)
+
+        return {"success": True, "rules": rules, "total": len(rules)}
+    except Exception as e:
+        return {"success": False, "message": str(e), "rules": [], "total": 0}

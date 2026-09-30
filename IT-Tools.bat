@@ -1,9 +1,10 @@
 @echo off
-title IT-Tools - Le The Tuan
+title IT Tool LTT - Le The Tuan
 cd /d "%~dp0bmat_tools"
-echo Starting IT-Tools...
+echo Starting IT Tool LTT...
 echo Author: Le The Tuan ^| Phone/Zalo: 0352 194 195
-echo Website: https://lethetuanpc.blogspot.com/
+echo Website: https://lethetuanpc.blogspot.com
+echo Telegram: https://t.me/lethetuanpc
 echo.
 python main.py
 if errorlevel 1 (

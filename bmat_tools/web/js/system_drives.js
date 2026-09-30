@@ -1,5 +1,5 @@
 /**
- * IT-Tools 2026 - System Drives, Folder Size Analyzer & Auto Shutdown Module
+ * IT Tool LTT 2026 - System Drives, Folder Size Analyzer & Auto Shutdown Module
  */
 Object.assign(AppController.prototype, {
   async loadSystemDrives() {
