@@ -2,6 +2,11 @@
 IT Tool LTT Constants & Theme Configuration
 """
 import os
+import sys
+
+def get_resource_path(*rel_path):
+    base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, *rel_path)
 
 APP_NAME = "IT Tool LTT"
 APP_VERSION = "1.0.0"

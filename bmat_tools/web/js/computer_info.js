@@ -147,7 +147,7 @@ Object.assign(AppController.prototype, {
 
     // OS
     set("hw-os-caption", info.os?.caption || "N/A");
-    set("hw-os-details", `${info.os?.build ? "Build " + info.os.build : ""} ${info.os?.install_date ? "? Cai: " + info.os.install_date : ""}`.trim() || "N/A");
+    set("hw-os-details", `${info.os?.build ? "Build " + info.os.build : ""} ${info.os?.install_date ? "· Cài: " + info.os.install_date : ""}`.trim() || "N/A");
 
     this.addLog("success", "Da cap nhat thong tin phan cung thanh cong!");
 
@@ -188,7 +188,7 @@ Object.assign(AppController.prototype, {
         const netTotal = (s.net_rx_kb || 0) + (s.net_tx_kb || 0);
         const netBarPct = Math.min(100, netTotal / 10240 * 100);
         setEl("hw-gauge-net-pct", s.net_rx || "0 KB/s");
-        setEl("hw-gauge-net-speed", s.net_rx && s.net_tx ? `?${s.net_rx} ?${s.net_tx}` : "0 KB/s");
+        setEl("hw-gauge-net-speed", s.net_rx && s.net_tx ? `↓ ${s.net_rx}  ↑ ${s.net_tx}` : "0 KB/s");
         setBar("hw-gauge-net-bar", Math.max(2, netBarPct), null);
 
         // Disk I/O
@@ -196,9 +196,26 @@ Object.assign(AppController.prototype, {
         const diskBarPct = Math.min(100, diskTotal / 51200 * 100);
         setEl("hw-gauge-disk-pct", s.disk_read && s.disk_write ? `R:${s.disk_read} W:${s.disk_write}` : "0 KB/s");
         if (s.partitions_usage && s.partitions_usage.length > 0) {
-          setEl("hw-gauge-disk-summary", s.partitions_usage.map(p => `${p.drive} ${p.free_gb}G`).join(" ? "));
+          setEl("hw-gauge-disk-summary", s.partitions_usage.map(p => `${p.drive} ${p.free_gb}G`).join(" · "));
         }
         setBar("hw-gauge-disk-bar", Math.max(2, diskBarPct), null);
+
+        // Battery Real-time Update
+        if (s.battery && s.battery.has_battery) {
+          const bLevel = s.battery.level_pct;
+          setEl("hw-bat-level", `${bLevel}%`);
+          setEl("hw-bat-status", s.battery.status_text);
+          const batBar = document.getElementById("hw-bat-bar");
+          if (batBar) {
+            batBar.style.width = `${bLevel}%`;
+            batBar.style.background = s.battery.is_ac ? "#22c55e" : (bLevel < 20 ? "#ef4444" : bLevel < 50 ? "#f59e0b" : "#22c55e");
+          }
+          const batPresentEl = document.getElementById("hw-bat-present");
+          if (batPresentEl) {
+            batPresentEl.innerText = "🔋 Có pin (Laptop)";
+            batPresentEl.style.color = "#22c55e";
+          }
+        }
 
       } catch (err) {
         console.warn("Realtime stats error:", err);
@@ -258,25 +275,138 @@ Object.assign(AppController.prototype, {
   async openVendorDriverSite() {
     const vendor = this.currentSpecsInfo?.system?.manufacturer || this.currentSpecsInfo?.system?.vendor || "";
     const serviceTag = this.currentSpecsInfo?.service_tag?.service_tag || "";
-    this.addLog("info", `Dang mo trang Driver cua hang ${vendor}...`);
+    this.addLog("info", `Đang mở trang Driver của hãng ${vendor}...`);
     if (window.pywebview && window.pywebview.api) {
       const res = await window.pywebview.api.open_vendor_driver_site(vendor, serviceTag);
       this.addLog(res.success ? "success" : "info", res.message);
     } else {
-      alert(`[Demo] Mo trang Driver cua ${vendor} (Service Tag: ${serviceTag})`);
+      window.open("https://www.google.com/search?q=" + encodeURIComponent(`driver download ${vendor}`), "_blank");
     }
   },
 
-  checkMissingDrivers() {
-    const missing = this.currentSpecsInfo?.missing_drivers || [];
-    if (missing.length === 0) {
-      alert("? Tat ca thiet bi phan cung deu da duoc cai dat Driver day du!");
-      this.addLog("success", "Kiem tra Driver: Tat ca thiet bi hoat dong binh thuong.");
+  async openDeviceManager() {
+    this.addLog("info", "Đang mở Trình quản lý thiết bị Device Manager (devmgmt.msc)...");
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.open_device_manager) {
+      const res = await window.pywebview.api.open_device_manager();
+      this.addLog(res.success ? "success" : "error", res.message);
     } else {
-      let msg = `?? Phat hien ${missing.length} thiet bi chua cai hoac bi loi Driver:\n\n`;
-      missing.forEach((d, i) => { msg += `${i + 1}. ${d.name} (${d.class})\n   ID: ${d.instance}\n\n`; });
-      alert(msg);
-      this.addLog("warn", `Phat hien ${missing.length} driver thieu/loi.`);
+      alert("[MOCK] Đã mở Trình quản lý thiết bị (devmgmt.msc)!");
+    }
+  },
+
+  closeDriverCheckModal() {
+    const modalEl = document.getElementById("driver-check-modal");
+    if (modalEl) modalEl.style.display = "none";
+  },
+
+  async checkMissingDrivers(forceScan = true) {
+    const modalEl = document.getElementById("driver-check-modal");
+    const modalBody = document.getElementById("driver-check-modal-body");
+
+    if (modalBody && modalEl) {
+      modalBody.innerHTML = `
+        <div style="text-align: center; padding: 30px 15px;">
+          <span class="spinner-border spinner-border-lg text-primary" style="width: 32px; height: 32px; margin-bottom: 12px;"></span>
+          <div style="font-weight: 700; color: #1e293b; font-size: 14px;">Đang quét toàn bộ thiết bị & Driver thời gian thực...</div>
+          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Kiểm tra mã trạng thái phần cứng chuẩn Device Manager...</div>
+        </div>
+      `;
+      modalEl.style.display = "flex";
+    }
+
+    let missing = [];
+
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.check_missing_drivers) {
+      try {
+        const res = await window.pywebview.api.check_missing_drivers();
+        if (res && res.success) {
+          missing = res.missing_drivers || [];
+          if (this.currentSpecsInfo) {
+            this.currentSpecsInfo.missing_drivers = missing;
+          }
+        }
+      } catch (err) {
+        console.error("Lỗi quét driver:", err);
+      }
+    } else {
+      missing = this.currentSpecsInfo?.missing_drivers || [];
+    }
+
+    if (!modalBody || !modalEl) return;
+
+    if (missing.length === 0) {
+      this.addLog("success", "Kiểm tra Driver: 100% thiết bị phần cứng đều có Driver đầy đủ và hoạt động tốt.");
+      modalBody.innerHTML = `
+        <div style="text-align: center; padding: 14px 10px;">
+          <div style="font-size: 48px; margin-bottom: 10px;">✅</div>
+          <h4 style="font-size: 16px; font-weight: 700; color: #10b981; margin-bottom: 8px;">
+            Tất Cả Thiết Bị Đều Hoạt Động Hoàn Hảo!
+          </h4>
+          <p style="font-size: 13px; color: #475569; line-height: 1.6; max-width: 470px; margin: 0 auto 18px auto;">
+            Hệ thống đã đối soát trực tiếp theo thời gian thực: <strong>100% phần cứng hiện tại</strong> đều đã được cài đặt Driver đầy đủ, không có xung đột, không có chấm than vàng hay lỗi mã nào (Khớp hoàn toàn với Device Manager).
+          </p>
+          <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 10px 14px; margin-bottom: 18px; font-size: 12px; color: #047857; text-align: left;">
+            ✓ <strong>Trạng thái:</strong> Khỏe mạnh (0 thiết bị cảnh báo)<br>
+            ✓ <strong>Mã lỗi loại trừ:</strong> Đã bỏ qua các thiết bị ngoại vi đã rút (Phantom USB/Bluetooth) và thiết bị tự tắt.
+          </div>
+          <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+            <button class="btn btn-primary-solid btn-sm" onclick="app.openDeviceManager()">
+              ⚙️ Mở Device Manager (devmgmt.msc)
+            </button>
+            <button class="btn btn-slate-light btn-sm" onclick="app.checkMissingDrivers(true)">
+              🔄 Quét lại
+            </button>
+            <button class="btn btn-slate-light btn-sm" onclick="app.closeDriverCheckModal()">
+              Đóng
+            </button>
+          </div>
+        </div>
+      `;
+    } else {
+      this.addLog("warn", `Phát hiện ${missing.length} driver bị lỗi hoặc thiếu.`);
+      modalBody.innerHTML = `
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div style="background: rgba(239, 68, 68, 0.08); border-left: 4px solid #ef4444; border-radius: 6px; padding: 10px 14px;">
+            <div style="font-weight: 700; color: #dc2626; font-size: 14px; display: flex; align-items: center; gap: 6px;">
+              <span>⚠️</span> Phát hiện ${missing.length} thiết bị chưa cài hoặc bị lỗi Driver:
+            </div>
+            <div style="font-size: 12px; color: #64748b; margin-top: 3px;">
+              Dưới đây là danh sách thiết bị gặp sự cố được ghi nhận trực tiếp từ Device Manager:
+            </div>
+          </div>
+
+          <div style="max-height: 280px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
+            ${missing.map((d, i) => `
+              <div style="padding: 10px 12px; border-bottom: 1px solid #f1f5f9; background: ${i % 2 === 0 ? '#fafafa' : '#fff'};">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+                  <div>
+                    <strong style="color: #1e293b; font-size: 13px;">${i + 1}. ${d.name}</strong>
+                    <span class="badge" style="background: #f1f5f9; color: #64748b; font-size: 10.5px; margin-left: 6px; padding: 2px 6px; border-radius: 4px;">${d.class || 'Phần cứng'}</span>
+                  </div>
+                  <span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; white-space: nowrap;">
+                    ${d.error_desc || 'Lỗi Driver'}
+                  </span>
+                </div>
+                <div style="font-family: monospace; font-size: 10.5px; color: #64748b; margin-top: 5px; word-break: break-all;">
+                  ID: ${d.instance}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+
+          <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; border-top: 1px solid #f1f5f9; padding-top: 12px;">
+            <button class="btn btn-primary-solid btn-sm" onclick="app.openDeviceManager()">
+              ⚙️ Mở Device Manager để cập nhật
+            </button>
+            <button class="btn btn-gold-light btn-sm" onclick="app.openVendorDriverSite()">
+              🔗 Tìm Driver Hãng
+            </button>
+            <button class="btn btn-slate-light btn-sm" onclick="app.closeDriverCheckModal()">
+              Đóng
+            </button>
+          </div>
+        </div>
+      `;
     }
   },
 

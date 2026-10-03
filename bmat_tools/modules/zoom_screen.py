@@ -30,8 +30,17 @@ from ctypes import wintypes, c_float, c_int, c_bool
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
 
-CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config")
-CONFIG_FILE = os.path.join(CONFIG_DIR, "zoom_screen.json")
+def _resolve_config_file():
+    appdata = os.environ.get("APPDATA", "")
+    if appdata:
+        p = os.path.join(appdata, "IT Tool LTT", "config", "zoom_screen.json")
+        if os.path.exists(p):
+            return os.path.dirname(p), p
+    base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    bundled = os.path.join(base, "config", "zoom_screen.json")
+    return os.path.dirname(bundled), bundled
+
+CONFIG_DIR, CONFIG_FILE = _resolve_config_file()
 
 DEFAULT_HOTKEYS = {
     "zoom": "Ctrl + 1",
@@ -275,17 +284,12 @@ def validate_hotkeys_dict(hotkeys_dict):
 
 
 def load_settings():
-    if not os.path.exists(CONFIG_DIR):
-        try:
-            os.makedirs(CONFIG_DIR, exist_ok=True)
-        except Exception:
-            pass
-
     merged = dict(DEFAULT_SETTINGS)
     merged["custom_hotkeys"] = dict(DEFAULT_HOTKEYS)
-    if os.path.exists(CONFIG_FILE):
+    _, cfg_file = _resolve_config_file()
+    if os.path.exists(cfg_file):
         try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            with open(cfg_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 merged.update(data)
                 if "custom_hotkeys" in data and isinstance(data["custom_hotkeys"], dict):
@@ -299,11 +303,17 @@ def load_settings():
 
 def save_settings(settings):
     try:
-        if not os.path.exists(CONFIG_DIR):
-            os.makedirs(CONFIG_DIR, exist_ok=True)
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            target_dir = os.path.join(appdata, "IT Tool LTT", "config")
+        else:
+            target_dir = CONFIG_DIR
+        os.makedirs(target_dir, exist_ok=True)
+        target_file = os.path.join(target_dir, "zoom_screen.json")
+
         merged = load_settings()
         merged.update(settings)
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        with open(target_file, "w", encoding="utf-8") as f:
             json.dump(merged, f, indent=2, ensure_ascii=False)
         return True
     except Exception as ex:

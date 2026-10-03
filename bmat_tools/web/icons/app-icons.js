@@ -108,27 +108,67 @@ window.APP_ICONS = {
   // CONG CU MANG
   "Wireshark.Wireshark": { type: "simpleicons", slug: "wireshark", color: "#1679A7" },
   "Cloudflare.Warp": { type: "simpleicons", slug: "cloudflare", color: "#F48120" },
+
+  // UNG DUNG BO SUNG PHO BIEN
+  "TorProject.TorBrowser": { type: "simpleicons", slug: "torproject", color: "#7D4698" },
+  "Mozilla.Thunderbird": { type: "simpleicons", slug: "thunderbird", color: "#0A84FF" },
+  "OpenWhisperSystems.Signal": { type: "simpleicons", slug: "signal", color: "#3A76F0" },
+  "Element.Element": { type: "simpleicons", slug: "element", color: "#0DBD8B" },
+  "calibre.calibre": { type: "simpleicons", slug: "calibre", color: "#2B5797" },
+  "DeepL.DeepL": { type: "simpleicons", slug: "deepl", color: "#0F2B46" },
+  "Logseq.Logseq": { type: "simpleicons", slug: "logseq", color: "#10B981" },
+  "Joplin.Joplin": { type: "simpleicons", slug: "joplin", color: "#2B5797" },
+  "Skillbrains.Lightshot": { type: "letter", letter: "LS", bg: "#7B1FA2", fg: "white" },
+  "dotPDN.PaintDotNet": { type: "letter", letter: "PDN", bg: "#0078D7", fg: "white" },
+  "AntibodySoftware.WizTree": { type: "letter", letter: "WT", bg: "#2E7D32", fg: "white" },
+  "Ventoy.Ventoy": { type: "letter", letter: "VTOY", bg: "#0288D1", fg: "white" },
+  "Balena.Etcher": { type: "simpleicons", slug: "balena", color: "#2E86DE" },
+  "RevoUninstaller.RevoUninstaller": { type: "letter", letter: "REVO", bg: "#1976D2", fg: "white" },
+  "GeekUninstaller.GeekUninstaller": { type: "letter", letter: "GEEK", bg: "#FF6F00", fg: "white" },
+  "Klocman.BulkCrapUninstaller": { type: "letter", letter: "BCU", bg: "#D32F2F", fg: "white" },
+  "AutoHotkey.AutoHotkey": { type: "simpleicons", slug: "autohotkey", color: "#334455" },
+  "KeePassXCTeam.KeePassXC": { type: "simpleicons", slug: "keepassxc", color: "#5FBB46" },
+  "AgileBits.1Password": { type: "simpleicons", slug: "1password", color: "#0A85EA" },
+  "Tailscale.Tailscale": { type: "simpleicons", slug: "tailscale", color: "#24292E" },
+  "WireGuard.WireGuard": { type: "simpleicons", slug: "wireguard", color: "#88171A" },
+  "LeNgocKhoa.Laragon": { type: "letter", letter: "LARA", bg: "#303F9F", fg: "white" },
+  "SublimeHQ.SublimeText.4": { type: "simpleicons", slug: "sublimetext", color: "#FF9800" },
+  "JetBrains.IntelliJIDEA.Community": { type: "simpleicons", slug: "intellijidea", color: "#000000" },
+  "JetBrains.PyCharm.Community": { type: "simpleicons", slug: "pycharm", color: "#21D789" },
+  "Neovim.Neovim": { type: "simpleicons", slug: "neovim", color: "#57A143" },
+  "vim.vim": { type: "simpleicons", slug: "vim", color: "#019733" },
+  "Atlassian.Sourcetree": { type: "simpleicons", slug: "sourcetree", color: "#0052CC" },
+  "Rustlang.Rustup": { type: "simpleicons", slug: "rust", color: "#000000" },
+  "Blizzard.BattleNet": { type: "simpleicons", slug: "battledotnet", color: "#00AEFF" },
+  "ElectronicArts.EADesktop": { type: "simpleicons", slug: "ea", color: "#FF4747" },
+  "Ubisoft.Connect": { type: "simpleicons", slug: "ubisoft", color: "#000000" },
+  "GOG.Galaxy": { type: "simpleicons", slug: "gogdotcom", color: "#86328A" },
+  "Roblox.Roblox": { type: "simpleicons", slug: "roblox", color: "#000000" },
+  "Famatech.AdvancedIPScanner": { type: "letter", letter: "AIP", bg: "#00796B", fg: "white" },
+  "Telerik.Fiddler.Classic": { type: "letter", letter: "FID", bg: "#2E7D32", fg: "white" }
 };
 
 /**
  * Tra ve HTML img hoac span cho mot winget app ID
  * @param {string} appId - Winget Package ID
  * @param {number} size  - Kich thuoc icon (px), mac dinh 28
+ * @param {string} fallbackEmoji - Emoji fallback neu khong co icon
  * @returns {string} HTML string
  */
-window.getAppIconHtml = function (appId, size) {
+window.getAppIconHtml = function (appId, size, fallbackEmoji) {
   if (!size) size = 28;
-  var entry = window.APP_ICONS[appId];
+  var entry = window.APP_ICONS && window.APP_ICONS[appId];
   var s = "width:" + size + "px;height:" + size + "px;object-fit:contain;display:inline-block;vertical-align:middle;flex-shrink:0;border-radius:4px;";
+  var fallback = fallbackEmoji || "📦";
 
   if (!entry) {
-    return '<span style="font-size:' + (size * 0.75) + 'px;width:' + size + 'px;height:' + size + 'px;display:inline-flex;align-items:center;justify-content:center;">📦</span>';
+    return '<span style="font-size:' + (size * 0.75) + 'px;width:' + size + 'px;height:' + size + 'px;display:inline-flex;align-items:center;justify-content:center;">' + fallback + '</span>';
   }
 
   if (entry.type === "simpleicons") {
     var color = (entry.color || "#555555").replace("#", "");
     var url = "https://cdn.simpleicons.org/" + entry.slug + "/" + color;
-    return '<img src="' + url + '" alt="' + appId + '" style="' + s + '" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement(\'span\'),{textContent:\'📦\',style:\'font-size:' + Math.round(size * 0.75) + 'px\'}))">';
+    return '<img src="' + url + '" alt="' + appId + '" style="' + s + '" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement(\'span\'),{textContent:\'' + fallback + '\',style:\'font-size:' + Math.round(size * 0.75) + 'px\'}))">';
   }
 
   if (entry.type === "letter") {
@@ -142,5 +182,5 @@ window.getAppIconHtml = function (appId, size) {
     return '<img src="' + entry.url + '" alt="' + appId + '" style="' + s + '" loading="lazy">';
   }
 
-  return '<span style="font-size:' + (size * 0.75) + 'px;width:' + size + 'px;height:' + size + 'px;display:inline-flex;align-items:center;justify-content:center;">📦</span>';
+  return '<span style="font-size:' + (size * 0.75) + 'px;width:' + size + 'px;height:' + size + 'px;display:inline-flex;align-items:center;justify-content:center;">' + fallback + '</span>';
 };

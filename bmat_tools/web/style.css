@@ -2862,6 +2862,150 @@ body.dark-mode .pf-step-card.pf-step-done .pf-step-icon .pf-icon-mark {
   color: #22c55e;
 }
 
+/* ── Windows Update & Security Status Cards ────────────────────────────── */
+.win-status-banner {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.2s ease;
+}
+
+.win-status-banner.status-active {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.win-status-banner.status-paused {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.win-status-banner.status-disabled {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.win-status-banner.status-thirdparty {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+}
+
+.win-status-banner-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.win-status-banner-text {
+  font-size: 13.5px;
+  color: #0f172a;
+  font-weight: 700;
+  display: block;
+  margin-top: 2px;
+}
+
+.win-sub-guard-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.win-sub-guard-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: #334155;
+}
+
+.badge-status-paused {
+  background: #fef3c7;
+  color: #b45309;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 11.5px;
+  border: 1px solid #fde68a;
+  display: inline-block;
+}
+
+.badge-status-info {
+  background: #e0f2fe;
+  color: #0369a1;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 11.5px;
+  border: 1px solid #bae6fd;
+  display: inline-block;
+}
+
+/* Dark Mode Overrides for Windows Update & Security */
+body.dark-mode .win-status-banner {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+}
+
+body.dark-mode .win-status-banner.status-active {
+  background: rgba(34, 197, 94, 0.15) !important;
+  border-color: rgba(34, 197, 94, 0.4) !important;
+}
+
+body.dark-mode .win-status-banner.status-paused {
+  background: rgba(245, 158, 11, 0.15) !important;
+  border-color: rgba(245, 158, 11, 0.4) !important;
+}
+
+body.dark-mode .win-status-banner.status-disabled {
+  background: rgba(239, 68, 68, 0.15) !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+}
+
+body.dark-mode .win-status-banner.status-thirdparty {
+  background: rgba(2, 132, 199, 0.15) !important;
+  border-color: rgba(2, 132, 199, 0.4) !important;
+}
+
+body.dark-mode .win-status-banner-label {
+  color: #94a3b8 !important;
+}
+
+body.dark-mode .win-status-banner-text,
+body.dark-mode #wu-status-text,
+body.dark-mode #wd-status-text {
+  color: #f8fafc !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+body.dark-mode .win-sub-guard-card {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+}
+
+body.dark-mode .win-sub-guard-title {
+  color: #f8fafc !important;
+}
+
+body.dark-mode .badge-status-paused {
+  background: rgba(245, 158, 11, 0.25) !important;
+  color: #fbbf24 !important;
+  border: 1px solid rgba(251, 191, 36, 0.35) !important;
+}
+
+body.dark-mode .badge-status-info {
+  background: rgba(2, 132, 199, 0.25) !important;
+  color: #38bdf8 !important;
+  border: 1px solid rgba(56, 189, 248, 0.35) !important;
+}
+
+
 
 
 

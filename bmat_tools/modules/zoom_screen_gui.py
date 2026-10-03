@@ -33,8 +33,16 @@ user32.OpenClipboard.restype = wintypes.BOOL
 user32.SetClipboardData.argtypes = [c_uint, c_void_p]
 user32.SetClipboardData.restype = c_void_p
 
-CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config")
-CONFIG_FILE = os.path.join(CONFIG_DIR, "zoom_screen.json")
+def _resolve_config_file():
+    appdata = os.environ.get("APPDATA", "")
+    if appdata:
+        p = os.path.join(appdata, "IT Tool LTT", "config", "zoom_screen.json")
+        if os.path.exists(p):
+            return p
+    base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    return os.path.join(base, "config", "zoom_screen.json")
+
+CONFIG_FILE = _resolve_config_file()
 
 
 def attach_to_input_desktop():
@@ -72,9 +80,10 @@ def load_config():
             "mirror": "Ctrl + 9"
         }
     }
-    if os.path.exists(CONFIG_FILE):
+    cfg_file = _resolve_config_file()
+    if os.path.exists(cfg_file):
         try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            with open(cfg_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 defaults.update(data)
                 if "custom_hotkeys" in data and isinstance(data["custom_hotkeys"], dict):

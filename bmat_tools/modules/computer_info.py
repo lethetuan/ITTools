@@ -441,6 +441,143 @@ class ComputerInfo:
         self._write(w, f'  xxxxx-xxxxx-xxxxx-xxxxx-{key}\n', 'value')
 
 
+def get_system_power_status():
+    """Returns accurate real-time power status using Win32 GetSystemPowerStatus."""
+    import sys
+    if sys.platform != 'win32':
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+        class SYSTEM_POWER_STATUS(ctypes.Structure):
+            _fields_ = [
+                ('ACLineStatus', wintypes.BYTE),
+                ('BatteryFlag', wintypes.BYTE),
+                ('BatteryLifePercent', wintypes.BYTE),
+                ('SystemStatusFlag', wintypes.BYTE),
+                ('BatteryLifeTime', wintypes.DWORD),
+                ('BatteryFullLifeTime', wintypes.DWORD),
+            ]
+        s = SYSTEM_POWER_STATUS()
+        if ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(s)):
+            ac_status = s.ACLineStatus # 0: Offline, 1: Online, 255: Unknown
+            bat_flag = s.BatteryFlag   # 128: No battery, 8: Charging
+            bat_pct = s.BatteryLifePercent # 0..100, 255: Unknown
+            has_battery = (not bool(bat_flag & 128)) and (bat_pct != 255)
+            is_charging = bool(bat_flag & 8)
+            is_ac = (ac_status == 1)
+
+            if not has_battery:
+                status_text = "Không có pin (Desktop PC)"
+            elif is_charging:
+                status_text = "Đang sạc (AC Powered)"
+            elif is_ac:
+                if bat_pct >= 99:
+                    status_text = "Đầy 100% (Đang cắm sạc)"
+                else:
+                    status_text = "Đang cắm sạc (AC Powered)"
+            else:
+                status_text = "Đang dùng Pin (Battery Powered)"
+
+            return {
+                "has_battery": has_battery,
+                "is_laptop": has_battery,
+                "is_ac": is_ac,
+                "is_charging": is_charging,
+                "level_pct": bat_pct if bat_pct <= 100 else 100,
+                "status_text": status_text
+            }
+    except Exception:
+        pass
+    return None
+
+
+def get_device_manager_issues():
+    """
+    Scans for genuine missing, failed, or warning drivers using Windows PnP API.
+    Filters out phantom (disconnected USB/Bluetooth) and user-disabled devices.
+    Returns accurate real-time list matching Windows Device Manager.
+    """
+    import subprocess
+    import json
+
+    error_code_map = {
+        1: "Chưa được cấu hình đúng (Code 1)",
+        3: "Driver bị hỏng hoặc thiếu tài nguyên (Code 3)",
+        10: "Thiết bị không thể khởi động (Code 10)",
+        12: "Xung đột tài nguyên phần cứng (Code 12)",
+        14: "Cần khởi động lại máy để hoàn tất cài đặt (Code 14)",
+        18: "Cần cài đặt lại driver cho thiết bị (Code 18)",
+        19: "Cấu hình Registry của thiết bị bị lỗi (Code 19)",
+        24: "Thiết bị không hiện diện hoặc hoạt động không đúng (Code 24)",
+        28: "Chưa cài đặt Driver (Code 28 - Missing Driver)",
+        29: "Thiết bị bị vô hiệu hóa trong BIOS/Firmware (Code 29)",
+        31: "Windows không thể tải các driver cho thiết bị (Code 31)",
+        32: "Dịch vụ của driver đã bị tắt (Code 32)",
+        37: "Windows không thể khởi tạo driver thiết bị (Code 37)",
+        38: "Phiên bản driver trước vẫn còn trong bộ nhớ (Code 38)",
+        39: "Driver bị hỏng hoặc thiếu file cài đặt (Code 39)",
+        43: "Windows đã dừng thiết bị do phát hiện sự cố (Code 43)",
+        52: "Driver chưa được ký chữ ký số hợp lệ (Code 52)"
+    }
+
+    issues = []
+    try:
+        # Query only physically present devices that have real error states:
+        # Excludes:
+        # - ConfigManagerErrorCode == 0 (OK)
+        # - ConfigManagerErrorCode == 22 (Manually disabled by user, not an error)
+        # - ConfigManagerErrorCode == 45 / Problem == 'CM_PROB_PHANTOM' (Unplugged/disconnected USB/Bluetooth devices)
+        cmd = (
+            "Get-PnpDevice -PresentOnly | "
+            "Where-Object { "
+            "($_.ConfigManagerErrorCode -ne 0 -and $_.ConfigManagerErrorCode -ne 22 -and $_.ConfigManagerErrorCode -ne 45) -or "
+            "($_.Problem -ne 'CM_PROB_NONE' -and $_.Problem -ne 'CM_PROB_PHANTOM' -and $_.Problem -ne 'CM_PROB_DISABLED') -or "
+            "($_.Status -eq 'Error') "
+            "} | Select-Object FriendlyName, Class, InstanceId, Problem, ConfigManagerErrorCode, Status"
+        )
+        res = subprocess.run(
+            ['powershell', '-NoProfile', '-Command', f"{cmd} | ConvertTo-Json -Depth 2"],
+            capture_output=True, text=True, encoding='utf-8', errors='ignore', timeout=10
+        )
+        if res.stdout.strip():
+            parsed = json.loads(res.stdout.strip())
+            if isinstance(parsed, dict):
+                parsed = [parsed]
+            for dev in parsed:
+                fname = (dev.get("FriendlyName") or dev.get("Name") or "").strip()
+                if not fname:
+                    continue
+                err_code = dev.get("ConfigManagerErrorCode", 0)
+                try:
+                    err_code = int(err_code)
+                except (ValueError, TypeError):
+                    err_code = 0
+
+                desc = error_code_map.get(err_code)
+                if not desc:
+                    prob = dev.get("Problem") or ""
+                    if prob and prob not in ("CM_PROB_NONE", "CM_PROB_PHANTOM", "CM_PROB_DISABLED"):
+                        desc = f"Lỗi thiết bị ({prob})"
+                    elif err_code:
+                        desc = f"Lỗi thiết bị (Code {err_code})"
+                    else:
+                        desc = "Cảnh báo / Lỗi Driver"
+
+                issues.append({
+                    "name": fname,
+                    "class": (dev.get("Class") or "Unknown").strip(),
+                    "instance": (dev.get("InstanceId") or dev.get("DeviceID") or "").strip(),
+                    "error_code": err_code,
+                    "error_desc": desc,
+                    "status": dev.get("Status", "Error")
+                })
+    except Exception:
+        pass
+
+    return issues
+
+
 def get_detailed_hardware_info():
     """Gathers comprehensive hardware & system info matching BTP Tool Pro 2026 inspection dashboard."""
     import subprocess
@@ -595,7 +732,8 @@ def get_detailed_hardware_info():
             date_clean = f"{b_date[:4]}-{b_date[4:6]}-{b_date[6:8]}"
         bios_info["release_date"] = date_clean or "N/A"
 
-    # 3. Battery Details & Health
+    # 3. Battery Details & Health (real-time Win32 power status + CIM metadata)
+    p_status = get_system_power_status()
     bat_list = run_ps_cmd('Get-CimInstance Win32_Battery | Select-Object Name, DeviceID, EstimatedChargeRemaining, BatteryStatus, DesignCapacity, FullChargeCapacity')
     battery_info = {
         "is_laptop": False,
@@ -608,14 +746,29 @@ def get_detailed_hardware_info():
         "health_text": "PC Desktop"
     }
 
+    if p_status and p_status["has_battery"]:
+        battery_info["is_laptop"] = True
+        system_info["is_laptop"] = True
+        system_info["chassis_type"] = "Notebook"
+        battery_info["level_pct"] = p_status["level_pct"]
+        battery_info["status_text"] = p_status["status_text"]
+
     if bat_list:
         bt = bat_list[0]
         battery_info["is_laptop"] = True
         system_info["is_laptop"] = True
         system_info["chassis_type"] = "Notebook"
         battery_info["name"] = bt.get("Name", bt.get("DeviceID", "Standard Battery")).strip()
-        battery_info["level_pct"] = bt.get("EstimatedChargeRemaining", 100)
-        
+        if not (p_status and p_status["has_battery"]):
+            battery_info["level_pct"] = bt.get("EstimatedChargeRemaining", 100)
+            bat_status = bt.get("BatteryStatus", 1)
+            if bat_status in [2, 6, 7, 8, 9]:
+                battery_info["status_text"] = "Đang sạc (AC Powered)"
+            elif bat_status == 3:
+                battery_info["status_text"] = "Đầy 100% (Đang cắm sạc)"
+            else:
+                battery_info["status_text"] = "Đang dùng Pin (Battery Powered)"
+
         design_cap = float(bt.get("DesignCapacity", 0) or 0)
         full_cap = float(bt.get("FullChargeCapacity", 0) or 0)
 
@@ -632,14 +785,6 @@ def get_detailed_hardware_info():
                 battery_info["health_text"] = "❌ Chai nặng (Nên thay)"
         else:
             battery_info["health_text"] = "✓ Hoạt động tốt"
-
-        bat_status = bt.get("BatteryStatus", 1)
-        if bat_status in [2, 6, 7, 8, 9]:
-            battery_info["status_text"] = "Đang sạc (AC Powered)"
-        elif bat_status == 3:
-            battery_info["status_text"] = "Đầy 100% (Đang cắm sạc)"
-        else:
-            battery_info["status_text"] = "Đang dùng Pin (Battery Powered)"
 
     # 4. RAM Modules
     ram_list = run_ps_cmd('Get-CimInstance Win32_PhysicalMemory | Select-Object DeviceLocator, Capacity, Speed, Manufacturer, PartNumber')
@@ -727,20 +872,8 @@ def get_detailed_hardware_info():
         if inst_date and isinstance(inst_date, str) and len(inst_date) >= 8:
             os_info["install_date"] = f"{inst_date[:4]}-{inst_date[4:6]}-{inst_date[6:8]}"
 
-    # 8. Missing / Warning Drivers Check
-    missing_drivers = []
-    try:
-        pnp_err = run_ps_cmd('Get-PnpDevice | Where-Object { $_.Status -eq "Error" -or $_.Status -eq "Unknown" } | Select-Object FriendlyName, Class, InstanceId')
-        for dev in pnp_err:
-            fname = dev.get("FriendlyName", "").strip()
-            if fname:
-                missing_drivers.append({
-                    "name": fname,
-                    "class": dev.get("Class", "Unknown").strip(),
-                    "instance": dev.get("InstanceId", "").strip()
-                })
-    except Exception:
-        pass
+    # 8. Missing / Warning Drivers Check (Real-time & accurate, matching Device Manager)
+    missing_drivers = get_device_manager_issues()
 
     return {
         "success": True,
@@ -904,9 +1037,9 @@ def export_specs(format_type="xlsx", specs_data=None, output_dir=None):
     missing = specs_data.get("missing_drivers", [])
     if missing:
         for idx, m in enumerate(missing, 1):
-            rows.append((sec, f"Thiết Bị Cảnh Báo #{idx}", f"{m.get('name')} (Lớp: {m.get('class')})"))
+            rows.append((sec, f"Thiết Bị Cảnh Báo #{idx}", f"{m.get('name')} | Lớp: {m.get('class')} | {m.get('error_desc', 'Lỗi Driver')}"))
     else:
-        rows.append((sec, "Tình Trạng Driver", "✓ Đầy đủ - Không có driver nào bị lỗi hoặc thiếu"))
+        rows.append((sec, "Tình Trạng Driver", "✓ Hoạt động hoàn hảo - 100% thiết bị có driver đầy đủ"))
 
     fmt = format_type.lower()
     if fmt == "csv":

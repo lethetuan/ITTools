@@ -98,6 +98,21 @@ Object.assign(AppController.prototype, {
     const countAll = document.getElementById("count-all");
     if (countAll) countAll.innerText = catalog.length;
 
+    // Tự động cập nhật số lượng phần mềm cho từng danh mục
+    const catCounts = {};
+    catalog.forEach(item => {
+      if (item && item.category) {
+        catCounts[item.category] = (catCounts[item.category] || 0) + 1;
+      }
+    });
+    document.querySelectorAll(".cat-item[data-cat]").forEach(btn => {
+      const cat = btn.getAttribute("data-cat");
+      if (cat && cat !== "all") {
+        const badge = btn.querySelector(".cat-count-badge");
+        if (badge) badge.innerText = catCounts[cat] || 0;
+      }
+    });
+
     this.renderSoftwareGrid(catalog);
     this.bindCategoryEvents();
 
@@ -149,7 +164,7 @@ Object.assign(AppController.prototype, {
 
       // Dùng getAppIconHtml nếu có, fallback về emoji từ catalog
       const iconHtml = (typeof window.getAppIconHtml === "function")
-        ? window.getAppIconHtml(app.id, 32)
+        ? window.getAppIconHtml(app.id, 32, app.icon)
         : `<span class="software-icon">${app.icon}</span>`;
 
       // Nút Ghim / Đã ghim đẹp mắt

@@ -266,18 +266,44 @@ Object.assign(AppController.prototype, {
       this.networkAdaptersData = data;
     }
 
-    if (!data) return;
+    if (!data) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-danger">❌ Không thể nạp thông tin card mạng. Vui lòng bấm nút 🔄 để thử lại.</td></tr>`;
+      return;
+    }
 
     if (localBadge) localBadge.innerText = data.local_ip || "N/A";
-    if (extBadge) extBadge.innerText = data.external_ip || "N/A";
+    if (extBadge) {
+      extBadge.innerText = data.external_ip || "Đang lấy...";
+      if (!data.external_ip || data.external_ip === "Đang lấy..." || data.external_ip === "N/A") {
+        if (window.pywebview && window.pywebview.api && window.pywebview.api.get_external_ip) {
+          window.pywebview.api.get_external_ip().then(r => {
+            const publicIp = (r && r.ip && typeof r.ip === 'object') ? r.ip.ip : (r ? r.ip : null);
+            if (publicIp && publicIp !== "N/A" && publicIp !== "Đang lấy...") {
+              extBadge.innerText = publicIp;
+              if (this.networkAdaptersData) this.networkAdaptersData.external_ip = publicIp;
+            }
+          }).catch(e => console.log("Lỗi lấy Public IP:", e));
+        }
+      }
+    }
 
     const adapters = data.adapters || [];
 
     if (selectEl) {
       const prevVal = selectEl.value;
-      selectEl.innerHTML = adapters.map(a => `<option value="${this.escapeHtml(a.name)}">${this.escapeHtml(a.name)} (${this.escapeHtml(a.ip)})</option>`).join("");
-      if (prevVal && adapters.some(a => a.name === prevVal)) {
-        selectEl.value = prevVal;
+      if (adapters.length > 0) {
+        selectEl.innerHTML = adapters.map(a => `<option value="${this.escapeHtml(a.name)}">${this.escapeHtml(a.name)} (${this.escapeHtml(a.ip)})</option>`).join("");
+        if (prevVal && adapters.some(a => a.name === prevVal)) {
+          selectEl.value = prevVal;
+        } else {
+          // Ưu tiên chọn card mạng đang Active có IP
+          const activeAdp = adapters.find(a => (a.status || '').toLowerCase() === 'up' && a.ip && a.ip !== '-');
+          if (activeAdp) {
+            selectEl.value = activeAdp.name;
+          }
+        }
+      } else {
+        selectEl.innerHTML = `<option value="">-- Không tìm thấy card mạng --</option>`;
       }
     }
 
@@ -286,7 +312,7 @@ Object.assign(AppController.prototype, {
     if (!tbody) return;
 
     if (adapters.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-muted">Không tìm thấy card mạng nào.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-muted">Không tìm thấy card mạng nào trong hệ thống.</td></tr>`;
       return;
     }
 
@@ -375,12 +401,32 @@ Object.assign(AppController.prototype, {
 
   copyToClipboard(text, label = "") {
     if (!text || text === "-") return;
-    navigator.clipboard.writeText(text).then(() => {
-      this.addLog("info", `Đã sao chép ${label ? label + ': ' : ''}${text}`);
-      alert(`Đã sao chép ${label ? label + ': ' : ''}${text}`);
-    }).catch(err => {
-      alert(`Lỗi sao chép: ${err}`);
-    });
+    const msg = `Đã sao chép ${label ? label + ': ' : ''}${text}`;
+    const copyFallback = () => {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        this.addLog("info", msg);
+        if (typeof this.showToast === "function") this.showToast("info", msg);
+      } catch (e) {
+        if (typeof this.showToast === "function") this.showToast("error", `Lỗi sao chép: ${e.message}`);
+      }
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        this.addLog("info", msg);
+        if (typeof this.showToast === "function") this.showToast("info", msg);
+      }).catch(() => copyFallback());
+    } else {
+      copyFallback();
+    }
   },
 
   toggleIpModeForm(mode) {
@@ -426,7 +472,8 @@ Object.assign(AppController.prototype, {
     const adapterSelect = document.getElementById("ip-edit-adapter-select");
     const adapter = adapterSelect ? adapterSelect.value : "";
     if (!adapter) {
-      alert("Vui lòng chọn Card Mạng (Adapter)!");
+      if (typeof this.showToast === 'function') this.showToast("warning", "Vui lòng chọn Card Mạng (Adapter)!");
+      else alert("Vui lòng chọn Card Mạng (Adapter)!");
       return;
     }
 
@@ -440,24 +487,29 @@ Object.assign(AppController.prototype, {
     const dns2 = document.getElementById("ip-input-dns2")?.value.trim() || "";
 
     if (mode === "static" && (!ip || !mask)) {
-      alert("Vui lòng nhập Địa Chỉ IP và Subnet Mask!");
+      if (typeof this.showToast === 'function') this.showToast("warning", "Vui lòng nhập Địa Chỉ IP và Subnet Mask!");
+      else alert("Vui lòng nhập Địa Chỉ IP và Subnet Mask!");
       return;
     }
 
     this.addLog("info", `Đang cài đặt IP cho card mạng '${adapter}'...`);
+    if (typeof this.showToast === 'function') this.showToast("info", `Đang áp dụng cấu hình cho '${adapter}'...`);
 
     if (window.pywebview && window.pywebview.api) {
       try {
         const res = await window.pywebview.api.apply_ip_settings(adapter, mode, ip, mask, gw, dns1, dns2);
         this.addLog(res.success ? "success" : "error", res.message);
-        alert(res.message);
+        if (typeof this.showToast === 'function') this.showToast(res.success ? "success" : "error", res.message);
+        else alert(res.message);
         this.loadNetworkAdapters();
       } catch (err) {
         console.error("Lỗi apply_ip_settings:", err);
-        alert(`Lỗi: ${err.message}`);
+        if (typeof this.showToast === 'function') this.showToast("error", `Lỗi: ${err.message}`);
+        else alert(`Lỗi: ${err.message}`);
       }
     } else {
-      alert(`[MOCK] Đã áp dụng IP ${ip} cho ${adapter}!`);
+      if (typeof this.showToast === 'function') this.showToast("info", `[MOCK] Đã áp dụng IP ${ip} cho ${adapter}!`);
+      else alert(`[MOCK] Đã áp dụng IP ${ip} cho ${adapter}!`);
     }
   },
 
@@ -465,21 +517,28 @@ Object.assign(AppController.prototype, {
     const adapterSelect = document.getElementById("ip-edit-adapter-select");
     const adapter = adapterSelect ? adapterSelect.value : "";
     if (!adapter) {
-      alert("Vui lòng chọn Card Mạng (Adapter)!");
+      if (typeof this.showToast === 'function') this.showToast("warning", "Vui lòng chọn Card Mạng (Adapter)!");
+      else alert("Vui lòng chọn Card Mạng (Adapter)!");
       return;
     }
+
+    this.addLog("info", `Đang chuyển '${adapter}' sang chế độ DHCP...`);
+    if (typeof this.showToast === 'function') this.showToast("info", `Đang cấu hình DHCP cho '${adapter}'...`);
 
     if (window.pywebview && window.pywebview.api) {
       try {
         const res = await window.pywebview.api.apply_ip_settings(adapter, "dhcp");
         this.addLog(res.success ? "success" : "error", res.message);
-        alert(res.message);
+        if (typeof this.showToast === 'function') this.showToast(res.success ? "success" : "error", res.message);
+        else alert(res.message);
         this.loadNetworkAdapters();
       } catch (err) {
-        alert(`Lỗi: ${err.message}`);
+        if (typeof this.showToast === 'function') this.showToast("error", `Lỗi: ${err.message}`);
+        else alert(`Lỗi: ${err.message}`);
       }
     } else {
-      alert(`[MOCK] Đã cài DHCP cho ${adapter}!`);
+      if (typeof this.showToast === 'function') this.showToast("info", `[MOCK] Đã cài DHCP cho ${adapter}!`);
+      else alert(`[MOCK] Đã cài DHCP cho ${adapter}!`);
     }
   },
 
@@ -492,7 +551,8 @@ Object.assign(AppController.prototype, {
     const cidr = cidrSelect ? cidrSelect.value : "24";
 
     if (!ip) {
-      alert("Vui lòng nhập địa chỉ IP!");
+      if (typeof this.showToast === 'function') this.showToast("warning", "Vui lòng nhập địa chỉ IP!");
+      else alert("Vui lòng nhập địa chỉ IP!");
       return;
     }
 
@@ -528,38 +588,69 @@ Object.assign(AppController.prototype, {
 
   async loadIpv6Status() {
     const badge = document.getElementById("ipv6-status-badge");
+    const btnToggle = document.getElementById("ipv6-btn-toggle");
     if (badge) badge.innerText = "Đang kiểm tra...";
 
     if (window.pywebview && window.pywebview.api) {
       try {
         const res = await window.pywebview.api.get_ipv6_status();
+        this.ipv6Enabled = !!(res && res.enabled);
         if (badge) {
           badge.innerText = res.text || (res.enabled ? "✅ IPv6 Đang Bật" : "🚫 IPv6 Đã Tắt");
           badge.style.color = res.enabled ? "#10b981" : "#ef4444";
+        }
+        if (btnToggle) {
+          btnToggle.disabled = false;
+          if (this.ipv6Enabled) {
+            btnToggle.className = "btn btn-danger-solid px-4 py-2.5 font-semibold";
+            btnToggle.innerHTML = "<span>🚫</span> Tắt IPv6 (Disable)";
+            btnToggle.title = "IPv6 đang BẬT. Nhấp để Tắt trên tất cả card mạng";
+          } else {
+            btnToggle.className = "btn btn-success-solid px-4 py-2.5 font-semibold";
+            btnToggle.innerHTML = "<span>✅</span> Bật IPv6 (Enable)";
+            btnToggle.title = "IPv6 đang TẮT. Nhấp để Bật trên tất cả card mạng";
+          }
         }
       } catch (err) {
         if (badge) badge.innerText = "Lỗi kiểm tra";
       }
     } else {
+      this.ipv6Enabled = true;
       if (badge) badge.innerText = "✅ IPv6 Đang Bật (MOCK)";
+      if (btnToggle) {
+        btnToggle.className = "btn btn-danger-solid px-4 py-2.5 font-semibold";
+        btnToggle.innerHTML = "<span>🚫</span> Tắt IPv6 (Disable)";
+      }
     }
+  },
+
+  async toggleIpv6Status() {
+    const isEnabled = (this.ipv6Enabled !== undefined) ? this.ipv6Enabled : true;
+    await this.setIpv6Status(!isEnabled);
   },
 
   async setIpv6Status(enable) {
     const badge = document.getElementById("ipv6-status-badge");
+    const btnToggle = document.getElementById("ipv6-btn-toggle");
     if (badge) badge.innerText = `Đang ${enable ? 'bật' : 'tắt'} IPv6...`;
+    if (btnToggle) btnToggle.disabled = true;
 
     if (window.pywebview && window.pywebview.api) {
       try {
         const res = await window.pywebview.api.set_ipv6_status(enable);
         this.addLog(res.success ? "success" : "error", res.message);
-        alert(res.message);
+        if (typeof this.showToast === 'function') this.showToast(res.success ? "success" : "error", res.message);
+        else alert(res.message);
         this.loadIpv6Status();
       } catch (err) {
-        alert(`Lỗi: ${err.message}`);
+        if (typeof this.showToast === 'function') this.showToast("error", `Lỗi: ${err.message}`);
+        else alert(`Lỗi: ${err.message}`);
+        if (btnToggle) btnToggle.disabled = false;
       }
     } else {
-      alert(`[MOCK] Đã ${enable ? 'bật' : 'tắt'} IPv6!`);
+      if (typeof this.showToast === 'function') this.showToast("info", `[MOCK] Đã ${enable ? 'bật' : 'tắt'} IPv6!`);
+      else alert(`[MOCK] Đã ${enable ? 'bật' : 'tắt'} IPv6!`);
+      this.ipv6Enabled = enable;
       this.loadIpv6Status();
     }
   },
@@ -701,6 +792,9 @@ Object.assign(AppController.prototype, {
     }
   },
 
+
+
+
   renderIpScanResults(results) {
     const bodyEl = document.getElementById("ipscan-results-body");
     if (!bodyEl) return;
@@ -716,40 +810,95 @@ Object.assign(AppController.prototype, {
       return;
     }
 
+    const deviceIcons = {
+      'Router': '🌐', 'Switch': '🔀', 'AP': '📡', 'PC': '🖥️',
+      'Laptop': '💻', 'Phone': '📱', 'iPhone': '📱', 'iPad': '📱',
+      'Tablet': '📱', 'Printer': '🖨️', 'Camera': '📷', 'TV': '📺',
+      'IoT': '🔌', 'NAS': '💾', 'VM': '☁️', 'Server': '🖧', 'Mac': '💻',
+      'Unknown': '❓'
+    };
+
+    const copyStyle = `cursor:pointer; user-select:none; transition: background 0.15s;`;
+    const copyCellStyle = `padding: 8px; ${copyStyle}`;
+
     bodyEl.innerHTML = results.map((item, index) => {
-      const pingText = item.latency_ms ? `(${item.latency_ms})` : '';
-      const vendorBadge = item.vendor && item.vendor !== 'Unknown'
-        ? `<span class="badge" style="background:#e0f2fe; color:#0369a1; font-weight:600; font-size:11px;">${item.vendor}</span>`
-        : `<span class="badge" style="background:#f1f5f9; color:#94a3b8; font-size:11px;">Unknown</span>`;
+      const latency = item.latency_ms || item.ping || '<1ms';
+      const pingText = latency ? `(${latency})` : '';
+      const vendor = item.vendor || item.brand || 'Unknown';
+      const deviceType = item.device_type || 'Unknown';
+      const deviceIcon = deviceIcons[deviceType] || '❓';
+      const isRandomMac = vendor === 'Randomized MAC';
+
+      // Vendor badge: special case for randomized/privacy MACs
+      let vendorBadge;
+      if (isRandomMac) {
+        vendorBadge = `<span class="badge" style="background:#fef3c7; color:#92400e; font-size:11px; font-weight:600;" title="Thiết bị dùng MAC ngẫu nhiên để bảo vệ quyền riêng tư (Android/iOS)">🔀 MAC Ngẫu Nhiên</span><span class="badge" style="background:#fef9ee; color:#b45309; font-size:10px; margin-left:3px;">📱 Điện thoại/Laptop</span>`;
+      } else if (vendor !== 'Unknown') {
+        vendorBadge = `<span class="badge" style="background:#dbeafe; color:#1d4ed8; font-weight:600; font-size:11px; margin-right:4px;" title="Nhà sản xuất">${vendor}</span><span class="badge" style="background:#f0fdf4; color:#16a34a; font-size:11px;" title="Loại thiết bị">${deviceIcon} ${deviceType}</span>`;
+      } else {
+        // Unknown - show MAC prefix hint if available
+        const macPrefix = item.mac && item.mac.length >= 8 ? item.mac.substring(0, 8).toUpperCase() : '';
+        vendorBadge = `<span class="badge" style="background:#f1f5f9; color:#64748b; font-size:11px;" title="Không tìm thấy nhà sản xuất trong cơ sở dữ liệu OUI${macPrefix ? ' — OUI: ' + macPrefix : ''}">❓ Chưa xác định${macPrefix ? `<span style='color:#94a3b8; font-size:10px; display:block;'>${macPrefix}</span>` : ''}</span>`;
+      }
 
       let webPorts = '';
       if (item.http) webPorts += `<span class="badge" style="background:#dcfce7; color:#166534; margin-right:3px; font-size:10px;">🌐 80</span>`;
       if (item.https) webPorts += `<span class="badge" style="background:#e0e7ff; color:#3730a3; font-size:10px;">🔒 443</span>`;
       if (!webPorts) webPorts = `<span style="color:#cbd5e1; font-size:11px;">-</span>`;
 
+      const esc = (s) => String(s || '').replace(/'/g, "\\'");
+
+      // Hostname display: distinguish between "no DNS record" vs actual resolution
+      const hostnameDisplay = (item.hostname && item.hostname !== '' && item.hostname !== '-')
+        ? `${item.hostname}<span style="font-size:10px; color:#94a3b8; display:block; margin-top:2px;">📋 Click để chép</span>`
+        : `<span style="color:#94a3b8; font-weight:400; font-style:italic; font-size:11px;">Không tìm được tên</span>`;
+
+      const macDisplay = (item.mac && item.mac !== '' && item.mac !== '-')
+        ? `${item.mac}<span style="font-size:10px; color:#94a3b8; display:block; margin-top:2px;">📋 Click để chép</span>`
+        : `<span style="color:#cbd5e1; font-size:11px;">Không có MAC</span>`;
+
       return `
-        <tr>
-          <td style="text-align: center; font-weight: 600; color: var(--text-muted); padding: 8px;">${index + 1}</td>
-          <td style="text-align: center; padding: 8px;">
-            <span class="badge badge-status-enable">
-              🟢 Online ${pingText}
-            </span>
+        <tr style="transition:background 0.15s;" onmouseover="this.style.background='var(--bg-hover,rgba(99,102,241,0.06))'" onmouseout="this.style.background=''">
+          <td style="text-align:center; font-weight:600; color:var(--text-muted); padding:8px;">${index + 1}</td>
+          <td style="text-align:center; padding:8px;">
+            <span class="badge badge-status-enable">🟢 Online ${pingText}</span>
           </td>
-          <td style="padding: 8px;">
-            <strong style="font-family: monospace; color: var(--text-main); font-size: 13px;">${item.ip}</strong>
+          <td style="${copyCellStyle}" onclick="app.copyToClipboard('${esc(item.ip)}','IP')" title="Click để chép IP: ${esc(item.ip)}">
+            <strong style="font-family:monospace; color:var(--text-main); font-size:13px;">${item.ip}</strong>
+            <span style="font-size:10px; color:#94a3b8; display:block; margin-top:2px;">📋 Click để chép</span>
           </td>
-          <td style="padding: 8px; color: #0284c7; font-weight: 600;">
-            ${item.hostname || '<span style="color:#94a3b8; font-weight:400; font-style:italic;">(Unknown)</span>'}
+          <td style="${copyCellStyle} color:#0284c7; font-weight:600;" onclick="app.copyToClipboard('${esc(item.hostname || '')}','Hostname')" title="Click để chép hostname">
+            ${hostnameDisplay}
           </td>
-          <td style="padding: 8px; font-family: monospace; color: var(--text-muted); font-size: 12px;">
+          <td style="${copyCellStyle} font-family:monospace; color:var(--text-muted); font-size:12px;" onclick="app.copyToClipboard('${esc(item.mac || '')}','MAC')" title="Click để chép MAC: ${esc(item.mac)}">
+            ${macDisplay}
+          </td>
+          <td style="${copyCellStyle}" onclick="app.copyToClipboard('${esc(vendor)} ${esc(deviceType)}','Vendor')" title="Click để chép thông tin nhà sản xuất">
+            ${vendorBadge}
+          </td>
+          <td style="padding:8px; text-align:center;">${webPorts}</td>
+          <td style="padding:8px; text-align:right; white-space:nowrap;">
+            <button class="btn btn-slate-light btn-sm" onclick="app.copyToClipboard('${esc(item.ip)}','IP')" title="Copy IP" style="padding:2px 6px; font-size:11px; margin-bottom:2px;">📋 IP</button>
+            ${item.mac && item.mac !== '' && item.mac !== '-' ? `<br><button class="btn btn-slate-light btn-sm" onclick="app.copyToClipboard('${esc(item.mac)}','MAC')" title="Copy MAC" style="padding:2px 6px; font-size:11px;">📋 MAC</button>` : ''}
+          </td>
+        </tr>
+      `;
+    }).join("");
+  },
+
+  exportIpScanCsv() {
     if (!this.lastScanResults || this.lastScanResults.length === 0) {
-      alert("Không có kết quả quét để xuất CSV!");
+      if (typeof this.showToast === 'function') this.showToast("warning", "Không có kết quả quét để xuất CSV!");
+      else alert("Không có kết quả quét để xuất CSV!");
       return;
     }
 
-    let csvContent = "data:text/csv;charset=utf-8,Index,IP Address,Hostname,MAC Address,Vendor,Latency,HTTP (80),HTTPS (443)\n";
+    let csvContent = "data:text/csv;charset=utf-8,Index,IP Address,Hostname,MAC Address,Vendor,Device Type,Latency,HTTP (80),HTTPS (443)\n";
     this.lastScanResults.forEach((row, i) => {
-      csvContent += `"${i + 1}","${row.ip || ''}","${row.hostname || ''}","${row.mac || ''}","${row.vendor || ''}","${row.latency_ms || ''}","${row.http ? 'YES' : 'NO'}","${row.https ? 'YES' : 'NO'}"\n`;
+      const vendor = row.vendor || row.brand || '';
+      const deviceType = row.device_type || '';
+      const latency = row.latency_ms || row.ping || '';
+      csvContent += `"${i + 1}","${row.ip || ''}","${row.hostname || ''}","${row.mac || ''}","${vendor}","${deviceType}","${latency}","${row.http ? 'YES' : 'NO'}","${row.https ? 'YES' : 'NO'}"\n`;
     });
 
     const encodedUri = encodeURI(csvContent);
@@ -759,5 +908,9 @@ Object.assign(AppController.prototype, {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  },
+
+  exportIpScanResultsCsv() {
+    return this.exportIpScanCsv();
   }
 });

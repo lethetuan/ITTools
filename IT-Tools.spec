@@ -1,87 +1,142 @@
 # -*- mode: python ; coding: utf-8 -*-
+# =====================================================================
+# IT Tool LTT - Root PyInstaller Build Spec (Standalone Single-File EXE)
+# Tac gia: Le The Tuan | Zalo: 0352 194 195
+# Build from repo root: python -m PyInstaller IT-Tools.spec --noconfirm
+# =====================================================================
+
 import sys
 import os
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
 block_cipher = None
 
-base_dir = os.path.abspath(r'D:\AllinOne\bmat_tools')
+base_dir = os.path.abspath(os.path.join(SPECPATH, "bmat_tools"))
 
-# Collect all dynamic/static data files
-webview_datas = collect_data_files('webview')
-pythonnet_datas = collect_data_files('pythonnet')
-clr_loader_datas = collect_data_files('clr_loader')
+# Collect all dynamic/static data files and native C/C++/.NET binaries
+datas_webview, binaries_webview, hiddenimports_webview = collect_all("webview")
+datas_clr, binaries_clr, hiddenimports_clr = collect_all("clr_loader")
+datas_pythonnet, binaries_pythonnet, hiddenimports_pythonnet = collect_all("pythonnet")
+datas_psutil, binaries_psutil, hiddenimports_psutil = collect_all("psutil")
+datas_pil, binaries_pil, hiddenimports_pil = collect_all("PIL")
+datas_bottle, binaries_bottle, hiddenimports_bottle = collect_all("bottle")
 
-datas = [
-    (os.path.join(base_dir, 'web'), 'web'),
-    (os.path.join(base_dir, 'assets'), 'assets'),
-    (os.path.join(base_dir, 'config'), 'config'),
-    (os.path.join(base_dir, 'modules', 'install_office_silent.ps1'), 'modules'),
-    (os.path.join(base_dir, 'modules', 'winget_runner.ps1'), 'modules'),
-] + webview_datas + pythonnet_datas + clr_loader_datas
+project_datas = [
+    (os.path.join(base_dir, "web"),     "web"),
+    (os.path.join(base_dir, "assets"),  "assets"),
+    (os.path.join(base_dir, "modules"), "modules"),
+    (os.path.join(base_dir, "config"),  "config"),
+    (os.path.join(base_dir, "ui"),      "ui"),
+]
 
-hiddenimports = [
-    'clr',
-    'pythonnet',
-    'clr_loader',
-    'tray_manager',
-    'webview',
-    'webview.platforms.winforms',
-    'webview.platforms.edgechromium',
-    'webview.platforms.win32',
-    'bottle',
-    'psutil',
-    'PIL',
-    'PIL.Image',
-    'PIL.ImageTk',
-    'PIL.ImageDraw',
-    'openpyxl',
-    'tkinter',
-    'tkinter.ttk',
-    'tkinter.messagebox',
-    'tkinter.filedialog',
-    'constants',
-    'web_api',
-    'modules.auto_shutdown',
-    'modules.backup_driver',
-    'modules.bitlocker',
-    'modules.boot_manager',
-    'modules.browser_backup',
-    'modules.classic_menu',
-    'modules.computer_info',
-    'modules.currency',
-    'modules.datetime_tool',
-    'modules.desktop_icon',
-    'modules.firewall',
-    'modules.folder_size',
-    'modules.hosts_editor',
-    'modules.ip_manager',
-    'modules.ip_scanner',
-    'modules.office_opt',
-    'modules.other_tools',
-    'modules.printer_fix',
-    'modules.sendto_editor',
-    'modules.server_tools',
-    'modules.services_manager',
-    'modules.startup_manager',
-    'modules.uninstall_manager',
-    'modules.win_update',
-    'modules.wincheck',
-    'modules.zoom_screen',
-    'modules.zoom_screen_gui',
-    'ui.main_window',
-] + [m for m in collect_submodules('webview') if 'android' not in m and 'cocoa' not in m and 'gtk' not in m] + collect_submodules('pythonnet') + collect_submodules('clr_loader')
+all_datas = (
+    project_datas
+    + datas_webview
+    + datas_clr
+    + datas_pythonnet
+    + datas_psutil
+    + datas_pil
+    + datas_bottle
+)
+
+all_binaries = (
+    binaries_webview
+    + binaries_clr
+    + binaries_pythonnet
+    + binaries_psutil
+    + binaries_pil
+    + binaries_bottle
+)
+
+all_hiddenimports = list(set(
+    hiddenimports_webview
+    + hiddenimports_clr
+    + hiddenimports_pythonnet
+    + hiddenimports_psutil
+    + hiddenimports_pil
+    + hiddenimports_bottle
+    + collect_submodules("webview")
+    + collect_submodules("clr_loader")
+    + collect_submodules("pythonnet")
+    + collect_submodules("PIL")
+    + [
+        # Standard GUI & dialogs
+        "tkinter",
+        "tkinter.ttk",
+        "tkinter.messagebox",
+        "tkinter.filedialog",
+        "tkinter.simpledialog",
+        "tkinter.scrolledtext",
+        "_tkinter",
+
+        # Core app modules
+        "constants",
+        "web_api",
+        "tray_manager",
+        "ui.main_window",
+        "modules",
+        "modules.auto_shutdown",
+        "modules.backup_driver",
+        "modules.bitlocker",
+        "modules.boot_manager",
+        "modules.browser_backup",
+        "modules.classic_menu",
+        "modules.computer_info",
+        "modules.currency",
+        "modules.datetime_tool",
+        "modules.desktop_icon",
+        "modules.firewall",
+        "modules.folder_size",
+        "modules.hosts_editor",
+        "modules.ip_manager",
+        "modules.ip_scanner",
+        "modules.office_opt",
+        "modules.other_tools",
+        "modules.printer_fix",
+        "modules.sendto_editor",
+        "modules.server_tools",
+        "modules.services_manager",
+        "modules.startup_manager",
+        "modules.uninstall_manager",
+        "modules.wincheck",
+        "modules.win_update",
+        "modules.zoom_screen",
+        "modules.zoom_screen_gui",
+
+        # Windows system APIs and utilities
+        "win32api", "win32con", "win32gui", "win32process",
+        "win32security", "win32service", "win32serviceutil",
+        "win32net", "winerror", "pywintypes", "winreg",
+        "ctypes", "ctypes.wintypes",
+        "subprocess", "threading", "socket", "json", "queue",
+        "ipaddress", "shutil", "glob", "tempfile", "hashlib",
+        "base64", "struct", "time", "datetime", "calendar",
+        "email", "urllib", "urllib.parse", "urllib.request",
+        "http", "http.client", "html.parser",
+        "xml", "xml.etree.ElementTree",
+        "configparser", "platform", "locale", "codecs",
+        "webbrowser", "uuid", "secrets", "getpass", "pathlib",
+        "psutil", "psutil._pswindows",
+        "clr", "clr_loader",
+        "webview", "webview.platforms", "webview.platforms.winforms", "webview.platforms.edgechromium",
+        "bottle",
+    ]
+))
 
 a = Analysis(
-    [os.path.join(base_dir, 'main.py')],
+    [os.path.join(base_dir, "main.py")],
     pathex=[base_dir],
-    binaries=[],
-    datas=datas,
-    hiddenimports=hiddenimports,
+    binaries=all_binaries,
+    datas=all_datas,
+    hiddenimports=all_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['scratch'],
+    excludes=[
+        "unittest", "test",
+        "xmlrpc", "ftplib", "telnetlib", "imaplib", "poplib", "smtplib",
+        "curses", "readline", "pdb", "doctest",
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -97,7 +152,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='IT Tool LTT',
+    name="IT_Tool_LTT",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -110,6 +165,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=os.path.join(base_dir, "assets", "tray_icon.ico"),
     uac_admin=True,
-    icon=os.path.join(base_dir, 'assets', 'tray_icon.ico'),
+    uac_uiaccess=False,
 )

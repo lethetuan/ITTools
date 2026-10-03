@@ -19,12 +19,26 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from constants import APP_NAME, APP_VERSION, APP_AUTHOR, APP_PHONE, APP_WEBSITE, APP_TELEGRAM, AUTOSTART_KEY_NAME
 
 def patch_silent_subprocess():
-    """Globally configures subprocess on Windows to never flash console or PowerShell windows."""
+    """Globally configures subprocess on Windows to:
+    1. Never flash console or PowerShell windows (CREATE_NO_WINDOW).
+    2. Enforce UTF-8 encoding with errors='replace' for text mode to avoid
+       UnicodeDecodeError on non-UTF8 locales (e.g. cp1258 on Vietnamese Windows).
+    """
     if sys.platform != 'win32':
         return
     if getattr(subprocess, '_bmat_silent_patched', False):
         return
     subprocess._bmat_silent_patched = True
+
+    os.environ.setdefault("PYTHONUTF8", "1")
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    try:
+        if hasattr(sys.stdout, 'reconfigure') and sys.stdout:
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        if hasattr(sys.stderr, 'reconfigure') and sys.stderr:
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 
     orig_init = subprocess.Popen.__init__
 
@@ -33,6 +47,20 @@ def patch_silent_subprocess():
         flags = kwargs.get('creationflags', 0)
         flags |= 0x08000000
         kwargs['creationflags'] = flags
+
+        # Check if text mode is requested
+        is_text = kwargs.get('text') or kwargs.get('universal_newlines')
+        if not is_text and len(args) > 11 and args[11]:
+            is_text = True
+        if not is_text and ('encoding' in kwargs or 'errors' in kwargs):
+            is_text = True
+
+        if is_text:
+            if not kwargs.get('encoding'):
+                kwargs['encoding'] = 'utf-8'
+            if not kwargs.get('errors'):
+                kwargs['errors'] = 'replace'
+
         orig_init(self, *args, **kwargs)
 
     subprocess.Popen.__init__ = silent_init
@@ -106,6 +134,7 @@ class Api:
         }
         self._last_winget_status = None
         self._current_winget_pid = None
+        self._winget_notify_watcher = None  # background thread that fires tray balloons
         self._printer_fix_progress = {
             "active": False,
             "status": "idle",
@@ -1286,14 +1315,34 @@ class Api:
             }
 
     def get_realtime_stats(self):
-        """Returns real-time CPU%, RAM%, disk I/O and network speed using psutil.
-        Designed to be polled every 2s by the frontend for live gauge updates.
+        """Returns real-time CPU%, RAM%, disk I/O, network speed, and battery status.
+        Polled by the frontend for live gauge & battery updates.
         """
+        import time
+        from modules.computer_info import get_system_power_status
+
+        # 1. Real-time Battery Status (instant via Win32 GetSystemPowerStatus)
+        p_status = get_system_power_status()
+
+        def fmt_speed(kb_s):
+            if kb_s >= 1024:
+                return f"{kb_s/1024:.1f} MB/s"
+            return f"{kb_s:.0f} KB/s"
+
+        now = time.time()
+
         try:
-            import psutil, time
+            import psutil
 
-            cpu_pct = psutil.cpu_percent(interval=0.5)
+            # Non-blocking CPU percent
+            if not hasattr(self, '_cpu_initialized'):
+                psutil.cpu_percent(interval=None)
+                self._cpu_initialized = True
+                cpu_pct = psutil.cpu_percent(interval=0.05)
+            else:
+                cpu_pct = psutil.cpu_percent(interval=None)
 
+            # RAM
             ram = psutil.virtual_memory()
             ram_pct = ram.percent
             ram_used_mb = ram.used // (1024 * 1024)
@@ -1301,20 +1350,19 @@ class Api:
             ram_used_str = f"{ram_used_mb / 1024:.1f} GB" if ram_used_mb >= 1024 else f"{ram_used_mb} MB"
             ram_total_str = f"{ram_total_mb / 1024:.1f} GB" if ram_total_mb >= 1024 else f"{ram_total_mb} MB"
 
-            def fmt_speed(kb_s):
-                if kb_s >= 1024:
-                    return f"{kb_s/1024:.1f} MB/s"
-                return f"{kb_s:.0f} KB/s"
-
-            d1 = psutil.disk_io_counters()
-            time.sleep(0.3)
+            # Disk I/O (non-blocking delta calculation)
             d2 = psutil.disk_io_counters()
-            if d1 and d2:
-                disk_read_kb = (d2.read_bytes - d1.read_bytes) / 1024 / 0.3
-                disk_write_kb = (d2.write_bytes - d1.write_bytes) / 1024 / 0.3
-            else:
-                disk_read_kb = disk_write_kb = 0.0
+            disk_read_kb = disk_write_kb = 0.0
+            if d2:
+                if hasattr(self, '_disk_baseline') and self._disk_baseline:
+                    prev_d, prev_time = self._disk_baseline
+                    elapsed = now - prev_time
+                    if elapsed > 0:
+                        disk_read_kb = (d2.read_bytes - prev_d.read_bytes) / 1024 / elapsed
+                        disk_write_kb = (d2.write_bytes - prev_d.write_bytes) / 1024 / elapsed
+                self._disk_baseline = (d2, now)
 
+            # Partitions
             partitions_usage = []
             for part in psutil.disk_partitions(all=False):
                 try:
@@ -1329,15 +1377,15 @@ class Api:
                 except Exception:
                     pass
 
+            # Network I/O (non-blocking delta calculation)
             n2 = psutil.net_io_counters()
-            now = time.time()
             net_rx_kb = net_tx_kb = 0.0
             if hasattr(self, '_net_baseline') and self._net_baseline:
-                prev, prev_time = self._net_baseline
+                prev_n, prev_time = self._net_baseline
                 elapsed = now - prev_time
                 if elapsed > 0:
-                    net_rx_kb = (n2.bytes_recv - prev.bytes_recv) / 1024 / elapsed
-                    net_tx_kb = (n2.bytes_sent - prev.bytes_sent) / 1024 / elapsed
+                    net_rx_kb = (n2.bytes_recv - prev_n.bytes_recv) / 1024 / elapsed
+                    net_tx_kb = (n2.bytes_sent - prev_n.bytes_sent) / 1024 / elapsed
             self._net_baseline = (n2, now)
 
             return {
@@ -1355,9 +1403,77 @@ class Api:
                 "net_rx_kb": round(net_rx_kb, 1),
                 "net_tx_kb": round(net_tx_kb, 1),
                 "partitions_usage": partitions_usage,
+                "battery": p_status
             }
-        except Exception as e:
-            return {"success": False, "message": str(e), "cpu_pct": 0, "ram_pct": 0}
+        except Exception:
+            # Fallback using native Windows ctypes
+            cpu_pct = 0.0
+            ram_pct = 0.0
+            ram_used_str = "N/A"
+            ram_total_str = "N/A"
+            partitions_usage = []
+            try:
+                import ctypes
+                from ctypes import wintypes
+                class MEMORYSTATUSEX(ctypes.Structure):
+                    _fields_ = [
+                        ('dwLength', wintypes.DWORD),
+                        ('dwMemoryLoad', wintypes.DWORD),
+                        ('ullTotalPhys', ctypes.c_uint64),
+                        ('ullAvailPhys', ctypes.c_uint64),
+                        ('ullTotalPageFile', ctypes.c_uint64),
+                        ('ullAvailPageFile', ctypes.c_uint64),
+                        ('ullTotalVirtual', ctypes.c_uint64),
+                        ('ullAvailVirtual', ctypes.c_uint64),
+                        ('ullAvailExtendedVirtual', ctypes.c_uint64),
+                    ]
+                mem = MEMORYSTATUSEX()
+                mem.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+                if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(mem)):
+                    ram_pct = float(mem.dwMemoryLoad)
+                    t_gb = mem.ullTotalPhys / (1024**3)
+                    u_gb = (mem.ullTotalPhys - mem.ullAvailPhys) / (1024**3)
+                    ram_total_str = f"{t_gb:.1f} GB"
+                    ram_used_str = f"{u_gb:.1f} GB"
+
+                # Drives
+                buf = ctypes.create_unicode_buffer(1024)
+                res = ctypes.windll.kernel32.GetLogicalDriveStringsW(1023, buf)
+                drives = [d for d in buf[:res].split('\x00') if d]
+                for d in drives:
+                    free_b = ctypes.c_ulonglong(0)
+                    tot_b = ctypes.c_ulonglong(0)
+                    tot_f = ctypes.c_ulonglong(0)
+                    if ctypes.windll.kernel32.GetDiskFreeSpaceExW(d, ctypes.byref(free_b), ctypes.byref(tot_b), ctypes.byref(tot_f)):
+                        if tot_b.value > 0:
+                            used = tot_b.value - free_b.value
+                            partitions_usage.append({
+                                'drive': d.replace('\\', ''),
+                                'total_gb': round(tot_b.value / (1024**3), 1),
+                                'free_gb': round(free_b.value / (1024**3), 1),
+                                'used_gb': round(used / (1024**3), 1),
+                                'pct': round(used * 100.0 / tot_b.value, 1)
+                            })
+            except Exception:
+                pass
+
+            return {
+                "success": True,
+                "cpu_pct": cpu_pct,
+                "ram_pct": ram_pct,
+                "ram_used": ram_used_str,
+                "ram_total": ram_total_str,
+                "disk_read": "0 KB/s",
+                "disk_write": "0 KB/s",
+                "disk_read_kb": 0.0,
+                "disk_write_kb": 0.0,
+                "net_rx": "0 KB/s",
+                "net_tx": "0 KB/s",
+                "net_rx_kb": 0.0,
+                "net_tx_kb": 0.0,
+                "partitions_usage": partitions_usage,
+                "battery": p_status
+            }
 
     def open_vendor_driver_site(self, vendor_name, service_tag=""):
         """Opens official manufacturer driver website based on vendor & service tag."""
@@ -1408,6 +1524,42 @@ class Api:
             return res
         except Exception as e:
             self.log("ERROR", f"Lỗi xuất cấu hình: {e}")
+            return {"success": False, "message": str(e)}
+
+    def check_missing_drivers(self):
+        """Scans for genuine missing or warning drivers matching Windows Device Manager in real time."""
+        try:
+            import modules.computer_info as ci
+            issues = ci.get_device_manager_issues()
+            count = len(issues)
+            if count == 0:
+                self.log("SUCCESS", "Kiểm tra Driver: 100% thiết bị phần cứng đều có Driver đầy đủ và hoạt động tốt.")
+                return {
+                    "success": True,
+                    "total": 0,
+                    "missing_drivers": [],
+                    "message": "Tất cả thiết bị phần cứng đều đã được cài đặt Driver đầy đủ và hoạt động hoàn hảo!"
+                }
+            else:
+                self.log("WARN", f"Kiểm tra Driver: Phát hiện {count} thiết bị phần cứng thiếu hoặc lỗi Driver.")
+                return {
+                    "success": True,
+                    "total": count,
+                    "missing_drivers": issues,
+                    "message": f"Phát hiện {count} thiết bị phần cứng chưa cài đặt hoặc bị lỗi Driver."
+                }
+        except Exception as e:
+            self.log("ERROR", f"Lỗi kiểm tra driver: {e}")
+            return {"success": False, "total": 0, "missing_drivers": [], "message": str(e)}
+
+    def open_device_manager(self):
+        """Opens native Windows Device Manager console (devmgmt.msc)."""
+        try:
+            subprocess.Popen("devmgmt.msc", shell=True)
+            self.log("SUCCESS", "Đã mở Trình quản lý thiết bị Device Manager (devmgmt.msc) của Windows!")
+            return {"success": True, "message": "Đã mở Device Manager thành công!"}
+        except Exception as e:
+            self.log("ERROR", f"Lỗi mở devmgmt.msc: {e}")
             return {"success": False, "message": str(e)}
 
     # ── DESKTOP ICON & TASKBAR MANAGER MODULE ─────────────────────────────
@@ -1847,6 +1999,14 @@ class Api:
             return {"success": True, "data": res}
         except Exception as e:
             return {"success": False, "message": str(e), "data": {"local_ip": "N/A", "external_ip": "N/A", "adapters": []}}
+
+    def get_external_ip(self):
+        """Fetches public IP asynchronously."""
+        try:
+            import modules.ip_manager as im
+            return im.get_external_ip()
+        except Exception as e:
+            return {"success": False, "ip": "N/A", "message": str(e)}
 
     def apply_ip_settings(self, adapter, mode, ip="", mask="255.255.255.0", gateway="", dns1="", dns2=""):
         """Applies IP/DHCP settings to a specified network adapter."""
@@ -3615,6 +3775,137 @@ Write-Output "OK:$pinnedCount"
             {"id": "LibreSpeed.librespeed-cli", "name": "LibreSpeed (Speedtest)", "category": "Công cụ mạng","icon": "⚡"},
             {"id": "Cloudflare.Warp",           "name": "Cloudflare WARP",     "category": "Công cụ mạng",   "icon": "🌐"},
             {"id": "mRemoteNG.mRemoteNG",       "name": "mRemoteNG (RDP/SSH)", "category": "Công cụ mạng",   "icon": "🖥️"},
+            # ── BỘ GÕ (+1) ──────────────────────────────
+            {"id": "DEVCOM.JetBrainsMonoNerdFont", "name": "JetBrains Mono Nerd Font", "category": "Bộ gõ", "icon": "🔤"},
+
+            # ── TRÌNH DUYỆT (+5) ──────────────────────────────
+            {"id": "TorProject.TorBrowser", "name": "Tor Browser", "category": "Trình duyệt", "icon": "🧅"},
+            {"id": "LibreWolf.LibreWolf", "name": "LibreWolf Browser", "category": "Trình duyệt", "icon": "🐺"},
+            {"id": "Waterfox.Waterfox", "name": "Waterfox", "category": "Trình duyệt", "icon": "🦊"},
+            {"id": "DuckDuckGo.DesktopBrowser", "name": "DuckDuckGo Privacy Browser", "category": "Trình duyệt", "icon": "🦆"},
+            {"id": "TheBrowserCompany.Arc", "name": "Arc Browser", "category": "Trình duyệt", "icon": "🌈"},
+
+            # ── CHAT (+4) ──────────────────────────────
+            {"id": "OpenWhisperSystems.Signal", "name": "Signal Desktop", "category": "Chat", "icon": "🔒"},
+            {"id": "Mozilla.Thunderbird", "name": "Mozilla Thunderbird (Email)", "category": "Chat", "icon": "✉️"},
+            {"id": "Element.Element", "name": "Element Matrix", "category": "Chat", "icon": "💬"},
+            {"id": "Mattermost.MattermostDesktop", "name": "Mattermost", "category": "Chat", "icon": "💬"},
+
+            # ── VĂN PHÒNG (+7) ──────────────────────────────
+            {"id": "calibre.calibre", "name": "Calibre E-Book Manager", "category": "Văn phòng", "icon": "📚"},
+            {"id": "DigitalScholar.Zotero", "name": "Zotero Trích Dẫn & Nghiên Cứu", "category": "Văn phòng", "icon": "📖"},
+            {"id": "DeepL.DeepL", "name": "DeepL Dịch Thuật AI", "category": "Văn phòng", "icon": "🌐"},
+            {"id": "Logseq.Logseq", "name": "Logseq (Ghi chú Markdown)", "category": "Văn phòng", "icon": "📝"},
+            {"id": "Joplin.Joplin", "name": "Joplin Ghi Chú Đa Nền Tảng", "category": "Văn phòng", "icon": "📒"},
+            {"id": "AppFlowy.AppFlowy", "name": "AppFlowy (Notion Nguồn Mở)", "category": "Văn phòng", "icon": "📋"},
+            {"id": "appmakes.Typora", "name": "Typora Trình Soạn Markdown", "category": "Văn phòng", "icon": "📝"},
+
+            # ── PDF (+2) ──────────────────────────────
+            {"id": "KDE.Okular", "name": "Okular PDF Reader", "category": "PDF", "icon": "📄"},
+            {"id": "PDFgear.PDFgear", "name": "PDFgear All-in-One PDF Tool", "category": "PDF", "icon": "⚙️"},
+
+            # ── ĐA PHƯƠNG TIỆN (+7) ──────────────────────────────
+            {"id": "CodecGuide.K-LiteCodecPack.Mega", "name": "K-Lite Mega Codec Pack", "category": "Đa phương tiện", "icon": "🎞️"},
+            {"id": "ch.LosslessCut", "name": "LosslessCut (Cắt Ghép Video Nhanh)", "category": "Đa phương tiện", "icon": "✂️"},
+            {"id": "PaulPacifico.ShutterEncoder", "name": "Shutter Encoder (Chuyển Đổi Video)", "category": "Đa phương tiện", "icon": "🎬"},
+            {"id": "Gyan.FFmpeg", "name": "FFmpeg Media Framework", "category": "Đa phương tiện", "icon": "⚙️"},
+            {"id": "Stremio.Stremio", "name": "Stremio Phim Trực Tuyến", "category": "Đa phương tiện", "icon": "🍿"},
+            {"id": "XBMCFoundation.Kodi", "name": "Kodi Home Theater", "category": "Đa phương tiện", "icon": "📺"},
+            {"id": "Apple.iTunes", "name": "Apple iTunes", "category": "Đa phương tiện", "icon": "🎵"},
+
+            # ── ĐỒ HOẠ (+8) ──────────────────────────────
+            {"id": "Skillbrains.Lightshot", "name": "Lightshot Chụp Ảnh Màn Hình", "category": "Đồ hoạ", "icon": "📸"},
+            {"id": "dotPDN.PaintDotNet", "name": "Paint.NET (Chỉnh Sửa Ảnh)", "category": "Đồ hoạ", "icon": "🎨"},
+            {"id": "Flameshot.Flameshot", "name": "Flameshot (Chụp & Chú Thích Màn Hình)", "category": "Đồ hoạ", "icon": "🔥"},
+            {"id": "FastStone.Viewer", "name": "FastStone Image Viewer", "category": "Đồ hoạ", "icon": "🖼️"},
+            {"id": "RawTherapee.RawTherapee", "name": "RawTherapee Xử Lý Ảnh RAW", "category": "Đồ hoạ", "icon": "📸"},
+            {"id": "Upscayl.Upscayl", "name": "Upscayl Phóng To Ảnh AI", "category": "Đồ hoạ", "icon": "✨"},
+            {"id": "ImageMagick.ImageMagick", "name": "ImageMagick Xử Lý Ảnh", "category": "Đồ hoạ", "icon": "🪄"},
+            {"id": "eTeks.SweetHome3D", "name": "Sweet Home 3D Thiết Kế Nội Thất", "category": "Đồ hoạ", "icon": "🏠"},
+
+            # ── TIỆN ÍCH (+17) ──────────────────────────────
+            {"id": "AntibodySoftware.WizTree", "name": "WizTree Phân Tích Dung Lượng Ổ Đĩa", "category": "Tiện ích", "icon": "🌳"},
+            {"id": "Ventoy.Ventoy", "name": "Ventoy Tạo USB Boot Đa Năng", "category": "Tiện ích", "icon": "💾"},
+            {"id": "Balena.Etcher", "name": "Balena Etcher Ghi USB/SD Card", "category": "Tiện ích", "icon": "💿"},
+            {"id": "RevoUninstaller.RevoUninstaller", "name": "Revo Uninstaller Free (Gỡ Sạch App)", "category": "Tiện ích", "icon": "🗑️"},
+            {"id": "GeekUninstaller.GeekUninstaller", "name": "Geek Uninstaller (Gỡ Bỏ Triệt Để)", "category": "Tiện ích", "icon": "🧹"},
+            {"id": "Klocman.BulkCrapUninstaller", "name": "Bulk Crap Uninstaller (BCU Gỡ Hàng Loạt)", "category": "Tiện ích", "icon": "🗑️"},
+            {"id": "BleachBit.BleachBit", "name": "BleachBit Dọn Dẹp File Rác", "category": "Tiện ích", "icon": "🧹"},
+            {"id": "AutoHotkey.AutoHotkey", "name": "AutoHotkey Tự Động Hóa Phím Chuột", "category": "Tiện ích", "icon": "⌨️"},
+            {"id": "Flow-Launcher.Flow-Launcher", "name": "Flow Launcher Tìm Kiếm Nhanh", "category": "Tiện ích", "icon": "🔍"},
+            {"id": "File-New-Project.EarTrumpet", "name": "EarTrumpet Điều Chỉnh Âm Lượng Riêng", "category": "Tiện ích", "icon": "🔊"},
+            {"id": "CharlesMilette.TranslucentTB", "name": "TranslucentTB Làm Trong Suốt Taskbar", "category": "Tiện ích", "icon": "🪟"},
+            {"id": "rocksdanister.LivelyWallpaper", "name": "Lively Wallpaper Hình Nền Động", "category": "Tiện ích", "icon": "🖼️"},
+            {"id": "Open-Shell.Open-Shell-Menu", "name": "Open-Shell Start Menu Cổ Điển", "category": "Tiện ích", "icon": "🐚"},
+            {"id": "CrystalRich.LockHunter", "name": "LockHunter Mở Khóa Tệp Bị Chiếm Dụng", "category": "Tiện ích", "icon": "🔓"},
+            {"id": "gerardog.gsudo", "name": "gsudo Quyền Administrator Trong CMD/PS", "category": "Tiện ích", "icon": "⚡"},
+            {"id": "M2Team.NanaZip", "name": "NanaZip Nén & Giải Nén Windows 11", "category": "Tiện ích", "icon": "📦"},
+            {"id": "JAMSoftware.TreeSize.Free", "name": "TreeSize Free Quét Dung Lượng Thư Mục", "category": "Tiện ích", "icon": "🌳"},
+
+            # ── HỆ THỐNG (+6) ──────────────────────────────
+            {"id": "Guru3D.RTSS", "name": "RivaTuner Statistics Server (RTSS OSD)", "category": "Hệ thống", "icon": "📊"},
+            {"id": "Guru3D.Afterburner", "name": "MSI Afterburner (Ép Xung & Giám Sát GPU)", "category": "Hệ thống", "icon": "⚡"},
+            {"id": "Geeks3D.FurMark.1", "name": "Geeks3D FurMark GPU Stress Test", "category": "Hệ thống", "icon": "🔥"},
+            {"id": "FinalWire.AIDA64.Extreme", "name": "AIDA64 Extreme (Kiểm Tra Chi Tiết Máy)", "category": "Hệ thống", "icon": "ℹ️"},
+            {"id": "ALCPU.CoreTemp", "name": "Core Temp (Đo Nhiệt Độ Từng Nhân CPU)", "category": "Hệ thống", "icon": "🌡️"},
+            {"id": "NirSoft.BatteryInfoView", "name": "BatteryInfoView (Xem Độ Chai Pin Laptop)", "category": "Hệ thống", "icon": "🔋"},
+
+            # ── BẢO MẬT (+6) ──────────────────────────────
+            {"id": "KeePassXCTeam.KeePassXC", "name": "KeePassXC (Quản Lý Mật Khẩu Offline)", "category": "Bảo mật", "icon": "🔑"},
+            {"id": "AgileBits.1Password", "name": "1Password (Trình Quản Lý Mật Khẩu)", "category": "Bảo mật", "icon": "🔐"},
+            {"id": "Tailscale.Tailscale", "name": "Tailscale (Mạng Nội Bộ VPN Mesh)", "category": "Bảo mật", "icon": "🔒"},
+            {"id": "WireGuard.WireGuard", "name": "WireGuard (VPN Siêu Nhẹ & Tốc Độ)", "category": "Bảo mật", "icon": "🛡️"},
+            {"id": "2dust.v2rayN", "name": "v2rayN (Proxy Client V2Ray/Xray)", "category": "Bảo mật", "icon": "🚀"},
+            {"id": "ValdikSS.GoodbyeDPI", "name": "GoodbyeDPI (Vượt Tường Lửa & Chặn DPI)", "category": "Bảo mật", "icon": "🌐"},
+
+            # ── LẬP TRÌNH (+17) ──────────────────────────────
+            {"id": "LeNgocKhoa.Laragon", "name": "Laragon (WAMP Stack Chuẩn Cho Dev VN)", "category": "Lập trình", "icon": "🐘"},
+            {"id": "SublimeHQ.SublimeText.4", "name": "Sublime Text 4 (Trình Biên Tập Code)", "category": "Lập trình", "icon": "📝"},
+            {"id": "JetBrains.IntelliJIDEA.Community", "name": "IntelliJ IDEA Community Edition", "category": "Lập trình", "icon": "☕"},
+            {"id": "JetBrains.PyCharm.Community", "name": "PyCharm Community Edition (Python IDE)", "category": "Lập trình", "icon": "🐍"},
+            {"id": "ApacheFriends.Xampp.8.2", "name": "XAMPP 8.2 (Apache + MariaDB + PHP)", "category": "Lập trình", "icon": "🐘"},
+            {"id": "Termius.Termius", "name": "Termius (SSH Client & SFTP Quản Trị Server)", "category": "Lập trình", "icon": "🖥️"},
+            {"id": "Eugeny.Tabby", "name": "Tabby (Terminal Đa Năng Cho Dev)", "category": "Lập trình", "icon": "⬛"},
+            {"id": "Alacritty.Alacritty", "name": "Alacritty (GPU Terminal Siêu Tốc)", "category": "Lập trình", "icon": "⚡"},
+            {"id": "Neovim.Neovim", "name": "Neovim (Vim Mở Rộng Hiện Đại)", "category": "Lập trình", "icon": "💚"},
+            {"id": "vim.vim", "name": "Vim Text Editor", "category": "Lập trình", "icon": "💚"},
+            {"id": "JesseDuffield.lazygit", "name": "LazyGit (Giao Diện Git Dòng Lệnh)", "category": "Lập trình", "icon": "🔀"},
+            {"id": "Fork.Fork", "name": "Fork Git Client (Giao Diện Git Trực Quan)", "category": "Lập trình", "icon": "🔀"},
+            {"id": "Atlassian.Sourcetree", "name": "Sourcetree Git Client", "category": "Lập trình", "icon": "🌳"},
+            {"id": "Rustlang.Rustup", "name": "Rustup (Bộ Cài Đặt Ngôn Ngữ Rust)", "category": "Lập trình", "icon": "🦀"},
+            {"id": "TablePlus.TablePlus", "name": "TablePlus (Quản Trị Cơ Sở Dữ Liệu GUI)", "category": "Lập trình", "icon": "🗄️"},
+            {"id": "PostgreSQL.pgAdmin", "name": "pgAdmin 4 (Quản Lý PostgreSQL)", "category": "Lập trình", "icon": "🐘"},
+            {"id": "Bruno.Bruno", "name": "Bruno API Client (Thay Thế Postman Offline)", "category": "Lập trình", "icon": "🐶"},
+
+            # ── DOWNLOAD (+5) ──────────────────────────────
+            {"id": "agalwood.Motrix", "name": "Motrix Download Manager", "category": "Download", "icon": "⚡"},
+            {"id": "yt-dlp.yt-dlp", "name": "yt-dlp (Tải Video YouTube/Facebook CLI)", "category": "Download", "icon": "⬇️"},
+            {"id": "Transmission.Transmission", "name": "Transmission Torrent Client", "category": "Download", "icon": "🧲"},
+            {"id": "aria2.aria2", "name": "aria2 Trình Tải File Đa Luồng Siêu Nhanh", "category": "Download", "icon": "🚀"},
+            {"id": "AppWork.JDownloader", "name": "JDownloader 2 (Tải File Host Hàng Loạt)", "category": "Download", "icon": "☕"},
+
+            # ── Ổ ĐĨA ẢO (+3) ──────────────────────────────
+            {"id": "MiniTool.PartitionWizard.Free", "name": "MiniTool Partition Wizard (Phân Vùng Ổ Đĩa)", "category": "Ổ đĩa ảo", "icon": "💿"},
+            {"id": "Syncthing.Syncthing", "name": "Syncthing (Đồng Bộ Dữ Liệu Ngang Hàng)", "category": "Ổ đĩa ảo", "icon": "🔄"},
+            {"id": "Duplicati.Duplicati", "name": "Duplicati (Sao Lưu Mã Hóa Lên Cloud)", "category": "Ổ đĩa ảo", "icon": "🔒"},
+
+            # ── MẠNG XÃ HỘI (+5) ──────────────────────────────
+            {"id": "Blizzard.BattleNet", "name": "Battle.net Launcher", "category": "Mạng xã hội", "icon": "🎮"},
+            {"id": "ElectronicArts.EADesktop", "name": "EA App (Electronic Arts)", "category": "Mạng xã hội", "icon": "🎮"},
+            {"id": "Ubisoft.Connect", "name": "Ubisoft Connect", "category": "Mạng xã hội", "icon": "🎮"},
+            {"id": "GOG.Galaxy", "name": "GOG Galaxy Launcher", "category": "Mạng xã hội", "icon": "🎮"},
+            {"id": "Roblox.Roblox", "name": "Roblox Player", "category": "Mạng xã hội", "icon": "🟥"},
+
+            # ── CÔNG CỤ MẠNG (+5) ──────────────────────────────
+            {"id": "Famatech.AdvancedIPScanner", "name": "Advanced IP Scanner (Quét Mạng LAN)", "category": "Công cụ mạng", "icon": "📡"},
+            {"id": "Telerik.Fiddler.Classic", "name": "Fiddler Classic (Phân Tích Bắt Gói HTTP)", "category": "Công cụ mạng", "icon": "🎻"},
+            {"id": "RealVNC.VNCViewer", "name": "RealVNC Viewer (Điều Khiển VNC)", "category": "Công cụ mạng", "icon": "🖥️"},
+            {"id": "leeter.WinMTR", "name": "WinMTR (Kiểm Tra Mất Gói & Ping Mạng)", "category": "Công cụ mạng", "icon": "📈"},
+            {"id": "Pingman.PingPlotter", "name": "PingPlotter (Đồ Thị Ping & Độ Trễ)", "category": "Công cụ mạng", "icon": "📊"},
+
+            # ── CLOUD (+2) ──────────────────────────────
+            {"id": "Proton.ProtonDrive", "name": "Proton Drive (Lưu Trữ Mã Hóa)", "category": "Cloud", "icon": "☁️"},
+            {"id": "Rclone.Rclone", "name": "Rclone (Đồng Bộ Đa Dịch Vụ Đám Mây)", "category": "Cloud", "icon": "☁️"},
         ]
         return self._detect_catalog_installation_and_pin_status(catalog)
 
@@ -3759,6 +4050,106 @@ Write-Output "OK:$pinnedCount"
             'bytedance.capcut': ['capcut.exe'],
             'sharex.sharex': ['sharex.exe'],
             'greenshot.greenshot': ['greenshot.exe'],
+            'devcom.jetbrainsmononerdfont': ["jetbrainsmono*.ttf"],
+            'torproject.torbrowser': ["firefox.exe"],
+            'librewolf.librewolf': ["librewolf.exe"],
+            'waterfox.waterfox': ["waterfox.exe"],
+            'duckduckgo.desktopbrowser': ["duckduckgo.exe"],
+            'thebrowsercompany.arc': ["arc.exe"],
+            'openwhispersystems.signal': ["signal.exe"],
+            'mozilla.thunderbird': ["thunderbird.exe"],
+            'element.element': ["element.exe"],
+            'mattermost.mattermostdesktop': ["mattermost.exe"],
+            'calibre.calibre': ["calibre.exe"],
+            'digitalscholar.zotero': ["zotero.exe"],
+            'deepl.deepl': ["deepl.exe"],
+            'logseq.logseq': ["logseq.exe"],
+            'joplin.joplin': ["joplin.exe"],
+            'appflowy.appflowy': ["appflowy.exe"],
+            'appmakes.typora': ["typora.exe"],
+            'kde.okular': ["okular.exe"],
+            'pdfgear.pdfgear': ["pdfgear.exe"],
+            'codecguide.k-litecodecpack.mega': ["mpc-hc64.exe", "mpc-hc.exe"],
+            'ch.losslesscut': ["losslesscut.exe"],
+            'paulpacifico.shutterencoder': ["shutter encoder.exe"],
+            'gyan.ffmpeg': ["ffmpeg.exe"],
+            'stremio.stremio': ["stremio.exe"],
+            'xbmcfoundation.kodi': ["kodi.exe"],
+            'apple.itunes': ["itunes.exe"],
+            'skillbrains.lightshot': ["lightshot.exe"],
+            'dotpdn.paintdotnet': ["paintdotnet.exe"],
+            'flameshot.flameshot': ["flameshot.exe"],
+            'faststone.viewer': ["fsviewer.exe"],
+            'rawtherapee.rawtherapee': ["rawtherapee.exe"],
+            'upscayl.upscayl': ["upscayl.exe"],
+            'imagemagick.imagemagick': ["magick.exe"],
+            'eteks.sweethome3d': ["sweethome3d.exe"],
+            'antibodysoftware.wiztree': ["wiztree64.exe", "wiztree.exe"],
+            'ventoy.ventoy': ["ventoy2disk.exe"],
+            'balena.etcher': ["balenaetcher.exe"],
+            'revouninstaller.revouninstaller': ["revouninpro.exe", "revoupport.exe", "revounin.exe"],
+            'geekuninstaller.geekuninstaller': ["geek.exe"],
+            'klocman.bulkcrapuninstaller': ["bcuninstaller.exe"],
+            'bleachbit.bleachbit': ["bleachbit.exe"],
+            'autohotkey.autohotkey': ["autohotkey.exe", "autohotkey64.exe"],
+            'flow-launcher.flow-launcher': ["flow.launcher.exe"],
+            'file-new-project.eartrumpet': ["eartrumpet.exe"],
+            'charlesmilette.translucenttb': ["translucenttb.exe"],
+            'rocksdanister.livelywallpaper': ["lively.exe"],
+            'open-shell.open-shell-menu': ["startmenu.exe"],
+            'crystalrich.lockhunter': ["lockhunter.exe"],
+            'gerardog.gsudo': ["gsudo.exe"],
+            'm2team.nanazip': ["nanazip.exe", "nanazipg.exe"],
+            'jamsoftware.treesize.free': ["treesizefree.exe"],
+            'guru3d.rtss': ["rtss.exe"],
+            'guru3d.afterburner': ["msiafterburner.exe"],
+            'geeks3d.furmark.1': ["furmark.exe"],
+            'finalwire.aida64.extreme': ["aida64.exe"],
+            'alcpu.coretemp': ["core temp.exe"],
+            'nirsoft.batteryinfoview': ["batteryinfoview.exe"],
+            'keepassxcteam.keepassxc': ["keepassxc.exe"],
+            'agilebits.1password': ["1password.exe"],
+            'tailscale.tailscale': ["tailscale-ipn.exe"],
+            'wireguard.wireguard': ["wireguard.exe"],
+            '2dust.v2rayn': ["v2rayn.exe"],
+            'valdikss.goodbyedpi': ["goodbyedpi.exe"],
+            'lengockhoa.laragon': ["laragon.exe"],
+            'sublimehq.sublimetext.4': ["sublime_text.exe"],
+            'jetbrains.intellijidea.community': ["idea64.exe"],
+            'jetbrains.pycharm.community': ["pycharm64.exe"],
+            'apachefriends.xampp.8.2': ["xampp-control.exe"],
+            'termius.termius': ["termius.exe"],
+            'eugeny.tabby': ["tabby.exe"],
+            'alacritty.alacritty': ["alacritty.exe"],
+            'neovim.neovim': ["nvim.exe"],
+            'vim.vim': ["gvim.exe", "vim.exe"],
+            'jesseduffield.lazygit': ["lazygit.exe"],
+            'fork.fork': ["fork.exe"],
+            'atlassian.sourcetree': ["sourcetree.exe"],
+            'rustlang.rustup': ["rustup.exe", "cargo.exe"],
+            'tableplus.tableplus': ["tableplus.exe"],
+            'postgresql.pgadmin': ["pgadmin4.exe"],
+            'bruno.bruno': ["bruno.exe"],
+            'agalwood.motrix': ["motrix.exe"],
+            'yt-dlp.yt-dlp': ["yt-dlp.exe"],
+            'transmission.transmission': ["transmission-qt.exe"],
+            'aria2.aria2': ["aria2c.exe"],
+            'appwork.jdownloader': ["jdownloader2.exe"],
+            'minitool.partitionwizard.free': ["partitionwizard.exe"],
+            'syncthing.syncthing': ["syncthing.exe"],
+            'duplicati.duplicati': ["duplicati.gui.trayicon.exe"],
+            'blizzard.battlenet': ["battle.net.exe"],
+            'electronicarts.eadesktop': ["eadesktop.exe"],
+            'ubisoft.connect': ["ubisoftconnect.exe"],
+            'gog.galaxy': ["galaxyclient.exe"],
+            'roblox.roblox': ["robloxplayerbeta.exe"],
+            'famatech.advancedipscanner': ["advanced_ip_scanner.exe"],
+            'telerik.fiddler.classic': ["fiddler.exe"],
+            'realvnc.vncviewer': ["vncviewer.exe"],
+            'leeter.winmtr': ["winmtr.exe"],
+            'pingman.pingplotter': ["pingplotter.exe"],
+            'proton.protondrive': ["protondrive.exe"],
+            'rclone.rclone': ["rclone.exe"],
         }
 
         for app in catalog:
@@ -4102,6 +4493,9 @@ Write-Output "OK:$pinnedCount"
 
         self.log("INFO", f"Đã thêm {len(new_ids)} phần mềm ({names_str}) vào tiến trình cài đặt nền. Tổng cộng: {new_total} phần mềm.")
 
+        # Đảm bảo watcher thông báo vẫn đang chạy cho session này
+        self._start_winget_notify_watcher(paths["status"])
+
         return {
             "success": True,
             "appended": len(new_ids),
@@ -4193,6 +4587,9 @@ Write-Output "OK:$pinnedCount"
             self._write_json_atomic(paths["status"], initial_status)
             self._last_winget_status = initial_status
 
+            # Khởi chạy luồng theo dõi và thông báo tray khi cài xong từng phần mềm
+            self._start_winget_notify_watcher(paths["status"])
+
             self.log("INFO", f"Đã khởi chạy cài đặt nền {len(package_ids)} phần mềm (PID: {proc.pid}).")
             return {
                 "success": True,
@@ -4201,6 +4598,149 @@ Write-Output "OK:$pinnedCount"
         except Exception as e:
             self.log("ERROR", f"Không thể khởi chạy winget_runner.ps1: {e}")
             return {"success": False, "message": f"Lỗi khởi động tiến trình nền: {e}"}
+
+    def _start_winget_notify_watcher(self, status_file: str):
+        """Starts a daemon thread that monitors status.json and fires tray balloon notifications
+        for each completed installation and a final summary when the batch finishes."""
+        import threading
+
+        # Nếu watcher cũ vẫn đang chạy, không cần tạo watcher mới
+        if self._winget_notify_watcher and self._winget_notify_watcher.is_alive():
+            return
+
+        def _watcher():
+            last_success_count = 0
+            last_error_count   = 0
+            last_pkg_name      = ""
+            last_finished      = False
+            poll_interval      = 3  # seconds
+
+            while True:
+                import time
+                time.sleep(poll_interval)
+
+                # Đọc file status.json
+                try:
+                    if not os.path.exists(status_file):
+                        continue
+                    with open(status_file, "r", encoding="utf-8-sig") as f:
+                        data = json.load(f)
+                except Exception:
+                    continue
+
+                success_count = int(data.get("success_count", 0))
+                error_count   = int(data.get("error_count", 0))
+                pkg_name      = data.get("current_package_name") or ""
+                finished      = bool(data.get("finished", False))
+                canceled      = bool(data.get("canceled", False))
+                total         = int(data.get("total", 0))
+
+                # --- Phát hiện mỗi phần mềm cài xong thành công ---
+                if success_count > last_success_count:
+                    # Tên phần mềm vừa cài: lấy từ trường log dòng cuối hoặc current_package_name
+                    just_installed = last_pkg_name or pkg_name or "Phần mềm"
+                    # Thử đọc tên chính xác hơn từ log
+                    try:
+                        logs = data.get("log", []) or []
+                        for line in reversed(logs):
+                            if "[OK] Da cai dat thanh cong" in line or "[OK]" in line:
+                                # Trích tên sau [OK]: ...
+                                parts = line.split(": ", 1)
+                                if len(parts) > 1:
+                                    just_installed = parts[-1].strip()
+                                break
+                    except Exception:
+                        pass
+
+                    self._fire_tray_notify(
+                        title=f"✅ Cài đặt thành công!",
+                        message=(
+                            f"Đã cài đặt xong: {just_installed}\n"
+                            f"Bạn hãy di chuyển đến màn hình Desktop và mở ứng dụng lên nhé!"
+                        ),
+                        notify_type="success",
+                        duration_ms=6000
+                    )
+                    last_success_count = success_count
+
+                # --- Phát hiện lỗi mới ---
+                if error_count > last_error_count:
+                    err_pkg = last_pkg_name or pkg_name or "một phần mềm"
+                    self._fire_tray_notify(
+                        title="⚠️ Cài đặt gặp lỗi",
+                        message=(
+                            f"Không thể cài đặt: {err_pkg}\n"
+                            f"Vui lòng mở ứng dụng và kiểm tra nhật ký để biết chi tiết."
+                        ),
+                        notify_type="error",
+                        duration_ms=7000
+                    )
+                    last_error_count = error_count
+
+                last_pkg_name = pkg_name
+
+                # --- Kết thúc toàn bộ hàng đợi ---
+                if finished and not last_finished:
+                    last_finished = True
+                    import time as _t
+                    _t.sleep(1.5)  # Chờ balloon trước đó biến mất
+
+                    if canceled:
+                        self._fire_tray_notify(
+                            title="🛑 Đã dừng cài đặt",
+                            message=(
+                                f"Quá trình cài đặt đã bị dừng theo yêu cầu.\n"
+                                f"Đã cài thành công {success_count}/{total} phần mềm."
+                            ),
+                            notify_type="warning",
+                            duration_ms=7000
+                        )
+                    elif error_count > 0 and success_count == 0:
+                        self._fire_tray_notify(
+                            title="❌ Cài đặt thất bại",
+                            message=(
+                                f"Không thể cài đặt {error_count}/{total} phần mềm.\n"
+                                f"Vui lòng mở ứng dụng và kiểm tra nhật ký."
+                            ),
+                            notify_type="error",
+                            duration_ms=8000
+                        )
+                    elif error_count > 0:
+                        self._fire_tray_notify(
+                            title="✅ Hoàn tất (có lỗi)",
+                            message=(
+                                f"Đã cài thành công {success_count}/{total} phần mềm.\n"
+                                f"Có {error_count} phần mềm gặp lỗi. Mở ứng dụng để xem chi tiết."
+                            ),
+                            notify_type="warning",
+                            duration_ms=8000
+                        )
+                    else:
+                        self._fire_tray_notify(
+                            title="🎉 Cài đặt hoàn tất!",
+                            message=(
+                                f"Đã cài đặt thành công {success_count}/{total} phần mềm.\n"
+                                f"Hãy di chuyển đến màn hình Desktop và mở ứng dụng lên nhé!"
+                            ),
+                            notify_type="success",
+                            duration_ms=8000
+                        )
+                    break  # Kết thúc vòng lặp watcher
+
+        t = threading.Thread(target=_watcher, daemon=True, name="WingetNotifyWatcher")
+        t.start()
+        self._winget_notify_watcher = t
+
+    def _fire_tray_notify(self, title: str, message: str, notify_type: str = "info", duration_ms: int = 5000):
+        """Calls TrayManager.show_tray_notification() if a tray is available."""
+        try:
+            tray = getattr(self, '_tray', None)
+            if tray and hasattr(tray, 'show_tray_notification'):
+                tray.show_tray_notification(title, message, notify_type, duration_ms)
+            else:
+                print(f"[WingetNotify] {title}: {message}")
+        except Exception as ex:
+            print(f"[WingetNotify] _fire_tray_notify error: {ex}")
 
     def pin_app_shortcut(self, package_id, package_name=""):
         """Pins and creates shortcuts for the specified application to Desktop, Start Menu, and Programs."""
@@ -4647,7 +5187,52 @@ $res | ConvertTo-Json -Depth 3 -Compress
 
     # ── WINDOWS SERVICES MANAGER ──────────────────────────────────────────
     def get_windows_services(self):
-        """Fetches all Windows services via PowerShell Get-Service."""
+        """Fetches all Windows services via psutil (instant 0.02s) with PowerShell fallback."""
+        # 1. Fast, real-time retrieval via psutil
+        try:
+            import psutil
+            cleaned = []
+            for s in psutil.win_service_iter():
+                try:
+                    info = s.as_dict()
+                    st = (info.get('status') or '').lower()
+                    if st == 'running':
+                        status_str = "Running"
+                    elif st == 'stopped':
+                        status_str = "Stopped"
+                    elif 'start' in st:
+                        status_str = "StartPending"
+                    elif 'stop' in st:
+                        status_str = "StopPending"
+                    elif 'pause' in st:
+                        status_str = "Paused"
+                    else:
+                        status_str = st.capitalize() or "Stopped"
+
+                    sp = (info.get('start_type') or '').lower()
+                    if 'auto' in sp:
+                        start_str = "Automatic"
+                    elif 'disabled' in sp:
+                        start_str = "Disabled"
+                    else:
+                        start_str = "Manual"
+
+                    cleaned.append({
+                        "name": info.get("name") or "",
+                        "display": info.get("display_name") or info.get("name") or "",
+                        "status": status_str,
+                        "start_type": start_str
+                    })
+                except Exception:
+                    pass
+
+            if cleaned:
+                cleaned.sort(key=lambda x: x["name"].lower())
+                return {"success": True, "services": cleaned, "total": len(cleaned)}
+        except Exception:
+            pass
+
+        # 2. Fallback to PowerShell Get-Service
         try:
             cmd = ['powershell', '-Command', 'Get-Service | Select-Object Name, DisplayName, Status, StartType | ConvertTo-Json']
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=30, encoding='utf-8', errors='ignore')
@@ -4655,17 +5240,19 @@ $res | ConvertTo-Json -Depth 3 -Compress
                 data = json.loads(res.stdout)
                 if isinstance(data, dict):
                     data = [data]
-                
-                status_map = {4: "Running", 1: "Stopped", 2: "StartPending", 3: "StopPending", 7: "Paused"}
-                start_type_map = {2: "Automatic", 3: "Manual", 4: "Disabled"}
+
+                status_map = {4: "Running", 1: "Stopped", 2: "StartPending", 3: "StopPending", 7: "Paused",
+                              "4": "Running", "1": "Stopped", "2": "StartPending", "3": "StopPending", "7": "Paused"}
+                start_type_map = {2: "Automatic", 3: "Manual", 4: "Disabled",
+                                  "2": "Automatic", "3": "Manual", "4": "Disabled"}
 
                 cleaned = []
                 for s in data:
                     st_val = s.get("Status")
-                    status_str = status_map.get(st_val, str(st_val)) if isinstance(st_val, int) else str(st_val)
+                    status_str = status_map.get(st_val, str(st_val)) if st_val in status_map else str(st_val).capitalize()
 
                     sp_val = s.get("StartType")
-                    start_str = start_type_map.get(sp_val, str(sp_val)) if isinstance(sp_val, int) else str(sp_val)
+                    start_str = start_type_map.get(sp_val, str(sp_val)) if sp_val in start_type_map else str(sp_val).capitalize()
 
                     cleaned.append({
                         "name": s.get("Name") or "",
@@ -4682,7 +5269,7 @@ $res | ConvertTo-Json -Depth 3 -Compress
             return {"success": False, "message": str(e), "services": [], "total": 0}
 
     def manage_windows_service(self, service_name, action):
-        """Starts, Stops, or Restarts a Windows service."""
+        """Starts, Stops, or Restarts a Windows service and waits for transition."""
         if not service_name:
             return {"success": False, "message": "Chưa chọn dịch vụ!"}
 
@@ -4690,7 +5277,7 @@ $res | ConvertTo-Json -Depth 3 -Compress
             action_map = {
                 "start": f'sc start "{service_name}"',
                 "stop": f'sc stop "{service_name}"',
-                "restart": f'sc stop "{service_name}" & timeout /t 2 & sc start "{service_name}"'
+                "restart": f'sc stop "{service_name}" & timeout /t 1 & sc start "{service_name}"'
             }
             cmd = action_map.get(action.lower())
             if not cmd:
@@ -4699,13 +5286,25 @@ $res | ConvertTo-Json -Depth 3 -Compress
             self.log("INFO", f"Đang thực hiện {action} trên dịch vụ: {service_name}...")
             res = subprocess.run(cmd, shell=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
 
+            # Wait briefly for service transition to finish
+            target_status = "running" if action.lower() in ("start", "restart") else "stopped"
+            try:
+                import psutil, time
+                for _ in range(8):
+                    time.sleep(0.25)
+                    svc = psutil.win_service_get(service_name)
+                    if svc.status() == target_status:
+                        break
+            except Exception:
+                pass
+
             if res.returncode == 0 or "SUCCESS" in res.stdout.upper() or "PENDING" in res.stdout.upper():
                 self.log("SUCCESS", f"Đã thực hiện {action} thành công trên dịch vụ '{service_name}'!")
                 return {"success": True, "message": f"Đã thực hiện {action} thành công trên dịch vụ '{service_name}'!"}
             else:
                 alt_cmd = f'net {action} "{service_name}"' if action in ["start", "stop"] else None
                 if alt_cmd:
-                    r_alt = subprocess.run(alt_cmd, shell=True, capture_output=True, text=True)
+                    r_alt = subprocess.run(alt_cmd, shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
                     if r_alt.returncode == 0:
                         self.log("SUCCESS", f"Đã {action} dịch vụ '{service_name}' thành công!")
                         return {"success": True, "message": f"Đã {action} dịch vụ '{service_name}' thành công!"}

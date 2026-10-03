@@ -63,8 +63,8 @@ class AppController {
     try {
       switch (tabId) {
         case "tab-computer-info":
-          if (typeof this.loadComputerInfo === 'function') await this.loadComputerInfo();
           if (typeof this.startRealtimeMonitoring === 'function') this.startRealtimeMonitoring();
+          if (typeof this.loadComputerInfo === 'function') this.loadComputerInfo();
           break;
 
         case "tab-test-computer":
@@ -154,6 +154,7 @@ class AppController {
 
         case "tab-services":
           if (typeof this.loadServices === 'function') await this.loadServices();
+          if (typeof this.startServicesRealtimeMonitor === 'function') this.startServicesRealtimeMonitor();
           break;
 
         case "tab-folder-size":
@@ -221,6 +222,9 @@ class AppController {
             }
             if (this.currentActiveTabId === "tab-printer-fix" && typeof this.stopGroupUserRealtimeMonitor === 'function') {
               this.stopGroupUserRealtimeMonitor();
+            }
+            if (this.currentActiveTabId === "tab-services" && typeof this.stopServicesRealtimeMonitor === 'function') {
+              this.stopServicesRealtimeMonitor();
             }
           }
           this.currentActiveTabId = tabId;

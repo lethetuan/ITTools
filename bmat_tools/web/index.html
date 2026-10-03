@@ -1207,6 +1207,26 @@
 
             </div>
 
+            <!-- Driver Check Diagnostic Modal -->
+            <div class="custom-modal-overlay" id="driver-check-modal"
+              style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center; padding: 20px;">
+              <div class="ui-card"
+                style="width: 580px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.35); border-radius: 12px; padding: 20px;">
+                <div
+                  style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 16px;">
+                  <h4
+                    style="margin: 0; font-size: 15px; font-weight: 700; color: #0284c7; display: flex; align-items: center; gap: 8px;">
+                    <span>🛡️</span> <span>Kiểm Tra Tình Trạng Driver & Thiết Bị (Device Manager)</span>
+                  </h4>
+                  <button class="btn btn-slate-light btn-xs" onclick="app.closeDriverCheckModal()"
+                    style="font-size: 14px; padding: 2px 8px; border-radius: 6px;">✕</button>
+                </div>
+                <div id="driver-check-modal-body">
+                  <!-- Dynamic driver status content -->
+                </div>
+              </div>
+            </div>
+
           </div>
 
         </section>
@@ -2395,26 +2415,18 @@
               </div>
 
               <!-- Status Banner -->
-              <div id="wu-status-card"
-                style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">
+              <div id="wu-status-card" class="win-status-banner">
                 <div>
-                  <div
-                    style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; font-weight: 700;">
-                    TRẠNG THÁI HIỆN TẠI</div>
-                  <strong id="wu-status-text" style="font-size: 13.5px; color: #0f172a;">Đang kiểm tra...</strong>
+                  <div class="win-status-banner-label">TRẠNG THÁI HIỆN TẠI</div>
+                  <strong id="wu-status-text" class="win-status-banner-text">Đang kiểm tra...</strong>
                 </div>
-                <span id="wu-status-badge" class="badge"
-                  style="background: #e2e8f0; color: #475569; padding: 5px 12px; border-radius: 20px; font-weight: 700; font-size: 12px;">Checking</span>
+                <span id="wu-status-badge" class="badge badge-status-enable">Checking</span>
               </div>
 
               <!-- Action Buttons -->
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                <button class="btn btn-success-solid py-2.5" onclick="app.setWinUpdateStatus(true)"
-                  style="font-size: 13px;">
-                  <span>✅</span> Bật Win Update
-                </button>
-                <button class="btn btn-danger-solid py-2.5" onclick="app.setWinUpdateStatus(false)"
-                  style="font-size: 13px;">
+                <button id="wu-btn-toggle" class="btn btn-danger-solid py-2.5" onclick="app.toggleWinUpdate()"
+                  style="grid-column: span 2; font-size: 13.5px; font-weight: 700;">
                   <span>🚫</span> Tắt Vĩnh Viễn Update
                 </button>
                 <button class="btn btn-slate-light py-2" onclick="app.pauseWinUpdate7Days()" style="font-size: 12.5px;">
@@ -2436,26 +2448,18 @@
               </div>
 
               <!-- Status Banner -->
-              <div id="wd-status-card"
-                style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">
+              <div id="wd-status-card" class="win-status-banner">
                 <div>
-                  <div
-                    style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; font-weight: 700;">
-                    TRẠNG THÁI HIỆN TẠI</div>
-                  <strong id="wd-status-text" style="font-size: 13.5px; color: #0f172a;">Đang kiểm tra...</strong>
+                  <div class="win-status-banner-label">TRẠNG THÁI HIỆN TẠI</div>
+                  <strong id="wd-status-text" class="win-status-banner-text">Đang kiểm tra...</strong>
                 </div>
-                <span id="wd-status-badge" class="badge"
-                  style="background: #e2e8f0; color: #475569; padding: 5px 12px; border-radius: 20px; font-weight: 700; font-size: 12px;">Checking</span>
+                <span id="wd-status-badge" class="badge badge-status-enable">Checking</span>
               </div>
 
               <!-- Action Buttons -->
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                <button class="btn btn-success-solid py-2.5" onclick="app.setDefenderStatus(true)"
-                  style="font-size: 13px;">
-                  <span>🛡️</span> Bật Defender
-                </button>
-                <button class="btn btn-danger-solid py-2.5" onclick="app.setDefenderStatus(false)"
-                  style="font-size: 13px;">
+                <button id="wd-btn-toggle" class="btn btn-danger-solid py-2.5" onclick="app.toggleDefenderStatus()"
+                  style="grid-column: span 2; font-size: 13.5px; font-weight: 700;">
                   <span>🚫</span> Tắt Defender
                 </button>
                 <button class="btn btn-slate-light py-2" onclick="app.runDefenderScan('quick')"
@@ -2479,35 +2483,32 @@
               </div>
 
               <!-- UAC Row -->
-              <div
-                style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;">
+              <div class="win-sub-guard-card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                  <span style="font-weight: 600; font-size: 13px; color: #334155;">User Account Control (UAC)</span>
-                  <span id="uac-status-badge" class="badge"
-                    style="background: #e2e8f0; color: #475569; padding: 3px 8px; border-radius: 4px; font-size: 11px;">Checking</span>
+                  <span class="win-sub-guard-title">User Account Control (UAC)</span>
+                  <span id="uac-status-badge" class="badge badge-status-enable">Checking</span>
                 </div>
                 <div style="display: flex; gap: 6px;">
-                  <button class="btn btn-success-solid btn-sm flex-1" onclick="app.setUacStatus(true)">✅ Bật
-                    UAC</button>
-                  <button class="btn btn-danger-solid btn-sm flex-1" onclick="app.setUacStatus(false)">🚫 Tắt
-                    UAC</button>
+                  <button id="uac-btn-toggle" class="btn btn-danger-solid btn-sm flex-1" onclick="app.toggleUacStatus()"
+                    style="font-weight: 700;">
+                    <span>🚫</span> Tắt UAC
+                  </button>
                   <button class="btn btn-slate-light btn-sm" onclick="app.openSecurityShortcut('uac_settings')"
                     title="Cấu hình UAC">⚙️ Config</button>
                 </div>
               </div>
 
               <!-- SmartScreen Row -->
-              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px;">
+              <div class="win-sub-guard-card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                  <span style="font-weight: 600; font-size: 13px; color: #334155;">Windows SmartScreen Guard</span>
-                  <span id="ss-status-badge" class="badge"
-                    style="background: #e2e8f0; color: #475569; padding: 3px 8px; border-radius: 4px; font-size: 11px;">Checking</span>
+                  <span class="win-sub-guard-title">Windows SmartScreen Guard</span>
+                  <span id="ss-status-badge" class="badge badge-status-enable">Checking</span>
                 </div>
                 <div style="display: flex; gap: 6px;">
-                  <button class="btn btn-success-solid btn-sm flex-1" onclick="app.setSmartScreenStatus(true)">✅ Bật
-                    SmartScreen</button>
-                  <button class="btn btn-danger-solid btn-sm flex-1" onclick="app.setSmartScreenStatus(false)">🚫 Tắt
-                    SmartScreen</button>
+                  <button id="ss-btn-toggle" class="btn btn-danger-solid btn-sm w-100" onclick="app.toggleSmartScreenStatus()"
+                    style="font-weight: 700;">
+                    <span>🚫</span> Tắt SmartScreen
+                  </button>
                 </div>
               </div>
             </div>
@@ -3649,10 +3650,7 @@
                 </div>
 
                 <div style="display: flex; justify-content: center; gap: 12px;">
-                  <button class="btn btn-success-gradient px-4 py-2.5 font-semibold" onclick="app.setIpv6Status(true)">
-                    <span>✅</span> Bật IPv6 (Enable)
-                  </button>
-                  <button class="btn btn-danger-solid px-4 py-2.5 font-semibold" onclick="app.setIpv6Status(false)">
+                  <button id="ipv6-btn-toggle" class="btn btn-danger-solid px-4 py-2.5 font-semibold" onclick="app.toggleIpv6Status()">
                     <span>🚫</span> Tắt IPv6 (Disable)
                   </button>
                   <button class="btn btn-sky-outline px-3 py-2.5" onclick="app.loadIpv6Status()">
@@ -6175,7 +6173,7 @@
                     <th style="width: 160px; padding: 10px; text-align: left;">Tên Dịch Vụ</th>
                     <th style="padding: 10px; text-align: left;">Tên Hiển Thị (Display Name)</th>
                     <th style="width: 250px; padding: 10px; text-align: left;">💡 Đề Xuất & Tư Vấn Tối Ưu</th>
-                    <th style="width: 105px; padding: 10px; text-align: center;">Trạng Thái</th>
+                    <th style="width: 120px; padding: 10px; text-align: center;">Trạng Thái</th>
                     <th style="width: 135px; padding: 10px; text-align: center;">Kiểu Khởi Động</th>
                     <th style="width: 165px; padding: 10px; text-align: right;">Thao Tác Tức Thời</th>
                   </tr>
@@ -7223,15 +7221,15 @@
               <div class="category-list" id="category-list">
                 <button class="cat-item active" data-cat="all">
                   <span>Tất cả phần mềm</span>
-                  <span class="cat-count-badge" id="count-all">140+</span>
+                  <span class="cat-count-badge" id="count-all">238</span>
                 </button>
                 <button class="cat-item" data-cat="Trình duyệt">
                   <span>🌐 Trình duyệt</span>
-                  <span class="cat-count-badge">8</span>
+                  <span class="cat-count-badge">13</span>
                 </button>
                 <button class="cat-item" data-cat="Bộ gõ">
                   <span>⌨️ Bộ gõ</span>
-                  <span class="cat-count-badge">3</span>
+                  <span class="cat-count-badge">4</span>
                 </button>
                 <button class="cat-item" data-cat="Giải nén">
                   <span>📦 Giải nén</span>
@@ -7239,11 +7237,11 @@
                 </button>
                 <button class="cat-item" data-cat="Download">
                   <span>⬇️ Download</span>
-                  <span class="cat-count-badge">6</span>
+                  <span class="cat-count-badge">11</span>
                 </button>
                 <button class="cat-item" data-cat="PDF">
                   <span>📄 PDF</span>
-                  <span class="cat-count-badge">6</span>
+                  <span class="cat-count-badge">8</span>
                 </button>
                 <button class="cat-item" data-cat="Fonts">
                   <span>🔤 Fonts</span>
@@ -7251,43 +7249,43 @@
                 </button>
                 <button class="cat-item" data-cat="Chat">
                   <span>💬 Chat</span>
-                  <span class="cat-count-badge">9</span>
+                  <span class="cat-count-badge">13</span>
                 </button>
                 <button class="cat-item" data-cat="Văn phòng">
                   <span>📝 Văn phòng</span>
-                  <span class="cat-count-badge">10</span>
+                  <span class="cat-count-badge">17</span>
                 </button>
                 <button class="cat-item" data-cat="Đa phương tiện">
                   <span>🎬 Đa phương tiện</span>
-                  <span class="cat-count-badge">11</span>
+                  <span class="cat-count-badge">18</span>
                 </button>
                 <button class="cat-item" data-cat="Tiện ích">
                   <span>🛠️ Tiện ích</span>
-                  <span class="cat-count-badge">8</span>
+                  <span class="cat-count-badge">25</span>
                 </button>
                 <button class="cat-item" data-cat="Hệ thống">
                   <span>💻 Hệ thống</span>
-                  <span class="cat-count-badge">9</span>
+                  <span class="cat-count-badge">15</span>
                 </button>
                 <button class="cat-item" data-cat="Ổ đĩa ảo">
                   <span>💿 Ổ đĩa ảo</span>
-                  <span class="cat-count-badge">5</span>
+                  <span class="cat-count-badge">8</span>
                 </button>
                 <button class="cat-item" data-cat="Bảo mật">
                   <span>🛡️ Bảo mật</span>
-                  <span class="cat-count-badge">8</span>
+                  <span class="cat-count-badge">14</span>
                 </button>
                 <button class="cat-item" data-cat="Lập trình">
                   <span>💙 Lập trình</span>
-                  <span class="cat-count-badge">14</span>
+                  <span class="cat-count-badge">31</span>
                 </button>
                 <button class="cat-item" data-cat="Mạng xã hội">
                   <span>📱 Mạng xã hội</span>
-                  <span class="cat-count-badge">7</span>
+                  <span class="cat-count-badge">12</span>
                 </button>
                 <button class="cat-item" data-cat="Đồ hoạ">
                   <span>🎨 Đồ hoạ</span>
-                  <span class="cat-count-badge">8</span>
+                  <span class="cat-count-badge">16</span>
                 </button>
                 <button class="cat-item" data-cat="Kế toán">
                   <span>💰 Kế toán</span>
@@ -7295,11 +7293,11 @@
                 </button>
                 <button class="cat-item" data-cat="Cloud">
                   <span>☁️ Cloud</span>
-                  <span class="cat-count-badge">7</span>
+                  <span class="cat-count-badge">9</span>
                 </button>
                 <button class="cat-item" data-cat="Công cụ mạng">
                   <span>🦈 Công cụ mạng</span>
-                  <span class="cat-count-badge">8</span>
+                  <span class="cat-count-badge">13</span>
                 </button>
               </div>
 

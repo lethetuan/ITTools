@@ -175,11 +175,91 @@ const SERVICES_RECOMMENDATIONS = {
 };
 
 Object.assign(AppController.prototype, {
-  async loadServices() {
+  startServicesRealtimeMonitor() {
+    this.stopServicesRealtimeMonitor();
+    this.servicesPollTimer = setInterval(() => {
+      if (this.currentActiveTabId === "tab-services") {
+        this.loadServices(true);
+      } else {
+        this.stopServicesRealtimeMonitor();
+      }
+    }, 3000);
+  },
+
+  stopServicesRealtimeMonitor() {
+    if (this.servicesPollTimer) {
+      clearInterval(this.servicesPollTimer);
+      this.servicesPollTimer = null;
+    }
+  },
+
+  getServiceStatusBadge(status) {
+    const s = (status || '').toLowerCase();
+    if (s === 'running') {
+      return `<span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.4); font-weight:700; font-size:11px; padding:3px 8px; border-radius:12px; display: inline-flex; align-items: center; gap: 5px;">
+        <span style="width: 7px; height: 7px; border-radius: 50%; background: #10b981; display: inline-block; box-shadow: 0 0 6px #10b981;"></span>
+        🟢 Running
+      </span>`;
+    }
+    if (s === 'startpending' || s.includes('start_pend') || s.includes('starting')) {
+      return `<span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4); font-weight:700; font-size:11px; padding:3px 8px; border-radius:12px; display: inline-flex; align-items: center; gap: 5px;">
+        <span class="spinner-border spinner-border-sm" style="width: 9px; height: 9px; border-width: 2px;"></span>
+        🟡 Đang bật...
+      </span>`;
+    }
+    if (s === 'stoppending' || s.includes('stop_pend') || s.includes('stopping')) {
+      return `<span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4); font-weight:700; font-size:11px; padding:3px 8px; border-radius:12px; display: inline-flex; align-items: center; gap: 5px;">
+        <span class="spinner-border spinner-border-sm" style="width: 9px; height: 9px; border-width: 2px;"></span>
+        🟡 Đang tắt...
+      </span>`;
+    }
+    if (s === 'paused') {
+      return `<span class="badge" style="background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.4); font-weight:700; font-size:11px; padding:3px 8px; border-radius:12px;">⏸️ Paused</span>`;
+    }
+    return `<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); font-size:11px; padding:3px 8px; border-radius:12px; display: inline-flex; align-items: center; gap: 5px;">
+      <span style="width: 7px; height: 7px; border-radius: 50%; background: #ef4444; display: inline-block;"></span>
+      🔴 Stopped
+    </span>`;
+  },
+
+  getServiceActionButtons(serviceName, status) {
+    const s = (status || '').toLowerCase();
+    const isRunning = (s === 'running');
+    const isPending = (s === 'startpending' || s === 'stoppending' || s.includes('start_pend') || s.includes('stop_pend') || s.includes('starting') || s.includes('stopping'));
+
+    if (isPending) {
+      return `
+        <div style="display: flex; gap: 4px; justify-content: flex-end;">
+          <button class="btn btn-secondary btn-sm" disabled style="padding: 2px 8px; font-size: 11px; opacity: 0.85;">
+            <span class="spinner-border spinner-border-sm" style="width: 10px; height: 10px; border-width: 1.5px; margin-right: 3px;"></span> Đang xử lý...
+          </button>
+        </div>
+      `;
+    }
+
+    return `
+      <div style="display: flex; gap: 4px; justify-content: flex-end;">
+        ${!isRunning ? `
+          <button class="btn btn-success-solid btn-sm" onclick="app.manageService('${serviceName}', 'start')" title="Bật dịch vụ" style="padding: 2px 8px; font-size: 11px;">
+            ▶ Start
+          </button>
+        ` : `
+          <button class="btn btn-danger-solid btn-sm" onclick="app.manageService('${serviceName}', 'stop')" title="Tắt dịch vụ" style="padding: 2px 8px; font-size: 11px;">
+            ⏹ Stop
+          </button>
+        `}
+        <button class="btn btn-sky-outline btn-sm" onclick="app.manageService('${serviceName}', 'restart')" title="Restart dịch vụ" style="padding: 2px 8px; font-size: 11px;">
+          🔄 Restart
+        </button>
+      </div>
+    `;
+  },
+
+  async loadServices(silent = false) {
     const badgeEl = document.getElementById("services-count-badge");
     const bodyEl = document.getElementById("services-list-body");
 
-    if (bodyEl) {
+    if (!silent && bodyEl) {
       bodyEl.innerHTML = `
         <tr>
           <td colspan="7" class="text-center py-4 text-muted">
@@ -196,9 +276,9 @@ Object.assign(AppController.prototype, {
         if (res && res.success) {
           this.allServices = res.services || [];
           if (badgeEl) badgeEl.innerText = `${res.total} Services`;
-          this.renderServicesList(this.allServices);
+          this.applyServicesFilter(silent);
         } else {
-          if (bodyEl) {
+          if (!silent && bodyEl) {
             bodyEl.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-danger">Lỗi quét Services: ${res ? res.message : 'Unknown'}</td></tr>`;
           }
         }
@@ -218,11 +298,54 @@ Object.assign(AppController.prototype, {
       ];
       this.allServices = mockServices;
       if (badgeEl) badgeEl.innerText = `${mockServices.length} Services (MOCK)`;
-      this.renderServicesList(mockServices);
+      this.applyServicesFilter(silent);
     }
   },
 
-  renderServicesList(services) {
+  getCurrentFilteredServices() {
+    if (!this.allServices) return [];
+    let list = this.allServices;
+    const cat = this.currentServicesCategory || 'all';
+
+    if (cat === 'recommended') {
+      list = list.filter(s => {
+        const key = (s.name || '').toLowerCase();
+        const r = SERVICES_RECOMMENDATIONS[key];
+        return r && (r.type === 'disable' || r.type === 'manual');
+      });
+    } else if (cat === 'core') {
+      list = list.filter(s => {
+        const key = (s.name || '').toLowerCase();
+        const r = SERVICES_RECOMMENDATIONS[key];
+        return r && r.type === 'core';
+      });
+    } else if (cat === 'running') {
+      list = list.filter(s => (s.status || '').toLowerCase() === 'running');
+    } else if (cat === 'stopped') {
+      list = list.filter(s => (s.status || '').toLowerCase() === 'stopped');
+    } else if (cat === 'auto') {
+      list = list.filter(s => (s.start_type || '').toLowerCase().includes('auto'));
+    }
+
+    const query = (document.getElementById("services-search-input")?.value || "").toLowerCase().trim();
+    if (query) {
+      list = list.filter(s =>
+        (s.name && s.name.toLowerCase().includes(query)) ||
+        (s.display && s.display.toLowerCase().includes(query)) ||
+        (s.status && s.status.toLowerCase().includes(query)) ||
+        (s.start_type && s.start_type.toLowerCase().includes(query)) ||
+        (SERVICES_RECOMMENDATIONS[s.name?.toLowerCase()]?.short?.toLowerCase().includes(query))
+      );
+    }
+    return list;
+  },
+
+  applyServicesFilter(silent = false) {
+    const filtered = this.getCurrentFilteredServices();
+    this.renderServicesList(filtered, silent);
+  },
+
+  renderServicesList(services, silent = false) {
     const bodyEl = document.getElementById("services-list-body");
     if (!bodyEl) return;
 
@@ -237,12 +360,51 @@ Object.assign(AppController.prototype, {
       return;
     }
 
-    bodyEl.innerHTML = services.map((item, index) => {
-      const isRunning = (item.status && item.status.toLowerCase() === 'running');
-      const statusBadge = isRunning
-        ? `<span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.4); font-weight:700; font-size:11px; padding:3px 8px; border-radius:12px;">🟢 Running</span>`
-        : `<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); font-size:11px; padding:3px 8px; border-radius:12px;">🔴 Stopped</span>`;
+    // In-place silent update to maintain scroll and form focus
+    const existingRows = bodyEl.querySelectorAll("tr[data-service-name]");
+    if (silent && existingRows.length === services.length) {
+      let canUpdateInPlace = true;
+      for (let i = 0; i < services.length; i++) {
+        if (existingRows[i].getAttribute("data-service-name") !== (services[i].name || '').toLowerCase()) {
+          canUpdateInPlace = false;
+          break;
+        }
+      }
 
+      if (canUpdateInPlace) {
+        for (let i = 0; i < services.length; i++) {
+          const row = existingRows[i];
+          const item = services[i];
+
+          const prevStatus = row.getAttribute("data-status");
+          if (prevStatus !== item.status) {
+            row.setAttribute("data-status", item.status || "");
+            const statusCell = row.querySelector(".svc-status-col");
+            if (statusCell) statusCell.innerHTML = this.getServiceStatusBadge(item.status);
+
+            const actionCell = row.querySelector(".svc-action-col");
+            if (actionCell) actionCell.innerHTML = this.getServiceActionButtons(item.name, item.status);
+          }
+
+          const prevStartup = row.getAttribute("data-start-type");
+          if (prevStartup !== item.start_type) {
+            row.setAttribute("data-start-type", item.start_type || "");
+            const selectEl = row.querySelector("select");
+            if (selectEl && document.activeElement !== selectEl) {
+              const sp = (item.start_type || '').toLowerCase();
+              if (sp.includes('auto')) selectEl.value = 'Automatic';
+              else if (sp.includes('manual') || sp.includes('demand')) selectEl.value = 'Manual';
+              else if (sp.includes('disabled')) selectEl.value = 'Disabled';
+            }
+          }
+        }
+        return;
+      }
+    }
+
+    bodyEl.innerHTML = services.map((item, index) => {
+      const statusBadge = this.getServiceStatusBadge(item.status);
+      const actionButtons = this.getServiceActionButtons(item.name, item.status);
       const startType = item.start_type || 'Manual';
       const sKey = (item.name || '').toLowerCase();
       const rec = SERVICES_RECOMMENDATIONS[sKey];
@@ -307,7 +469,7 @@ Object.assign(AppController.prototype, {
       }
 
       return `
-        <tr style="border-bottom: 1px solid #f1f5f9;">
+        <tr id="svc-row-${item.name.toLowerCase()}" data-service-name="${item.name.toLowerCase()}" data-status="${item.status || ''}" data-start-type="${startType}" style="border-bottom: 1px solid #f1f5f9;">
           <td style="text-align: center; font-weight: 600; color: #64748b; padding: 8px;">${index + 1}</td>
           <td style="padding: 8px;">
             <strong style="font-family: monospace; color: #0284c7; font-size: 12.5px;">${item.name}</strong>
@@ -318,31 +480,18 @@ Object.assign(AppController.prototype, {
           <td style="padding: 8px;">
             ${adviceHtml}
           </td>
-          <td style="text-align: center; padding: 8px;">
+          <td class="svc-status-col" style="text-align: center; padding: 8px;">
             ${statusBadge}
           </td>
-          <td style="text-align: center; padding: 8px;">
+          <td class="svc-startup-col" style="text-align: center; padding: 8px;">
             <select class="form-control" onchange="app.changeServiceStartup('${item.name}', this)" style="padding: 3px 6px; font-size: 12px; border-radius: 6px; border: 1px solid #cbd5e1; width: 130px; margin: 0 auto; display: inline-block;">
               <option value="Automatic" ${startType.toLowerCase().includes('auto') ? 'selected' : ''}>⚡ Automatic</option>
               <option value="Manual" ${startType.toLowerCase().includes('manual') || startType.toLowerCase().includes('demand') ? 'selected' : ''}>✋ Manual</option>
               <option value="Disabled" ${startType.toLowerCase().includes('disabled') ? 'selected' : ''}>🚫 Disabled</option>
             </select>
           </td>
-          <td style="text-align: right; padding: 8px;">
-            <div style="display: flex; gap: 4px; justify-content: flex-end;">
-              ${!isRunning ? `
-                <button class="btn btn-success-solid btn-sm" onclick="app.manageService('${item.name}', 'start')" title="Bật dịch vụ" style="padding: 2px 8px; font-size: 11px;">
-                  ▶ Start
-                </button>
-              ` : `
-                <button class="btn btn-danger-solid btn-sm" onclick="app.manageService('${item.name}', 'stop')" title="Tắt dịch vụ" style="padding: 2px 8px; font-size: 11px;">
-                  ⏹ Stop
-                </button>
-              `}
-              <button class="btn btn-sky-outline btn-sm" onclick="app.manageService('${item.name}', 'restart')" title="Restart dịch vụ" style="padding: 2px 8px; font-size: 11px;">
-                🔄 Restart
-              </button>
-            </div>
+          <td class="svc-action-col" style="text-align: right; padding: 8px;">
+            ${actionButtons}
           </td>
         </tr>
       `;
@@ -350,25 +499,11 @@ Object.assign(AppController.prototype, {
   },
 
   searchServices() {
-    const query = document.getElementById("services-search-input")?.value.toLowerCase().trim() || "";
-    if (!this.allServices) return;
-
-    if (!query) {
-      this.renderServicesList(this.allServices);
-      return;
-    }
-
-    const filtered = this.allServices.filter(s =>
-      (s.name && s.name.toLowerCase().includes(query)) ||
-      (s.display && s.display.toLowerCase().includes(query)) ||
-      (s.status && s.status.toLowerCase().includes(query)) ||
-      (s.start_type && s.start_type.toLowerCase().includes(query)) ||
-      (SERVICES_RECOMMENDATIONS[s.name?.toLowerCase()]?.short?.toLowerCase().includes(query))
-    );
-    this.renderServicesList(filtered);
+    this.applyServicesFilter(false);
   },
 
   filterServicesCategory(category, btnEl) {
+    this.currentServicesCategory = category;
     if (btnEl) {
       btnEl.parentElement.querySelectorAll(".btn").forEach(b => {
         b.classList.remove("btn-primary");
@@ -377,34 +512,7 @@ Object.assign(AppController.prototype, {
       btnEl.classList.remove("btn-slate-light");
       btnEl.classList.add("btn-primary");
     }
-
-    if (!this.allServices) return;
-
-    if (category === 'all') {
-      this.renderServicesList(this.allServices);
-    } else if (category === 'recommended') {
-      // Lọc các dịch vụ có đề xuất tối ưu (Khuyên tắt hoặc Khuyên để thủ công)
-      const list = this.allServices.filter(s => {
-        const key = (s.name || '').toLowerCase();
-        const r = SERVICES_RECOMMENDATIONS[key];
-        return r && (r.type === 'disable' || r.type === 'manual');
-      });
-      this.renderServicesList(list);
-    } else if (category === 'core') {
-      // Lọc các dịch vụ cốt lõi không được tắt
-      const list = this.allServices.filter(s => {
-        const key = (s.name || '').toLowerCase();
-        const r = SERVICES_RECOMMENDATIONS[key];
-        return r && r.type === 'core';
-      });
-      this.renderServicesList(list);
-    } else if (category === 'running') {
-      this.renderServicesList(this.allServices.filter(s => s.status && s.status.toLowerCase() === 'running'));
-    } else if (category === 'stopped') {
-      this.renderServicesList(this.allServices.filter(s => !s.status || s.status.toLowerCase() !== 'running'));
-    } else if (category === 'auto') {
-      this.renderServicesList(this.allServices.filter(s => s.start_type && s.start_type.toLowerCase().includes('auto')));
-    }
+    this.applyServicesFilter(false);
   },
 
   showServiceAdvice(serviceName) {
@@ -510,32 +618,65 @@ Object.assign(AppController.prototype, {
       try {
         const res = await window.pywebview.api.set_service_startup_type(serviceName, targetStartupType);
         this.addLog(res.success ? "success" : "error", res.message);
-        alert(res.message);
-        this.loadServices();
+        if (typeof this.showToast === 'function') {
+          this.showToast(res.success ? "success" : "error", res.message);
+        }
+        await this.loadServices(true);
       } catch (err) {
-        alert(`Lỗi đổi kiểu khởi động: ${err.message}`);
+        if (typeof this.showToast === 'function') {
+          this.showToast("error", `Lỗi đổi kiểu khởi động: ${err.message}`);
+        } else {
+          alert(`Lỗi đổi kiểu khởi động: ${err.message}`);
+        }
       }
     } else {
-      alert(`[MOCK] Đã đổi kiểu khởi động '${serviceName}' sang ${targetStartupType}!`);
-      this.loadServices();
+      if (typeof this.showToast === 'function') {
+        this.showToast("info", `[MOCK] Đã đổi kiểu khởi động '${serviceName}' sang ${targetStartupType}!`);
+      }
+      this.loadServices(true);
     }
   },
 
   async manageService(serviceName, action) {
     this.addLog("info", `Đang thực hiện ${action} trên dịch vụ '${serviceName}'...`);
 
+    // Immediate optimistic update so user sees instant real-time feedback
+    const targetItem = (this.allServices || []).find(s => (s.name || '').toLowerCase() === (serviceName || '').toLowerCase());
+    if (targetItem) {
+      if (action.toLowerCase() === 'start') {
+        targetItem.status = 'StartPending';
+      } else if (action.toLowerCase() === 'stop') {
+        targetItem.status = 'StopPending';
+      } else if (action.toLowerCase() === 'restart') {
+        targetItem.status = 'StartPending';
+      }
+      this.applyServicesFilter(true);
+    }
+
     if (window.pywebview && window.pywebview.api) {
       try {
         const res = await window.pywebview.api.manage_windows_service(serviceName, action);
         this.addLog(res.success ? "success" : "error", res.message);
-        alert(res.message);
-        this.loadServices();
+        if (typeof this.showToast === 'function') {
+          this.showToast(res.success ? "success" : "error", res.message);
+        }
+        await this.loadServices(true);
       } catch (err) {
-        alert(`Lỗi quản lý dịch vụ: ${err.message}`);
+        if (typeof this.showToast === 'function') {
+          this.showToast("error", `Lỗi quản lý dịch vụ: ${err.message}`);
+        } else {
+          alert(`Lỗi quản lý dịch vụ: ${err.message}`);
+        }
+        await this.loadServices(true);
       }
     } else {
-      alert(`[MOCK] Đã thực hiện ${action} trên dịch vụ '${serviceName}'!`);
-      this.loadServices();
+      if (targetItem) {
+        targetItem.status = (action.toLowerCase() === 'stop') ? 'Stopped' : 'Running';
+      }
+      if (typeof this.showToast === 'function') {
+        this.showToast("success", `[MOCK] Đã thực hiện ${action} trên dịch vụ '${serviceName}'!`);
+      }
+      this.applyServicesFilter(true);
     }
   },
 
@@ -547,13 +688,24 @@ Object.assign(AppController.prototype, {
       try {
         const res = await window.pywebview.api.set_service_startup_type(serviceName, startupType);
         this.addLog(res.success ? "success" : "error", res.message);
-        alert(res.message);
-        this.loadServices();
+        if (typeof this.showToast === 'function') {
+          this.showToast(res.success ? "success" : "error", res.message);
+        }
+        await this.loadServices(true);
       } catch (err) {
-        alert(`Lỗi đổi kiểu khởi động: ${err.message}`);
+        if (typeof this.showToast === 'function') {
+          this.showToast("error", `Lỗi đổi kiểu khởi động: ${err.message}`);
+        } else {
+          alert(`Lỗi đổi kiểu khởi động: ${err.message}`);
+        }
       }
     } else {
-      alert(`[MOCK] Đã đổi kiểu khởi động '${serviceName}' sang ${startupType}!`);
+      const targetItem = (this.allServices || []).find(s => (s.name || '').toLowerCase() === (serviceName || '').toLowerCase());
+      if (targetItem) targetItem.start_type = startupType;
+      if (typeof this.showToast === 'function') {
+        this.showToast("info", `[MOCK] Đã đổi kiểu khởi động '${serviceName}' sang ${startupType}!`);
+      }
+      this.applyServicesFilter(true);
     }
   },
 

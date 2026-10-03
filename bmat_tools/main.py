@@ -13,21 +13,48 @@ import ctypes
 import subprocess
 
 def patch_silent_subprocess():
-    """Globally configures subprocess on Windows to never flash console or PowerShell windows."""
+    """Globally configures subprocess on Windows to:
+    1. Never flash console or PowerShell windows (CREATE_NO_WINDOW).
+    2. Enforce UTF-8 encoding with errors='replace' for text mode to avoid
+       UnicodeDecodeError on non-UTF8 locales (e.g. cp1258 on Vietnamese Windows).
+    """
     if sys.platform != 'win32':
         return
     if getattr(subprocess, '_bmat_silent_patched', False):
         return
     subprocess._bmat_silent_patched = True
 
+    os.environ.setdefault("PYTHONUTF8", "1")
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    try:
+        if hasattr(sys.stdout, 'reconfigure') and sys.stdout:
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        if hasattr(sys.stderr, 'reconfigure') and sys.stderr:
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
     orig_init = subprocess.Popen.__init__
 
     def silent_init(self, *args, **kwargs):
         # 0x08000000 = CREATE_NO_WINDOW
-        # Completely suppresses console/PowerShell window popups for all console processes
         flags = kwargs.get('creationflags', 0)
         flags |= 0x08000000
         kwargs['creationflags'] = flags
+
+        # Check if text mode is requested
+        is_text = kwargs.get('text') or kwargs.get('universal_newlines')
+        if not is_text and len(args) > 11 and args[11]:
+            is_text = True
+        if not is_text and ('encoding' in kwargs or 'errors' in kwargs):
+            is_text = True
+
+        if is_text:
+            if not kwargs.get('encoding'):
+                kwargs['encoding'] = 'utf-8'
+            if not kwargs.get('errors'):
+                kwargs['errors'] = 'replace'
+
         orig_init(self, *args, **kwargs)
 
     subprocess.Popen.__init__ = silent_init
@@ -140,19 +167,47 @@ def is_admin():
         return False
 
 def run_as_admin():
-    if sys.platform == 'win32':
-        try:
-            if getattr(sys, 'frozen', False):
-                # When frozen, re-launch self directly
-                ctypes.windll.shell32.ShellExecuteW(
-                    None, "runas", sys.executable, " ".join(f'"{a}"' for a in sys.argv[1:]), None, 1
-                )
-            else:
-                ctypes.windll.shell32.ShellExecuteW(
-                    None, "runas", sys.executable, f'"{sys.argv[0]}" ' + " ".join(f'"{a}"' for a in sys.argv[1:]), None, 1
-                )
-        except Exception:
-            pass
+    """Re-launches the app with Administrator privileges.
+    Returns True if elevation was successfully requested, False otherwise.
+    """
+    if sys.platform != 'win32':
+        return False
+    try:
+        # lpDirectory: working directory for the elevated process
+        # Must be set explicitly; otherwise defaults to C:\Windows\System32
+        work_dir = BASE_DIR
+
+        if getattr(sys, 'frozen', False):
+            # Frozen (PyInstaller .exe): re-launch the exe itself
+            params = " ".join(f'"{a}"' for a in sys.argv[1:])
+            hinstance = ctypes.windll.shell32.ShellExecuteW(
+                None, "runas", sys.executable, params or None, work_dir, 1
+            )
+        else:
+            # Running as plain Python script
+            script = os.path.abspath(sys.argv[0])
+            extra = " ".join(f'"{a}"' for a in sys.argv[1:])
+            params = f'"{script}"' + (f' {extra}' if extra else '')
+            hinstance = ctypes.windll.shell32.ShellExecuteW(
+                None, "runas", sys.executable, params, work_dir, 1
+            )
+
+        # ShellExecuteW returns > 32 on success, <= 32 on error
+        if hinstance <= 32:
+            # User likely clicked "No" on UAC or an error occurred
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                "Không thể nâng cấp quyền Administrator.\n\n"
+                "Ứng dụng sẽ tiếp tục chạy với quyền hạn hiện tại.\n"
+                "Một số tính năng có thể bị hạn chế.",
+                "IT Tool LTT - Cảnh báo",
+                0x30  # MB_ICONWARNING
+            )
+            return False
+        return True
+    except Exception as ex:
+        print(f"[run_as_admin] Error: {ex}")
+        return False
 
 def main():
     # Handle standalone module GUI requests (e.g. --module boot_manager)
@@ -172,11 +227,16 @@ def main():
                 if mod_name == "boot_manager":
                     from modules.boot_manager import BootManager
                     root.title("⚙️ Boot Manager")
-                    app = BootManager(root)
+                    BootManager(root)
                 elif mod_name == "server_tools":
                     from modules.server_tools import ServerTools
                     root.title("🖧 Server Tools")
-                    app = ServerTools(root)
+                    ServerTools(root)
+                else:
+                    root.destroy()
+                    print(f"[--module] Unknown module: '{mod_name}'. Valid: boot_manager, server_tools")
+                    sys.exit(1)
+                    return
                 root.mainloop()
                 return
         except Exception as e:
@@ -189,11 +249,11 @@ def main():
 
     # 2. Elevate to administrator if needed
     if not is_admin():
-        try:
-            run_as_admin()
+        elevated = run_as_admin()
+        if elevated:
+            # Successfully requested elevation — exit current (non-admin) instance
             sys.exit(0)
-        except Exception:
-            pass
+        # else: user denied UAC or elevation failed — continue running without admin
 
     # Launch PyWebView Modern Desktop Window
     web_index = os.path.join(BASE_DIR, "web", "index.html")

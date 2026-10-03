@@ -1,18 +1,18 @@
 # BMAT-Tools Requirements
-# All standard library except psutil (optional for enhanced CPU/RAM monitoring)
+# Install all dependencies with: pip install -r requirements.txt
 
-# Optional: for enhanced system monitoring
-# psutil>=5.9.0
+# Core GUI framework (PyWebView - renders HTML/JS UI in a native window)
+pywebview>=4.0.0
 
-# Optional: for currency conversion (uses built-in urllib instead)
-# requests>=2.28.0
+# .NET / Windows Forms bindings (required for System Tray icon via CLR)
+pythonnet>=3.0.0
 
-# Note: All core functionality uses Python standard library only:
-# - tkinter (GUI)
-# - winreg (Windows registry)
-# - subprocess (system commands)
-# - socket (networking)
-# - threading (background tasks)
-# - queue (thread communication)
-# - ipaddress (IP calculation)
-# - os, sys, shutil, json, datetime, etc.
+# Image processing (for loading tray icon from PNG/ICO)
+Pillow>=9.0.0
+
+# Enhanced real-time system monitoring (CPU, RAM, disk, network details)
+psutil>=5.9.0
+
+# Note: All other functionality uses Python standard library only:
+# - winreg, subprocess, socket, threading, queue
+# - ipaddress, os, sys, shutil, json, datetime, ctypes, etc.

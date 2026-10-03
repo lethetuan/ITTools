@@ -1829,6 +1829,48 @@
     }
 
     async initBattery() {
+      // 1. Prioritize Python PyWebView backend for 100% accurate real-time Win32 power status
+      if (window.pywebview && window.pywebview.api) {
+        const updateFromBackend = async () => {
+          try {
+            const s = await window.pywebview.api.get_realtime_stats();
+            if (s && s.battery) {
+              const noBatEl = document.getElementById('tc-battery-no-battery');
+              const mainEl = document.getElementById('tc-battery-main');
+              if (!s.battery.has_battery) {
+                if (noBatEl) noBatEl.style.display = 'block';
+                if (mainEl) mainEl.style.display = 'none';
+                return;
+              }
+              if (noBatEl) noBatEl.style.display = 'none';
+              if (mainEl) mainEl.style.display = 'block';
+
+              const b = {
+                level: (s.battery.level_pct || 0) / 100,
+                charging: s.battery.is_ac,
+                chargingTime: Infinity,
+                dischargingTime: Infinity
+              };
+              this.updateBatteryUI(b);
+
+              const stateEl = document.getElementById('tc-bat-state');
+              if (stateEl) {
+                stateEl.textContent = s.battery.status_text;
+                stateEl.style.color = s.battery.is_ac ? 'var(--accent-sky)' : 'var(--green-500)';
+              }
+            }
+          } catch (err) {
+            console.warn('Backend battery poll error:', err);
+          }
+        };
+
+        await updateFromBackend();
+        if (this._tcBatTimer) clearInterval(this._tcBatTimer);
+        this._tcBatTimer = setInterval(updateFromBackend, 2000);
+        return;
+      }
+
+      // 2. Fallback to browser navigator.getBattery()
       if (!('getBattery' in navigator)) {
         const noSupport = document.getElementById('tc-battery-no-support');
         if (noSupport) noSupport.style.display = 'block';

@@ -62,6 +62,12 @@ class TrayManager:
             self.window_title = window_title
 
         if not CLR_AVAILABLE:
+            # pythonnet / Windows.Forms not available:
+            # Release the X-button so the user can still exit the app.
+            # Without this, on_window_closing() returns False forever and the app
+            # can only be killed via Task Manager.
+            print("[TrayManager] CLR not available. Window close button will exit the app directly.")
+            self.is_quitting = True  # allow window close to pass through
             return
 
         self.tray_thread = threading.Thread(target=self._run_tray_loop, daemon=True)
@@ -234,7 +240,7 @@ class TrayManager:
         if self.is_hidden:
             self.show_window()
         else:
-            self.show_window()
+            self.hide_window()
 
     def on_window_closing(self):
         """
@@ -248,6 +254,39 @@ class TrayManager:
 
         self.hide_window()
         return False
+
+    def show_tray_notification(self, title: str, message: str, notify_type: str = "info", duration_ms: int = 5000):
+        """Shows a balloon tip notification from the system tray icon.
+        Can be called safely from any background thread.
+
+        Args:
+            title: Notification title (max 63 chars on Windows).
+            message: Notification body text.
+            notify_type: One of 'info', 'success', 'warning', 'error'.
+            duration_ms: How long to show the balloon (milliseconds).
+        """
+        if not CLR_AVAILABLE:
+            print(f"[TrayNotify] {title}: {message}")
+            return
+        try:
+            if not self.notify or not self.notify.Visible:
+                return
+            icon_map = {
+                "info":    ToolTipIcon.Info,
+                "success": ToolTipIcon.Info,
+                "warning": ToolTipIcon.Warning,
+                "error":   ToolTipIcon.Error,
+            }
+            tip_icon = icon_map.get(notify_type, ToolTipIcon.Info)
+            # ShowBalloonTip is thread-safe on Windows Forms NotifyIcon
+            self.notify.ShowBalloonTip(
+                duration_ms,
+                title[:63],
+                message,
+                tip_icon
+            )
+        except Exception as ex:
+            print(f"[TrayNotify] Lỗi hiển thị thông báo: {ex}")
 
     def quit_app(self):
         """Completely terminates the application and cleans up tray icon."""

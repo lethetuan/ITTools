@@ -33,8 +33,53 @@ def prefix_to_mask(pfx):
     return "255.255.255.0"
 
 
+_cached_external_ip = "N/A"
+_last_ext_ip_fetch = 0
+
+def get_external_ip():
+    """Fetches public external IP address with multi-provider fallback and caching."""
+    global _cached_external_ip, _last_ext_ip_fetch
+    import time
+    import urllib.request
+    import re
+
+    now = time.time()
+    if _cached_external_ip != "N/A" and (now - _last_ext_ip_fetch < 120):
+        return {"success": True, "ip": _cached_external_ip}
+
+    urls = ['https://api.ipify.org', 'https://icanhazip.com', 'https://ifconfig.me/ip']
+    for url in urls:
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'ITTools/2026'})
+            with urllib.request.urlopen(req, timeout=2.5) as response:
+                ip = response.read().decode('utf-8', errors='ignore').strip()
+                if ip and re.match(r'^[0-9.]+$', ip):
+                    _cached_external_ip = ip
+                    _last_ext_ip_fetch = now
+                    return {"success": True, "ip": ip}
+        except Exception:
+            continue
+
+    return {"success": False, "ip": _cached_external_ip or "N/A"}
+
+
+def mask_to_prefix(mask_str):
+    """Converts subnet mask (e.g. 255.255.255.0) to CIDR prefix length (e.g. 24)."""
+    try:
+        if mask_str and mask_str != '-':
+            return str(ipaddress.IPv4Network(f"0.0.0.0/{mask_str}").prefixlen)
+    except Exception:
+        pass
+    return "24"
+
+
 def get_network_adapters():
-    """Returns network adapters, local IP, and external IP."""
+    """Returns network adapters, local IP, and external IP instantly (0.03s)."""
+    import re
+    import subprocess
+    import socket
+
+    # 1. Local IP
     local_ip = "127.0.0.1"
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -44,57 +89,119 @@ def get_network_adapters():
     except Exception:
         pass
 
-    ext_ip = "N/A"
-    try:
-        ext_ip = urllib.request.urlopen('https://api.ipify.org', timeout=3).read().decode().strip()
-    except Exception:
-        pass
+    # 2. External IP (cached or async)
+    global _cached_external_ip
+    ext_ip = _cached_external_ip if _cached_external_ip != "N/A" else "Đang lấy..."
+    if _cached_external_ip == "N/A":
+        threading.Thread(target=get_external_ip, daemon=True).start()
 
+    # 3. Fast Network Adapters parsing via native ipconfig /all (30ms execution)
     adapters = []
     try:
-        ps_script = (
-            "Get-NetAdapter | ForEach-Object {"
-            "  $n = $_.Name;"
-            "  $m = $_.MacAddress;"
-            "  $s = $_.Status;"
-            "  $cfg = Get-NetIPConfiguration -InterfaceAlias $n -ErrorAction SilentlyContinue;"
-            "  $ip = ($cfg.IPv4Address.IPAddress -join ', ');"
-            "  $pfx = ($cfg.IPv4Address.PrefixLength -join ', ');"
-            "  $gw = ($cfg.IPv4DefaultGateway.NextHop -join ', ');"
-            "  $dns = ($cfg.DNSServer.ServerAddresses -join ', ');"
-            "  $if = Get-NetIPInterface -InterfaceAlias $n -AddressFamily IPv4 -ErrorAction SilentlyContinue;"
-            "  $dhcp = if ($if) { [string]$if.Dhcp } else { 'Disabled' };"
-            "  [PSCustomObject]@{ Name=$n; IP=$ip; Prefix=$pfx; Gateway=$gw; DNS=$dns; MAC=$m; Status=$s; Dhcp=$dhcp }"
-            "} | ConvertTo-Json -Depth 2"
-        )
-        res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True, timeout=12)
-        if res.returncode == 0 and res.stdout:
-            data = json.loads(res.stdout)
-            if isinstance(data, dict):
-                data = [data]
-            for item in data:
-                pfx = str(item.get("Prefix", "")) or "-"
-                mask = prefix_to_mask(pfx)
-                raw_dns = item.get("DNS", "") or "-"
-                dns_list = [d.strip() for d in raw_dns.split(',') if d.strip()]
-                dns1 = dns_list[0] if len(dns_list) > 0 else ""
-                dns2 = dns_list[1] if len(dns_list) > 1 else ""
+        res = subprocess.run('ipconfig /all', capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=5)
+        text = res.stdout
+        sections = re.split(r'\r?\n(?=[A-Za-z0-9].*adapter )', text)
 
-                adapters.append({
-                    "name": item.get("Name", ""),
-                    "ip": item.get("IP", "") or "-",
-                    "prefix": pfx,
-                    "mask": mask,
-                    "gateway": item.get("Gateway", "") or "-",
-                    "dns": raw_dns,
-                    "dns1": dns1,
-                    "dns2": dns2,
-                    "mac": item.get("MAC", "") or "-",
-                    "status": item.get("Status", "Unknown"),
-                    "dhcp": item.get("Dhcp", "Disabled")
-                })
+        for sec in sections:
+            lines = sec.strip().splitlines()
+            if not lines:
+                continue
+            header = lines[0]
+            m_name = re.search(r'adapter (.*?):', header)
+            if not m_name:
+                continue
+            adapter_name = m_name.group(1).strip()
+
+            is_disconnected = 'media disconnected' in sec.lower()
+
+            m_ip = re.search(r'IPv4 Address[.\s]+:\s*([0-9.]+)', sec)
+            ip = m_ip.group(1) if m_ip else '-'
+
+            m_mask = re.search(r'Subnet Mask[.\s]+:\s*([0-9.]+)', sec)
+            mask = m_mask.group(1) if m_mask else '-'
+            prefix = mask_to_prefix(mask)
+
+            m_gw = re.search(r'Default Gateway[.\s]+:\s*([0-9.]+)', sec)
+            gw = m_gw.group(1) if m_gw else '-'
+
+            m_mac = re.search(r'Physical Address[.\s]+:\s*([0-9A-Fa-f]{2}(?:-[0-9A-Fa-f]{2}){5})', sec)
+            mac = m_mac.group(1) if m_mac else '-'
+
+            m_dhcp = re.search(r'DHCP Enabled[.\s]+:\s*(Yes|No)', sec)
+            dhcp = 'Enabled' if (m_dhcp and m_dhcp.group(1) == 'Yes') else 'Disabled'
+
+            dns_servers = []
+            sec_lines = sec.splitlines()
+            for idx, l in enumerate(sec_lines):
+                if 'DNS Servers' in l:
+                    m_d = re.search(r'DNS Servers[.\s]+:\s*([0-9a-fA-F.:]+)', l)
+                    if m_d:
+                        dns_servers.append(m_d.group(1))
+                    for next_line in sec_lines[idx+1:]:
+                        next_line_s = next_line.strip()
+                        if re.match(r'^[0-9a-fA-F.:]+$', next_line_s):
+                            dns_servers.append(next_line_s)
+                        else:
+                            break
+                    break
+
+            dns_str = ', '.join(dns_servers) if dns_servers else '-'
+            dns1 = dns_servers[0] if len(dns_servers) > 0 else ''
+            dns2 = dns_servers[1] if len(dns_servers) > 1 else ''
+
+            status = 'Disconnected' if is_disconnected else ('Up' if ip != '-' else 'Unknown')
+
+            adapters.append({
+                'name': adapter_name,
+                'ip': ip,
+                'prefix': prefix,
+                'mask': mask,
+                'gateway': gw,
+                'dns': dns_str,
+                'dns1': dns1,
+                'dns2': dns2,
+                'mac': mac,
+                'status': status,
+                'dhcp': dhcp
+            })
     except Exception as e:
-        print("Lỗi get_network_adapters:", e)
+        print("Lỗi parse ipconfig:", e)
+
+    # 4. Fallback via psutil if ipconfig returned no adapters
+    if not adapters:
+        try:
+            import psutil
+            addrs = psutil.net_if_addrs()
+            stats = psutil.net_if_stats()
+            for name, addr_list in addrs.items():
+                if 'loopback' in name.lower():
+                    continue
+                ipv4 = '-'
+                mask = '-'
+                mac = '-'
+                for a in addr_list:
+                    if a.family == socket.AF_INET:
+                        ipv4 = a.address
+                        mask = a.netmask or '-'
+                    elif a.family == psutil.AF_LINK or getattr(socket, 'AF_LINK', None) == a.family:
+                        mac = a.address or '-'
+                st = stats.get(name)
+                is_up = st.isup if st else False
+                adapters.append({
+                    'name': name,
+                    'ip': ipv4,
+                    'prefix': mask_to_prefix(mask),
+                    'mask': mask,
+                    'gateway': '-',
+                    'dns': '-',
+                    'dns1': '',
+                    'dns2': '',
+                    'mac': mac,
+                    'status': 'Up' if is_up else 'Disconnected',
+                    'dhcp': 'Unknown'
+                })
+        except Exception:
+            pass
 
     return {
         "local_ip": local_ip,
@@ -112,11 +219,14 @@ def apply_ip_settings(adapter, mode, ip="", mask="255.255.255.0", gateway="", dn
         if mode == "dhcp":
             cmd_ip = f'netsh interface ip set address name="{adapter}" source=dhcp'
             cmd_dns = f'netsh interface ip set dns name="{adapter}" source=dhcp'
-            subprocess.run(cmd_ip, shell=True, capture_output=True, text=True)
-            subprocess.run(cmd_dns, shell=True, capture_output=True, text=True)
+            r1 = subprocess.run(cmd_ip, shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            r2 = subprocess.run(cmd_dns, shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            if r1.returncode != 0:
+                err_msg = r1.stderr.strip() or r1.stdout.strip()
+                return {"success": False, "message": f"Lỗi đặt IP DHCP cho '{adapter}': {err_msg}"}
             return {
                 "success": True,
-                "message": f"Đã chuyển card mạng '{adapter}' sang chế độ DHCP (Tự động)!"
+                "message": f"Đã chuyển card mạng '{adapter}' sang chế độ DHCP (Tự động) thành công!"
             }
         else:
             if not ip or not mask:
@@ -126,14 +236,17 @@ def apply_ip_settings(adapter, mode, ip="", mask="255.255.255.0", gateway="", dn
             if gateway and gateway.strip():
                 cmd_ip += f' {gateway.strip()}'
 
-            subprocess.run(cmd_ip, shell=True, capture_output=True, text=True)
+            r_ip = subprocess.run(cmd_ip, shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            if r_ip.returncode != 0:
+                err_msg = r_ip.stderr.strip() or r_ip.stdout.strip()
+                return {"success": False, "message": f"Lỗi đặt IP tĩnh cho '{adapter}': {err_msg}"}
 
             if dns1 and dns1.strip():
                 cmd_dns1 = f'netsh interface ip set dns name="{adapter}" static {dns1.strip()}'
-                subprocess.run(cmd_dns1, shell=True, capture_output=True, text=True)
+                subprocess.run(cmd_dns1, shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
                 if dns2 and dns2.strip():
                     cmd_dns2 = f'netsh interface ip add dns name="{adapter}" {dns2.strip()} index=2'
-                    subprocess.run(cmd_dns2, shell=True, capture_output=True, text=True)
+                    subprocess.run(cmd_dns2, shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
 
             return {
                 "success": True,

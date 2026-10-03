@@ -225,6 +225,137 @@ $GLOBAL:KNOWN_APP_TARGETS = @{
     "angryziber.AngryIPScanner"             = @{ Exes = @("ipscan.exe"); Title = "Angry IP Scanner" }
     "Insecure.Nmap"                         = @{ Exes = @("zenmap.exe"); Title = "Nmap Zenmap" }
     "mRemoteNG.mRemoteNG"                   = @{ Exes = @("mRemoteNG.exe"); Title = "mRemoteNG" }
+    # Bộ gõ
+    "DEVCOM.JetBrainsMonoNerdFont" = @{ Exes = @("JetBrainsMono*.ttf"); Title = "JetBrains Mono Font" }
+
+    # Trình duyệt
+    "TorProject.TorBrowser" = @{ Exes = @("firefox.exe"); Title = "Tor Browser" }
+    "LibreWolf.LibreWolf" = @{ Exes = @("librewolf.exe"); Title = "LibreWolf" }
+    "Waterfox.Waterfox" = @{ Exes = @("waterfox.exe"); Title = "Waterfox" }
+    "DuckDuckGo.DesktopBrowser" = @{ Exes = @("DuckDuckGo.exe"); Title = "DuckDuckGo Browser" }
+    "TheBrowserCompany.Arc" = @{ Exes = @("Arc.exe"); Title = "Arc" }
+
+    # Chat
+    "OpenWhisperSystems.Signal" = @{ Exes = @("Signal.exe"); Title = "Signal" }
+    "Mozilla.Thunderbird" = @{ Exes = @("thunderbird.exe"); Title = "Thunderbird" }
+    "Element.Element" = @{ Exes = @("Element.exe"); Title = "Element" }
+    "Mattermost.MattermostDesktop" = @{ Exes = @("Mattermost.exe"); Title = "Mattermost" }
+
+    # Văn phòng
+    "calibre.calibre" = @{ Exes = @("calibre.exe"); Title = "Calibre" }
+    "DigitalScholar.Zotero" = @{ Exes = @("zotero.exe"); Title = "Zotero" }
+    "DeepL.DeepL" = @{ Exes = @("DeepL.exe"); Title = "DeepL" }
+    "Logseq.Logseq" = @{ Exes = @("Logseq.exe"); Title = "Logseq" }
+    "Joplin.Joplin" = @{ Exes = @("Joplin.exe"); Title = "Joplin" }
+    "AppFlowy.AppFlowy" = @{ Exes = @("appflowy.exe"); Title = "AppFlowy" }
+    "appmakes.Typora" = @{ Exes = @("Typora.exe"); Title = "Typora" }
+
+    # PDF
+    "KDE.Okular" = @{ Exes = @("okular.exe"); Title = "Okular" }
+    "PDFgear.PDFgear" = @{ Exes = @("pdfgear.exe"); Title = "PDFgear" }
+
+    # Đa phương tiện
+    "CodecGuide.K-LiteCodecPack.Mega" = @{ Exes = @("mpc-hc64.exe", "mpc-hc.exe"); Title = "K-Lite Mega Codec Pack" }
+    "ch.LosslessCut" = @{ Exes = @("LosslessCut.exe"); Title = "LosslessCut" }
+    "PaulPacifico.ShutterEncoder" = @{ Exes = @("Shutter Encoder.exe"); Title = "Shutter Encoder" }
+    "Gyan.FFmpeg" = @{ Exes = @("ffmpeg.exe"); Title = "FFmpeg" }
+    "Stremio.Stremio" = @{ Exes = @("stremio.exe"); Title = "Stremio" }
+    "XBMCFoundation.Kodi" = @{ Exes = @("kodi.exe"); Title = "Kodi" }
+    "Apple.iTunes" = @{ Exes = @("iTunes.exe"); Title = "iTunes" }
+
+    # Đồ hoạ
+    "Skillbrains.Lightshot" = @{ Exes = @("Lightshot.exe"); Title = "Lightshot" }
+    "dotPDN.PaintDotNet" = @{ Exes = @("paintdotnet.exe"); Title = "Paint.NET" }
+    "Flameshot.Flameshot" = @{ Exes = @("flameshot.exe"); Title = "Flameshot" }
+    "FastStone.Viewer" = @{ Exes = @("FSViewer.exe"); Title = "FastStone Image Viewer" }
+    "RawTherapee.RawTherapee" = @{ Exes = @("rawtherapee.exe"); Title = "RawTherapee" }
+    "Upscayl.Upscayl" = @{ Exes = @("Upscayl.exe"); Title = "Upscayl" }
+    "ImageMagick.ImageMagick" = @{ Exes = @("magick.exe"); Title = "ImageMagick" }
+    "eTeks.SweetHome3D" = @{ Exes = @("SweetHome3D.exe"); Title = "Sweet Home 3D" }
+
+    # Tiện ích
+    "AntibodySoftware.WizTree" = @{ Exes = @("WizTree64.exe", "WizTree.exe"); Title = "WizTree" }
+    "Ventoy.Ventoy" = @{ Exes = @("Ventoy2Disk.exe"); Title = "Ventoy" }
+    "Balena.Etcher" = @{ Exes = @("balenaEtcher.exe"); Title = "Balena Etcher" }
+    "RevoUninstaller.RevoUninstaller" = @{ Exes = @("RevoUninPro.exe", "RevoUPPort.exe", "RevoUnin.exe"); Title = "Revo Uninstaller" }
+    "GeekUninstaller.GeekUninstaller" = @{ Exes = @("geek.exe"); Title = "Geek Uninstaller" }
+    "Klocman.BulkCrapUninstaller" = @{ Exes = @("BCUninstaller.exe"); Title = "Bulk Crap Uninstaller" }
+    "BleachBit.BleachBit" = @{ Exes = @("bleachbit.exe"); Title = "BleachBit" }
+    "AutoHotkey.AutoHotkey" = @{ Exes = @("AutoHotkey.exe", "AutoHotkey64.exe"); Title = "AutoHotkey" }
+    "Flow-Launcher.Flow-Launcher" = @{ Exes = @("Flow.Launcher.exe"); Title = "Flow Launcher" }
+    "File-New-Project.EarTrumpet" = @{ Exes = @("EarTrumpet.exe"); Title = "EarTrumpet" }
+    "CharlesMilette.TranslucentTB" = @{ Exes = @("TranslucentTB.exe"); Title = "TranslucentTB" }
+    "rocksdanister.LivelyWallpaper" = @{ Exes = @("Lively.exe"); Title = "Lively Wallpaper" }
+    "Open-Shell.Open-Shell-Menu" = @{ Exes = @("StartMenu.exe"); Title = "Open-Shell" }
+    "CrystalRich.LockHunter" = @{ Exes = @("LockHunter.exe"); Title = "LockHunter" }
+    "gerardog.gsudo" = @{ Exes = @("gsudo.exe"); Title = "gsudo" }
+    "M2Team.NanaZip" = @{ Exes = @("NanaZip.exe", "NanaZipG.exe"); Title = "NanaZip" }
+    "JAMSoftware.TreeSize.Free" = @{ Exes = @("TreeSizeFree.exe"); Title = "TreeSize Free" }
+
+    # Hệ thống
+    "Guru3D.RTSS" = @{ Exes = @("RTSS.exe"); Title = "RivaTuner Statistics Server" }
+    "Guru3D.Afterburner" = @{ Exes = @("MSIAfterburner.exe"); Title = "MSI Afterburner" }
+    "Geeks3D.FurMark.1" = @{ Exes = @("FurMark.exe"); Title = "FurMark" }
+    "FinalWire.AIDA64.Extreme" = @{ Exes = @("aida64.exe"); Title = "AIDA64 Extreme" }
+    "ALCPU.CoreTemp" = @{ Exes = @("Core Temp.exe"); Title = "Core Temp" }
+    "NirSoft.BatteryInfoView" = @{ Exes = @("BatteryInfoView.exe"); Title = "BatteryInfoView" }
+
+    # Bảo mật
+    "KeePassXCTeam.KeePassXC" = @{ Exes = @("KeePassXC.exe"); Title = "KeePassXC" }
+    "AgileBits.1Password" = @{ Exes = @("1Password.exe"); Title = "1Password" }
+    "Tailscale.Tailscale" = @{ Exes = @("tailscale-ipn.exe"); Title = "Tailscale" }
+    "WireGuard.WireGuard" = @{ Exes = @("wireguard.exe"); Title = "WireGuard" }
+    "2dust.v2rayN" = @{ Exes = @("v2rayN.exe"); Title = "v2rayN" }
+    "ValdikSS.GoodbyeDPI" = @{ Exes = @("goodbyedpi.exe"); Title = "GoodbyeDPI" }
+
+    # Lập trình
+    "LeNgocKhoa.Laragon" = @{ Exes = @("laragon.exe"); Title = "Laragon" }
+    "SublimeHQ.SublimeText.4" = @{ Exes = @("sublime_text.exe"); Title = "Sublime Text" }
+    "JetBrains.IntelliJIDEA.Community" = @{ Exes = @("idea64.exe"); Title = "IntelliJ IDEA Community" }
+    "JetBrains.PyCharm.Community" = @{ Exes = @("pycharm64.exe"); Title = "PyCharm Community" }
+    "ApacheFriends.Xampp.8.2" = @{ Exes = @("xampp-control.exe"); Title = "XAMPP" }
+    "Termius.Termius" = @{ Exes = @("Termius.exe"); Title = "Termius" }
+    "Eugeny.Tabby" = @{ Exes = @("Tabby.exe"); Title = "Tabby" }
+    "Alacritty.Alacritty" = @{ Exes = @("alacritty.exe"); Title = "Alacritty" }
+    "Neovim.Neovim" = @{ Exes = @("nvim.exe"); Title = "Neovim" }
+    "vim.vim" = @{ Exes = @("gvim.exe", "vim.exe"); Title = "Vim" }
+    "JesseDuffield.lazygit" = @{ Exes = @("lazygit.exe"); Title = "LazyGit" }
+    "Fork.Fork" = @{ Exes = @("Fork.exe"); Title = "Fork" }
+    "Atlassian.Sourcetree" = @{ Exes = @("SourceTree.exe"); Title = "Sourcetree" }
+    "Rustlang.Rustup" = @{ Exes = @("rustup.exe", "cargo.exe"); Title = "Rustup" }
+    "TablePlus.TablePlus" = @{ Exes = @("TablePlus.exe"); Title = "TablePlus" }
+    "PostgreSQL.pgAdmin" = @{ Exes = @("pgAdmin4.exe"); Title = "pgAdmin 4" }
+    "Bruno.Bruno" = @{ Exes = @("Bruno.exe"); Title = "Bruno" }
+
+    # Download
+    "agalwood.Motrix" = @{ Exes = @("Motrix.exe"); Title = "Motrix" }
+    "yt-dlp.yt-dlp" = @{ Exes = @("yt-dlp.exe"); Title = "yt-dlp" }
+    "Transmission.Transmission" = @{ Exes = @("transmission-qt.exe"); Title = "Transmission" }
+    "aria2.aria2" = @{ Exes = @("aria2c.exe"); Title = "aria2" }
+    "AppWork.JDownloader" = @{ Exes = @("JDownloader2.exe"); Title = "JDownloader 2" }
+
+    # Ổ đĩa ảo
+    "MiniTool.PartitionWizard.Free" = @{ Exes = @("partitionwizard.exe"); Title = "MiniTool Partition Wizard" }
+    "Syncthing.Syncthing" = @{ Exes = @("syncthing.exe"); Title = "Syncthing" }
+    "Duplicati.Duplicati" = @{ Exes = @("Duplicati.GUI.TrayIcon.exe"); Title = "Duplicati" }
+
+    # Mạng xã hội
+    "Blizzard.BattleNet" = @{ Exes = @("Battle.net.exe"); Title = "Battle.net" }
+    "ElectronicArts.EADesktop" = @{ Exes = @("EADesktop.exe"); Title = "EA App" }
+    "Ubisoft.Connect" = @{ Exes = @("UbisoftConnect.exe"); Title = "Ubisoft Connect" }
+    "GOG.Galaxy" = @{ Exes = @("GalaxyClient.exe"); Title = "GOG Galaxy" }
+    "Roblox.Roblox" = @{ Exes = @("RobloxPlayerBeta.exe"); Title = "Roblox" }
+
+    # Công cụ mạng
+    "Famatech.AdvancedIPScanner" = @{ Exes = @("advanced_ip_scanner.exe"); Title = "Advanced IP Scanner" }
+    "Telerik.Fiddler.Classic" = @{ Exes = @("Fiddler.exe"); Title = "Fiddler Classic" }
+    "RealVNC.VNCViewer" = @{ Exes = @("vncviewer.exe"); Title = "RealVNC Viewer" }
+    "leeter.WinMTR" = @{ Exes = @("WinMTR.exe"); Title = "WinMTR" }
+    "Pingman.PingPlotter" = @{ Exes = @("PingPlotter.exe"); Title = "PingPlotter" }
+
+    # Cloud
+    "Proton.ProtonDrive" = @{ Exes = @("ProtonDrive.exe"); Title = "Proton Drive" }
+    "Rclone.Rclone" = @{ Exes = @("rclone.exe"); Title = "Rclone" }
 }
 
 function Find-InstalledAppTarget {

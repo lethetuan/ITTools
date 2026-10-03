@@ -244,43 +244,33 @@ Object.assign(AppController.prototype, {
     const wuBadge = document.getElementById("wu-status-badge");
     const wuCard = document.getElementById("wu-status-card");
     if (wuText) wuText.innerText = status.wu_status_text || "⚪ N/A";
-    if (wuBadge) {
-      if (status.wu_enabled === null || status.wu_enabled === undefined || (status.wu_badge && status.wu_badge.includes("N/A"))) {
-        wuBadge.innerText = status.wu_badge || "⚪ N/A";
-        wuBadge.style.background = "#f1f5f9";
-        wuBadge.style.color = "#64748b";
-        wuBadge.style.border = "1px solid #cbd5e1";
-        if (wuCard) {
-          wuCard.style.background = "#f8fafc";
-          wuCard.style.borderColor = "#e2e8f0";
-        }
-      } else if (status.wu_badge === "⏸️ TẠM DỪNG" || (!status.wu_enabled && status.wu_status_text && status.wu_status_text.includes("TẠM DỪNG"))) {
-        wuBadge.innerText = status.wu_badge || "⏸️ TẠM DỪNG";
-        wuBadge.style.background = "#fef3c7";
-        wuBadge.style.color = "#b45309";
-        wuBadge.style.border = "none";
-        if (wuCard) {
-          wuCard.style.background = "#fffbeb";
-          wuCard.style.borderColor = "#fde68a";
-        }
+    if (wuCard) {
+      wuCard.style.background = "";
+      wuCard.style.borderColor = "";
+      if (status.wu_badge === "⏸️ TẠM DỪNG" || (!status.wu_enabled && status.wu_status_text && status.wu_status_text.includes("TẠM DỪNG"))) {
+        wuCard.className = "win-status-banner status-paused";
       } else if (status.wu_enabled) {
-        wuBadge.innerText = status.wu_badge || "🟢 ĐANG BẬT";
-        wuBadge.style.background = "#dcfce7";
-        wuBadge.style.color = "#15803d";
-        wuBadge.style.border = "none";
-        if (wuCard) {
-          wuCard.style.background = "#f0fdf4";
-          wuCard.style.borderColor = "#bbf7d0";
-        }
+        wuCard.className = "win-status-banner status-active";
       } else {
+        wuCard.className = "win-status-banner status-disabled";
+      }
+    }
+    if (wuBadge) {
+      wuBadge.style.background = "";
+      wuBadge.style.color = "";
+      wuBadge.style.border = "";
+      if (status.wu_enabled === null || status.wu_enabled === undefined || (status.wu_badge && status.wu_badge.includes("N/A"))) {
+        wuBadge.className = "badge";
+        wuBadge.innerText = status.wu_badge || "⚪ N/A";
+      } else if (status.wu_badge === "⏸️ TẠM DỪNG" || (!status.wu_enabled && status.wu_status_text && status.wu_status_text.includes("TẠM DỪNG"))) {
+        wuBadge.className = "badge badge-status-paused";
+        wuBadge.innerText = status.wu_badge || "⏸️ TẠM DỪNG";
+      } else if (status.wu_enabled) {
+        wuBadge.className = "badge badge-status-enable";
+        wuBadge.innerText = status.wu_badge || "🟢 ĐANG BẬT";
+      } else {
+        wuBadge.className = "badge badge-status-disabled";
         wuBadge.innerText = status.wu_badge || "🔴 ĐÃ TẮT";
-        wuBadge.style.background = "#fee2e2";
-        wuBadge.style.color = "#b91c1c";
-        wuBadge.style.border = "none";
-        if (wuCard) {
-          wuCard.style.background = "#fef2f2";
-          wuCard.style.borderColor = "#fecaca";
-        }
       }
     }
 
@@ -289,123 +279,198 @@ Object.assign(AppController.prototype, {
     const wdBadge = document.getElementById("wd-status-badge");
     const wdCard = document.getElementById("wd-status-card");
     if (wdText) wdText.innerText = status.defender_status_text || "⚪ N/A";
+    if (wdCard) {
+      wdCard.style.background = "";
+      wdCard.style.borderColor = "";
+      if (status.has_third_party && status.defender_enabled) {
+        wdCard.className = "win-status-banner status-thirdparty";
+      } else if (status.defender_enabled) {
+        wdCard.className = "win-status-banner status-active";
+      } else {
+        wdCard.className = "win-status-banner status-disabled";
+      }
+    }
     if (wdBadge) {
+      wdBadge.style.background = "";
+      wdBadge.style.color = "";
+      wdBadge.style.border = "";
       if (status.defender_enabled === null || status.defender_enabled === undefined || (status.defender_badge && status.defender_badge.includes("N/A"))) {
+        wdBadge.className = "badge";
         wdBadge.innerText = status.defender_badge || "⚪ N/A";
-        wdBadge.style.background = "#f1f5f9";
-        wdBadge.style.color = "#64748b";
-        wdBadge.style.border = "1px solid #cbd5e1";
-        if (wdCard) {
-          wdCard.style.background = "#f8fafc";
-          wdCard.style.borderColor = "#e2e8f0";
-        }
       } else if (status.has_third_party) {
         if (status.defender_enabled) {
+          wdBadge.className = "badge badge-status-info";
           wdBadge.innerText = status.defender_badge || "🟢 AN TOÀN";
-          wdBadge.style.background = "#e0f2fe";
-          wdBadge.style.color = "#0369a1";
-          wdBadge.style.border = "none";
-          if (wdCard) {
-            wdCard.style.background = "#f0f9ff";
-            wdCard.style.borderColor = "#bae6fd";
-          }
         } else {
+          wdBadge.className = "badge badge-status-disabled";
           wdBadge.innerText = status.defender_badge || "🔴 ĐÃ TẮT";
-          wdBadge.style.background = "#fee2e2";
-          wdBadge.style.color = "#b91c1c";
-          wdBadge.style.border = "none";
-          if (wdCard) {
-            wdCard.style.background = "#fef2f2";
-            wdCard.style.borderColor = "#fecaca";
-          }
         }
       } else if (status.defender_enabled) {
+        wdBadge.className = "badge badge-status-enable";
         wdBadge.innerText = status.defender_badge || "🟢 ĐANG BẬT";
-        wdBadge.style.background = "#dcfce7";
-        wdBadge.style.color = "#15803d";
-        wdBadge.style.border = "none";
-        if (wdCard) {
-          wdCard.style.background = "#f0fdf4";
-          wdCard.style.borderColor = "#bbf7d0";
-        }
       } else {
+        wdBadge.className = "badge badge-status-disabled";
         wdBadge.innerText = status.defender_badge || "🔴 ĐÃ TẮT";
-        wdBadge.style.background = "#fee2e2";
-        wdBadge.style.color = "#b91c1c";
-        wdBadge.style.border = "none";
-        if (wdCard) {
-          wdCard.style.background = "#fef2f2";
-          wdCard.style.borderColor = "#fecaca";
-        }
       }
     }
 
     // UAC Badge
     const uacBadge = document.getElementById("uac-status-badge");
     if (uacBadge) {
+      uacBadge.style.background = "";
+      uacBadge.style.color = "";
+      uacBadge.style.border = "";
       if (status.uac_enabled === null || status.uac_enabled === undefined || (status.uac_badge && status.uac_badge.includes("N/A"))) {
+        uacBadge.className = "badge";
         uacBadge.innerText = status.uac_badge || "⚪ N/A";
-        uacBadge.style.background = "#f1f5f9";
-        uacBadge.style.color = "#64748b";
-        uacBadge.style.border = "1px solid #cbd5e1";
       } else if (status.uac_enabled) {
+        uacBadge.className = "badge badge-status-enable";
         uacBadge.innerText = status.uac_badge || "🟢 ĐANG BẬT";
-        uacBadge.style.background = "#dcfce7";
-        uacBadge.style.color = "#15803d";
-        uacBadge.style.border = "none";
       } else {
+        uacBadge.className = "badge badge-status-disabled";
         uacBadge.innerText = status.uac_badge || "🔴 ĐÃ TẮT";
-        uacBadge.style.background = "#fee2e2";
-        uacBadge.style.color = "#b91c1c";
-        uacBadge.style.border = "none";
       }
     }
 
     // SmartScreen Badge
     const ssBadge = document.getElementById("ss-status-badge");
     if (ssBadge) {
+      ssBadge.style.background = "";
+      ssBadge.style.color = "";
+      ssBadge.style.border = "";
       if (status.smartscreen_enabled === null || status.smartscreen_enabled === undefined || (status.smartscreen_badge && status.smartscreen_badge.includes("N/A"))) {
+        ssBadge.className = "badge";
         ssBadge.innerText = status.smartscreen_badge || "⚪ N/A";
-        ssBadge.style.background = "#f1f5f9";
-        ssBadge.style.color = "#64748b";
-        ssBadge.style.border = "1px solid #cbd5e1";
       } else if (status.smartscreen_enabled) {
+        ssBadge.className = "badge badge-status-enable";
         ssBadge.innerText = status.smartscreen_badge || "🟢 ĐANG BẬT";
-        ssBadge.style.background = "#dcfce7";
-        ssBadge.style.color = "#15803d";
-        ssBadge.style.border = "none";
       } else {
+        ssBadge.className = "badge badge-status-disabled";
         ssBadge.innerText = status.smartscreen_badge || "🔴 ĐÃ TẮT";
-        ssBadge.style.background = "#fee2e2";
-        ssBadge.style.color = "#b91c1c";
-        ssBadge.style.border = "none";
+      }
+    }
+
+    this.winUpdateStatus = status;
+
+    // Dynamic 1-Button Toggle State Update: Đang Bật -> hiện nút Đỏ Tắt; Đang Tắt -> hiện nút Xanh Bật
+    const btnWu = document.getElementById("wu-btn-toggle");
+    if (btnWu) {
+      btnWu.disabled = false;
+      if (status.wu_enabled) {
+        btnWu.className = "btn btn-danger-solid py-2.5";
+        btnWu.style.gridColumn = "span 2";
+        btnWu.style.fontWeight = "700";
+        btnWu.style.fontSize = "13px";
+        btnWu.innerHTML = "<span>🚫</span> Tắt Vĩnh Viễn Update";
+        btnWu.title = "Windows Update đang BẬT. Nhấp để Tắt vĩnh viễn";
+      } else {
+        btnWu.className = "btn btn-success-solid py-2.5";
+        btnWu.style.gridColumn = "span 2";
+        btnWu.style.fontWeight = "700";
+        btnWu.style.fontSize = "13px";
+        btnWu.innerHTML = "<span>✅</span> Bật Windows Update";
+        btnWu.title = "Windows Update đang TẮT. Nhấp để Bật lại";
+      }
+    }
+
+    const btnWd = document.getElementById("wd-btn-toggle");
+    if (btnWd) {
+      btnWd.disabled = false;
+      if (status.defender_enabled) {
+        btnWd.className = "btn btn-danger-solid py-2.5";
+        btnWd.style.gridColumn = "span 2";
+        btnWd.style.fontWeight = "700";
+        btnWd.style.fontSize = "13px";
+        btnWd.innerHTML = "<span>🚫</span> Tắt Windows Defender";
+        btnWd.title = "Defender đang BẬT / An toàn. Nhấp để Tắt";
+      } else {
+        btnWd.className = "btn btn-success-solid py-2.5";
+        btnWd.style.gridColumn = "span 2";
+        btnWd.style.fontWeight = "700";
+        btnWd.style.fontSize = "13px";
+        btnWd.innerHTML = "<span>🛡️</span> Bật Windows Defender";
+        btnWd.title = "Defender đang TẮT. Nhấp để Bật lại";
+      }
+    }
+
+    const btnUac = document.getElementById("uac-btn-toggle");
+    if (btnUac) {
+      btnUac.disabled = false;
+      if (status.uac_enabled) {
+        btnUac.className = "btn btn-danger-solid btn-sm flex-1 font-bold";
+        btnUac.innerHTML = "<span>🚫</span> Tắt UAC";
+        btnUac.title = "UAC đang BẬT. Nhấp để Tắt";
+      } else {
+        btnUac.className = "btn btn-success-solid btn-sm flex-1 font-bold";
+        btnUac.innerHTML = "<span>✅</span> Bật UAC";
+        btnUac.title = "UAC đang TẮT. Nhấp để Bật";
+      }
+    }
+
+    const btnSs = document.getElementById("ss-btn-toggle");
+    if (btnSs) {
+      btnSs.disabled = false;
+      if (status.smartscreen_enabled) {
+        btnSs.className = "btn btn-danger-solid btn-sm w-100 font-bold";
+        btnSs.innerHTML = "<span>🚫</span> Tắt SmartScreen";
+        btnSs.title = "SmartScreen đang BẬT. Nhấp để Tắt";
+      } else {
+        btnSs.className = "btn btn-success-solid btn-sm w-100 font-bold";
+        btnSs.innerHTML = "<span>✅</span> Bật SmartScreen";
+        btnSs.title = "SmartScreen đang TẮT. Nhấp để Bật";
       }
     }
 
     this.addLog("success", "Đã đọc trạng thái Windows Update & Security!");
   },
 
+  async toggleWinUpdate() {
+    const isEnabled = this.winUpdateStatus ? this.winUpdateStatus.wu_enabled : true;
+    await this.setWinUpdateStatus(!isEnabled);
+  },
+
+  async toggleDefenderStatus() {
+    const isEnabled = this.winUpdateStatus ? this.winUpdateStatus.defender_enabled : true;
+    await this.setDefenderStatus(!isEnabled);
+  },
+
+  async toggleUacStatus() {
+    const isEnabled = this.winUpdateStatus ? this.winUpdateStatus.uac_enabled : true;
+    await this.setUacStatus(!isEnabled);
+  },
+
+  async toggleSmartScreenStatus() {
+    const isEnabled = this.winUpdateStatus ? this.winUpdateStatus.smartscreen_enabled : true;
+    await this.setSmartScreenStatus(!isEnabled);
+  },
+
   async setWinUpdateStatus(enable) {
     this.addLog("info", `Đang ${enable ? 'bật' : 'tắt vĩnh viễn'} Windows Update...`);
+    if (typeof this.showToast === 'function') this.showToast("info", `Đang ${enable ? 'bật' : 'tắt'} Windows Update...`);
     if (window.pywebview && window.pywebview.api) {
       const res = await window.pywebview.api.set_windows_update(enable);
       this.addLog(res.success ? "success" : "error", res.message);
-      alert(res.message);
+      if (typeof this.showToast === 'function') this.showToast(res.success ? "success" : "error", res.message);
+      else alert(res.message);
       this.loadWinUpdateStatus();
     } else {
-      alert(`[MOCK] Đã ${enable ? 'bật' : 'tắt vĩnh viễn'} Windows Update!`);
+      if (typeof this.showToast === 'function') this.showToast("info", `[MOCK] Đã ${enable ? 'bật' : 'tắt vĩnh viễn'} Windows Update!`);
+      else alert(`[MOCK] Đã ${enable ? 'bật' : 'tắt vĩnh viễn'} Windows Update!`);
     }
   },
 
   async pauseWinUpdate7Days() {
     this.addLog("info", "Đang tạm dừng Windows Update 7 ngày...");
+    if (typeof this.showToast === 'function') this.showToast("info", "Đang tạm dừng Windows Update 7 ngày...");
     if (window.pywebview && window.pywebview.api) {
       const res = await window.pywebview.api.pause_windows_update_7days();
       this.addLog(res.success ? "success" : "error", res.message);
-      alert(res.message);
+      if (typeof this.showToast === 'function') this.showToast(res.success ? "success" : "error", res.message);
+      else alert(res.message);
       this.loadWinUpdateStatus();
     } else {
-      alert("[MOCK] Đã tạm dừng Windows Update 7 ngày!");
+      if (typeof this.showToast === 'function') this.showToast("info", "[MOCK] Đã tạm dừng Windows Update 7 ngày!");
+      else alert("[MOCK] Đã tạm dừng Windows Update 7 ngày!");
     }
   },
 
@@ -413,54 +478,67 @@ Object.assign(AppController.prototype, {
     if (window.pywebview && window.pywebview.api) {
       await window.pywebview.api.check_windows_update_now();
     } else {
-      alert("[MOCK] Mở cửa sổ Windows Update!");
+      if (typeof this.showToast === 'function') this.showToast("info", "[MOCK] Mở cửa sổ Windows Update!");
+      else alert("[MOCK] Mở cửa sổ Windows Update!");
     }
   },
 
   async setDefenderStatus(enable) {
     this.addLog("info", `Đang ${enable ? 'bật' : 'tắt'} Windows Defender...`);
+    if (typeof this.showToast === 'function') this.showToast("info", `Đang ${enable ? 'bật' : 'tắt'} Defender...`);
     if (window.pywebview && window.pywebview.api) {
       const res = await window.pywebview.api.set_defender_status(enable);
       this.addLog(res.success ? "success" : "error", res.message);
-      alert(res.message);
+      if (typeof this.showToast === 'function') this.showToast(res.success ? "success" : "error", res.message);
+      else alert(res.message);
       this.loadWinUpdateStatus();
     } else {
-      alert(`[MOCK] Đã ${enable ? 'bật' : 'tắt'} Windows Defender!`);
+      if (typeof this.showToast === 'function') this.showToast("info", `[MOCK] Đã ${enable ? 'bật' : 'tắt'} Windows Defender!`);
+      else alert(`[MOCK] Đã ${enable ? 'bật' : 'tắt'} Windows Defender!`);
     }
   },
 
   async runDefenderScan(scanType) {
     this.addLog("info", `Đang kích hoạt ${scanType === 'quick' ? 'Quét nhanh' : 'Quét toàn bộ'} Windows Defender...`);
+    if (typeof this.showToast === 'function') this.showToast("info", `Đang khởi chạy ${scanType === 'quick' ? 'Quét nhanh' : 'Quét toàn bộ'}...`);
     if (window.pywebview && window.pywebview.api) {
       const res = await window.pywebview.api.run_defender_scan(scanType);
       this.addLog(res.success ? "success" : "error", res.message);
-      alert(res.message);
+      if (typeof this.showToast === 'function') this.showToast(res.success ? "success" : "error", res.message);
+      else alert(res.message);
     } else {
-      alert(`[MOCK] Đã bắt đầu ${scanType} scan!`);
+      if (typeof this.showToast === 'function') this.showToast("info", `[MOCK] Đã bắt đầu ${scanType} scan!`);
+      else alert(`[MOCK] Đã bắt đầu ${scanType} scan!`);
     }
   },
 
   async setUacStatus(enable) {
     this.addLog("info", `Đang ${enable ? 'bật' : 'tắt'} UAC...`);
+    if (typeof this.showToast === 'function') this.showToast("info", `Đang ${enable ? 'bật' : 'tắt'} UAC...`);
     if (window.pywebview && window.pywebview.api) {
       const res = await window.pywebview.api.set_uac_status(enable);
       this.addLog(res.success ? "success" : "error", res.message);
-      alert(res.message);
+      if (typeof this.showToast === 'function') this.showToast(res.success ? "success" : "error", res.message);
+      else alert(res.message);
       this.loadWinUpdateStatus();
     } else {
-      alert(`[MOCK] Đã ${enable ? 'bật' : 'tắt'} UAC!`);
+      if (typeof this.showToast === 'function') this.showToast("info", `[MOCK] Đã ${enable ? 'bật' : 'tắt'} UAC!`);
+      else alert(`[MOCK] Đã ${enable ? 'bật' : 'tắt'} UAC!`);
     }
   },
 
   async setSmartScreenStatus(enable) {
     this.addLog("info", `Đang ${enable ? 'bật' : 'tắt'} SmartScreen...`);
+    if (typeof this.showToast === 'function') this.showToast("info", `Đang ${enable ? 'bật' : 'tắt'} SmartScreen...`);
     if (window.pywebview && window.pywebview.api) {
       const res = await window.pywebview.api.set_smartscreen_status(enable);
       this.addLog(res.success ? "success" : "error", res.message);
-      alert(res.message);
+      if (typeof this.showToast === 'function') this.showToast(res.success ? "success" : "error", res.message);
+      else alert(res.message);
       this.loadWinUpdateStatus();
     } else {
-      alert(`[MOCK] Đã ${enable ? 'bật' : 'tắt'} SmartScreen!`);
+      if (typeof this.showToast === 'function') this.showToast("info", `[MOCK] Đã ${enable ? 'bật' : 'tắt'} SmartScreen!`);
+      else alert(`[MOCK] Đã ${enable ? 'bật' : 'tắt'} SmartScreen!`);
     }
   },
 
