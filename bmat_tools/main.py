@@ -43,6 +43,15 @@ else:
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
+# Dedicated Native Zoom Screen GUI Subprocess Dispatcher
+if len(sys.argv) > 1 and sys.argv[1] == '--zoom-screen':
+    from modules import zoom_screen_gui
+    mode = sys.argv[2] if len(sys.argv) > 2 else 'zoom'
+    cx = sys.argv[3] if len(sys.argv) > 3 else None
+    cy = sys.argv[4] if len(sys.argv) > 4 else None
+    zoom_screen_gui.main(mode, cx, cy)
+    sys.exit(0)
+
 import socket
 import threading
 
@@ -215,6 +224,14 @@ def main():
             tray.show_window()
 
         start_single_instance_server(wake_up_callback, port=SINGLE_INSTANCE_PORT)
+
+        # Tự động kích hoạt lắng nghe phím tắt toàn cầu của Zoom Screen ngay khi khởi động
+        # Giúp phím tắt luôn hoạt động mọi lúc kể cả khi tool chạy ngầm, thu nhỏ hoặc ở khay hệ thống
+        try:
+            from modules import zoom_screen
+            zoom_screen.start_zoomit(silent=True)
+        except Exception as ex:
+            print(f"[ZoomScreen] Auto-start hotkeys warning: {ex}")
 
         # Khởi chạy giao diện Web và tự động kích hoạt Tray icon khi Webview sẵn sàng
         webview.start(tray.start, debug=False)

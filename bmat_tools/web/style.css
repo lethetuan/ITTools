@@ -479,42 +479,70 @@ body.dark-mode .autostart-badge.on {
   scrollbar-color: #94A3B8 #F1F5F9;
 }
 
-.page-container::-webkit-scrollbar,
-.table-responsive::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+.sidebar-menu,
+.category-list,
+.page-container {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #94A3B8 #F1F5F9;
 }
 
+body.dark-mode .sidebar-menu,
+body.dark-mode .category-list,
+body.dark-mode .page-container {
+  scrollbar-color: #475569 #1E293B;
+}
+
+.sidebar-menu::-webkit-scrollbar,
+.category-list::-webkit-scrollbar,
+.page-container::-webkit-scrollbar,
+.table-responsive::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.sidebar-menu::-webkit-scrollbar-track,
+.category-list::-webkit-scrollbar-track,
 .page-container::-webkit-scrollbar-track,
 .table-responsive::-webkit-scrollbar-track {
   background: #F1F5F9;
   border-radius: 4px;
 }
 
+.sidebar-menu::-webkit-scrollbar-thumb,
+.category-list::-webkit-scrollbar-thumb,
 .page-container::-webkit-scrollbar-thumb,
 .table-responsive::-webkit-scrollbar-thumb {
   background: #94A3B8;
   border-radius: 4px;
 }
 
+.sidebar-menu::-webkit-scrollbar-thumb:hover,
+.category-list::-webkit-scrollbar-thumb:hover,
 .page-container::-webkit-scrollbar-thumb:hover,
 .table-responsive::-webkit-scrollbar-thumb:hover {
   background: #64748B;
 }
 
+body.dark-mode .sidebar-menu::-webkit-scrollbar-track,
+body.dark-mode .category-list::-webkit-scrollbar-track,
 body.dark-mode .page-container::-webkit-scrollbar-track,
 body.dark-mode .table-responsive::-webkit-scrollbar-track {
-  background: #1E293B;
+  background: #0F172A;
 }
 
+body.dark-mode .sidebar-menu::-webkit-scrollbar-thumb,
+body.dark-mode .category-list::-webkit-scrollbar-thumb,
 body.dark-mode .page-container::-webkit-scrollbar-thumb,
 body.dark-mode .table-responsive::-webkit-scrollbar-thumb {
-  background: #475569;
+  background: #334155;
 }
 
+body.dark-mode .sidebar-menu::-webkit-scrollbar-thumb:hover,
+body.dark-mode .category-list::-webkit-scrollbar-thumb:hover,
 body.dark-mode .page-container::-webkit-scrollbar-thumb:hover,
 body.dark-mode .table-responsive::-webkit-scrollbar-thumb:hover {
-  background: #64748B;
+  background: #475569;
 }
 
 .page-section {
@@ -621,35 +649,75 @@ body.dark-mode .table-responsive::-webkit-scrollbar-thumb:hover {
   overflow-x: auto;
   border: 1px solid var(--card-border);
   border-radius: var(--radius-md);
-  background: #FFFFFF;
+  background: var(--card-bg);
 }
 
-.custom-table, .data-table {
+.custom-table, .data-table, .table {
   width: 100%;
   border-collapse: collapse;
   font-size: 12.5px;
   text-align: left;
+  color: var(--text-main);
+  background: transparent;
 }
 
-.custom-table th, .data-table th {
+.custom-table th, .data-table th, .table th {
   background-color: #F8FAFC;
   color: #475569;
   font-weight: 700;
   font-size: 12px;
   padding: 10px 14px;
-  border-bottom: 2px solid #E2E8F0;
+  border-bottom: 2px solid var(--card-border);
   white-space: nowrap;
 }
 
-.custom-table td, .data-table td {
+.custom-table td, .data-table td, .table td {
   padding: 10px 14px;
-  border-bottom: 1px solid #F1F5F9;
-  color: #1E293B;
+  border-bottom: 1px solid var(--card-border);
+  color: var(--text-main);
   vertical-align: middle;
 }
 
-.custom-table tr:hover, .data-table tr:hover {
-  background-color: #F8FAFC;
+.custom-table tr:hover, .data-table tr:hover, .table tr:hover {
+  background-color: rgba(2, 132, 199, 0.04);
+}
+
+/* ── DARK MODE CHO BẢNG & TABLE DATA ── */
+body.dark-mode .table-container,
+body.dark-mode .table-wrapper,
+body.dark-mode .table-responsive {
+  background: #162032 !important;
+  border-color: #334155 !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+body.dark-mode .custom-table,
+body.dark-mode .data-table,
+body.dark-mode .table {
+  background-color: transparent !important;
+  color: #f1f5f9 !important;
+}
+
+body.dark-mode .custom-table th,
+body.dark-mode .data-table th,
+body.dark-mode .table th,
+body.dark-mode thead#uninstall-thead {
+  background-color: #0f172a !important;
+  color: #94a3b8 !important;
+  border-bottom: 2px solid #334155 !important;
+}
+
+body.dark-mode .custom-table td,
+body.dark-mode .data-table td,
+body.dark-mode .table td {
+  border-bottom: 1px solid #293548 !important;
+  color: #f1f5f9 !important;
+}
+
+body.dark-mode .custom-table tr:hover,
+body.dark-mode .data-table tr:hover,
+body.dark-mode .table tr:hover {
+  background-color: rgba(51, 65, 85, 0.45) !important;
 }
 
 .table-btn-group {
@@ -753,6 +821,73 @@ body.dark-mode .table-responsive::-webkit-scrollbar-thumb:hover {
 .btn-danger-solid { background: #EF4444; color: white; }
 .btn-success-solid { background: #10B981; color: white; }
 
+/* ── DARK MODE CHO CÁC NÚT BẤM (BUTTONS) ── */
+body.dark-mode .btn-slate-light {
+  background: #243247;
+  color: #cbd5e1;
+  border: 1px solid #334155;
+}
+body.dark-mode .btn-slate-light:hover:not(:disabled) {
+  background: #334155;
+  color: #ffffff;
+  border-color: #475569;
+}
+
+body.dark-mode .btn-sky-outline {
+  background: rgba(2, 132, 199, 0.18);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+body.dark-mode .btn-sky-outline:hover:not(:disabled) {
+  background: rgba(2, 132, 199, 0.32);
+  color: #7dd3fc;
+  border-color: #38bdf8;
+}
+
+body.dark-mode .btn-rose-light {
+  background: rgba(225, 29, 72, 0.16);
+  color: #fb7185;
+  border: 1px solid rgba(251, 113, 133, 0.35);
+}
+body.dark-mode .btn-rose-light:hover:not(:disabled) {
+  background: rgba(225, 29, 72, 0.3);
+  color: #fda4af;
+  border-color: #fb7185;
+}
+
+body.dark-mode .btn-gold-light {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+body.dark-mode .btn-gold-light:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.3);
+  color: #fde68a;
+  border-color: #fbbf24;
+}
+
+body.dark-mode .btn-light-blue {
+  background: rgba(2, 132, 199, 0.2);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+body.dark-mode .btn-light-purple {
+  background: rgba(126, 34, 206, 0.2);
+  color: #c084fc;
+  border: 1px solid rgba(192, 132, 252, 0.35);
+}
+
+body.dark-mode .btn-action-card {
+  background: #1e293b;
+  border-color: #334155;
+  color: #f1f5f9;
+}
+body.dark-mode .btn-action-card:hover {
+  background: #243247;
+  border-color: #0284c7;
+}
+
 .grid-buttons-2col {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -781,17 +916,33 @@ body.dark-mode .table-responsive::-webkit-scrollbar-thumb:hover {
   color: #475569;
 }
 
+body.dark-mode .form-label {
+  color: #cbd5e1;
+}
+
 .form-control {
   padding: 8px 12px;
   border-radius: var(--radius-md);
   border: 1px solid #CBD5E1;
   font-size: 12px;
   outline: none;
+  background-color: #ffffff;
+  color: var(--text-main);
 }
 
 .form-control:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+}
+
+body.dark-mode .form-control {
+  background-color: #0f172a;
+  border-color: #334155;
+  color: #f8fafc;
+}
+body.dark-mode .form-control:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
 }
 
 /* ── INSTRUCTION BANNER ──────────────────────────────────────────────── */
@@ -806,12 +957,258 @@ body.dark-mode .table-responsive::-webkit-scrollbar-thumb:hover {
   line-height: 1.5;
 }
 
+body.dark-mode .instruction-banner-card {
+  background: rgba(15, 23, 42, 0.6);
+  border-color: #334155;
+}
+body.dark-mode .instruction-content {
+  color: #cbd5e1;
+}
+
 .code-badge {
   background: #E2E8F0;
   padding: 1px 5px;
   border-radius: 4px;
   font-family: monospace;
   color: #0F172A;
+}
+
+body.dark-mode .code-badge {
+  background: #0f172a;
+  color: #94a3b8;
+  border: 1px solid #334155;
+}
+
+/* ── STARTUP MANAGER STYLES (Light & Dark Mode) ────────────────────────── */
+.startup-quick-banner {
+  background: linear-gradient(135deg, rgba(2, 132, 199, 0.06), rgba(6, 182, 212, 0.06));
+  border: 1px solid #bae6fd;
+  border-radius: var(--radius-md);
+  transition: all 0.2s ease;
+}
+.startup-quick-title {
+  font-weight: 700;
+  font-size: 13.5px;
+  color: #0284c7;
+}
+
+body.dark-mode .startup-quick-banner {
+  background: linear-gradient(135deg, rgba(2, 132, 199, 0.12), rgba(15, 23, 42, 0.6));
+  border: 1px solid rgba(2, 132, 199, 0.35);
+}
+body.dark-mode .startup-quick-title {
+  color: #38bdf8;
+}
+
+.startup-item-name {
+  color: var(--text-main);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.startup-path-code {
+  word-break: break-all;
+  font-size: 11.5px;
+  color: #334155;
+  background: #f8fafc;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  font-family: 'Consolas', 'Courier New', monospace;
+  display: inline-block;
+  max-width: 100%;
+}
+body.dark-mode .startup-path-code {
+  color: #cbd5e1;
+  background: #0b1329;
+  border-color: #334155;
+}
+
+.badge-location-subtle {
+  background: #e0f2fe;
+  color: #0369a1;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid #bae6fd;
+  display: inline-block;
+}
+body.dark-mode .badge-location-subtle {
+  background: rgba(2, 132, 199, 0.2);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.badge-status-enable {
+  background: #dcfce7;
+  color: #15803d;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 11.5px;
+  border: 1px solid #86efac;
+  display: inline-block;
+}
+body.dark-mode .badge-status-enable {
+  background: rgba(22, 101, 52, 0.35);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.35);
+}
+
+.badge-status-disabled {
+  background: #fee2e2;
+  color: #b91c1c;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 11.5px;
+  border: 1px solid #fca5a5;
+  display: inline-block;
+}
+body.dark-mode .badge-status-disabled {
+  background: rgba(153, 27, 27, 0.35);
+  color: #f87171;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+}
+
+/* Modal styling for Dark Mode */
+body.dark-mode .startup-modal-card {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+body.dark-mode .startup-modal-card label {
+  color: #cbd5e1 !important;
+}
+
+/* ── CHECK CẤU HÌNH (COMPUTER INFO) MODERN DESIGN SYSTEM ─────────────────── */
+.hw-top-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-subtle);
+}
+
+.hw-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.hw-gauge-chip {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 4px 8px;
+  display: flex;
+  transition: all 0.2s ease;
+}
+
+body.dark-mode .hw-gauge-chip {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+}
+
+.hw-gauge-title {
+  color: var(--text-main);
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.hw-gauge-sub {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.hw-gauge-val {
+  color: #334155;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+body.dark-mode .hw-gauge-val {
+  color: #cbd5e1;
+}
+
+.hw-label {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+}
+body.dark-mode .hw-label {
+  color: #94a3b8 !important;
+}
+
+.hw-val {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 600;
+}
+body.dark-mode .hw-val {
+  color: #f8fafc !important;
+}
+
+.hw-val-muted {
+  color: #475569;
+  font-size: 11.5px;
+}
+body.dark-mode .hw-val-muted {
+  color: #cbd5e1 !important;
+}
+
+.hw-highlight-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  transition: all 0.2s ease;
+}
+body.dark-mode .hw-highlight-box {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+}
+
+.hw-highlight-sub {
+  color: #64748b;
+  font-size: 10.5px;
+}
+body.dark-mode .hw-highlight-sub {
+  color: #94a3b8;
+}
+
+.hw-highlight-val {
+  color: #0369a1;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+body.dark-mode .hw-highlight-val {
+  color: #38bdf8;
+}
+
+.hw-card-divider {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #e2e8f0;
+  font-size: 12px;
+}
+body.dark-mode .hw-card-divider {
+  border-top-color: #334155;
+}
+
+.hw-track-bar {
+  background: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+body.dark-mode .hw-track-bar {
+  background: #334155;
 }
 
 /* ── LOG DRAWER ──────────────────────────────────────────────────────── */
@@ -1243,37 +1640,130 @@ body.dark-mode .table-responsive::-webkit-scrollbar-thumb:hover {
   font-family: monospace;
 }
 
-.btn-install-single {
-  padding: 4px 9px;
-  font-size: 11px;
+.software-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* ── 1. NÚT GHIM / ĐÃ GHIM (Capsule Style, sang trọng, thanh lịch) ────────── */
+.btn-pin-single {
+  padding: 5px 11px;
+  font-size: 11.5px;
   font-weight: 600;
-  border-radius: 6px;
-  background: #f1f5f9;
-  color: #0284c7;
+  border-radius: 20px;
+  background: #f8fafc;
+  color: #475569;
   border: 1px solid #cbd5e1;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
-.btn-install-single:hover {
-  background: #0284c7;
+.btn-pin-single:hover:not(:disabled) {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #94a3b8;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.08);
+}
+
+.btn-pin-single:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* TRẠNG THÁI ĐÃ GHIM (PINNED) - Tone màu Indigo/Violet cao cấp */
+.btn-pin-single.pinned {
+  background: linear-gradient(135deg, #ede9fe 0%, #f5f3ff 100%);
+  color: #6d28d9;
+  border: 1px solid #c4b5fd;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(109, 40, 217, 0.12);
+}
+
+.btn-pin-single.pinned:hover {
+  background: linear-gradient(135deg, #ddd6fe 0%, #ede9fe 100%);
+  color: #5b21b6;
+  border-color: #a78bfa;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(109, 40, 217, 0.22);
+}
+
+/* ── 2. NÚT CÀI ĐẶT / ĐÃ CÀI ĐẶT ─────────────────────────────────────────── */
+.btn-install-single {
+  padding: 5px 12px;
+  font-size: 11.5px;
+  font-weight: 700;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
   color: #ffffff;
-  border-color: #0284c7;
-  box-shadow: 0 2px 5px rgba(2, 132, 199, 0.25);
+  border: 1px solid #0284c7;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow: 0 2px 4px rgba(2, 132, 199, 0.2);
+}
+
+.btn-install-single:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0369a1 0%, #075985 100%);
+  border-color: #0369a1;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(2, 132, 199, 0.35);
+}
+
+.btn-install-single:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .btn-install-single.queued {
-  background: #fef3c7;
+  background: linear-gradient(135deg, #fef3c7 0%, #fef9c3 100%);
   color: #b45309;
   border-color: #fde68a;
-  cursor: default;
+  box-shadow: 0 1px 3px rgba(180, 83, 9, 0.1);
 }
 
+/* TRẠNG THÁI ĐÃ CÀI ĐẶT (INSTALLED) - Tone Emerald tinh tế */
+.btn-install-single.installed {
+  background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
+  color: #15803d;
+  border: 1px solid #86efac;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(22, 163, 74, 0.1);
+}
+
+.btn-install-single.installed:hover {
+  background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+  color: #166534;
+  border-color: #4ade80;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(22, 163, 74, 0.2);
+}
+
+.auto-pin-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+  border: 1px solid #7dd3fc;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #0369a1;
+  margin-bottom: 8px;
+}
 
 /* ── BACKGROUND INSTALL NOTICE & BANNER ────────────────────────────────── */
 
@@ -1402,4 +1892,977 @@ textarea.form-control {
   font-size: 13px;
   line-height: 1.6;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   UNIVERSAL DARK MODE ENGINE (ĐỒNG BỘ TOÀN DIỆN TẤT CẢ CÁC CHỨC NĂNG)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* 1. TOÀN BỘ BẢNG DỮ LIỆU (TABLES) TRÊN TẤT CẢ CÁC TAB */
+body.dark-mode table,
+body.dark-mode .table,
+body.dark-mode .custom-table,
+body.dark-mode .data-table {
+  background-color: transparent !important;
+  color: #f1f5f9 !important;
+  border-color: #334155 !important;
+}
+
+body.dark-mode table thead,
+body.dark-mode .table thead,
+body.dark-mode .custom-table thead,
+body.dark-mode .data-table thead,
+body.dark-mode table th,
+body.dark-mode .table th,
+body.dark-mode .custom-table th,
+body.dark-mode .data-table th,
+body.dark-mode thead tr,
+body.dark-mode thead th {
+  background-color: #0f172a !important;
+  background: #0f172a !important;
+  color: #94a3b8 !important;
+  border-bottom: 2px solid #334155 !important;
+  border-top-color: #334155 !important;
+}
+
+body.dark-mode table tbody tr,
+body.dark-mode .table tbody tr,
+body.dark-mode .custom-table tbody tr,
+body.dark-mode .data-table tbody tr {
+  background-color: transparent !important;
+  border-bottom: 1px solid #293548 !important;
+}
+
+body.dark-mode table td,
+body.dark-mode .table td,
+body.dark-mode .custom-table td,
+body.dark-mode .data-table td {
+  color: #f1f5f9 !important;
+  border-bottom: 1px solid #293548 !important;
+}
+
+body.dark-mode table td strong,
+body.dark-mode .table td strong,
+body.dark-mode .custom-table td strong,
+body.dark-mode .data-table td strong {
+  color: #ffffff !important;
+}
+
+body.dark-mode table tr:hover,
+body.dark-mode .table tr:hover,
+body.dark-mode .custom-table tr:hover,
+body.dark-mode .data-table tr:hover {
+  background-color: rgba(51, 65, 85, 0.45) !important;
+}
+
+body.dark-mode .table-responsive,
+body.dark-mode .table-container,
+body.dark-mode .table-wrapper {
+  background: #162032 !important;
+  border-color: #334155 !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25) !important;
+}
+
+/* 2. CHUYỂN ĐỔI TẤT CẢ CÁC KHỐI NỀN TRẮNG / XÁM NHẠT SANG DARK */
+body.dark-mode [style*="background: #ffffff"],
+body.dark-mode [style*="background:#ffffff"],
+body.dark-mode [style*="background: #FFFFFF"],
+body.dark-mode [style*="background:#FFFFFF"],
+body.dark-mode [style*="background: white"],
+body.dark-mode [style*="background:white"],
+body.dark-mode [style*="background: #fafafa"],
+body.dark-mode [style*="background:#fafafa"],
+body.dark-mode [style*="background: #f8fafc"],
+body.dark-mode [style*="background:#f8fafc"],
+body.dark-mode [style*="background: #f1f5f9"],
+body.dark-mode [style*="background:#f1f5f9"] {
+  background-color: #162032 !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+/* Các khối thông tin xanh biển / trời nhạt (Sky / Blue Tints) */
+body.dark-mode [style*="background: #f0f9ff"],
+body.dark-mode [style*="background:#f0f9ff"],
+body.dark-mode [style*="background: #e0f2fe"],
+body.dark-mode [style*="background:#e0f2fe"],
+body.dark-mode [style*="background: #eff6ff"],
+body.dark-mode [style*="background:#eff6ff"] {
+  background-color: rgba(12, 74, 110, 0.35) !important;
+  border-color: rgba(56, 189, 248, 0.4) !important;
+  color: #cbd5e1 !important;
+}
+
+/* Các khối thông tin xanh lá nhạt (Emerald / Green Tints) */
+body.dark-mode [style*="background: #ecfdf5"],
+body.dark-mode [style*="background:#ecfdf5"],
+body.dark-mode [style*="background: #f0fdf4"],
+body.dark-mode [style*="background:#f0fdf4"],
+body.dark-mode [style*="background: #dcfce7"],
+body.dark-mode [style*="background:#dcfce7"] {
+  background-color: rgba(6, 78, 59, 0.35) !important;
+  border-color: rgba(52, 211, 153, 0.4) !important;
+  color: #cbd5e1 !important;
+}
+
+/* Các khối thông tin vàng / cam nhạt (Amber Tints) */
+body.dark-mode [style*="background: #fef3c7"],
+body.dark-mode [style*="background:#fef3c7"],
+body.dark-mode [style*="background: #ffedd5"],
+body.dark-mode [style*="background:#ffedd5"] {
+  background-color: rgba(120, 53, 15, 0.35) !important;
+  border-color: rgba(251, 191, 36, 0.4) !important;
+  color: #cbd5e1 !important;
+}
+
+/* Các khối thông tin đỏ / hồng nhạt (Rose / Red Tints) */
+body.dark-mode [style*="background: #ffe4e6"],
+body.dark-mode [style*="background:#ffe4e6"],
+body.dark-mode [style*="background: #fee2e2"],
+body.dark-mode [style*="background:#fee2e2"],
+body.dark-mode [style*="background: #fef2f2"],
+body.dark-mode [style*="background:#fef2f2"] {
+  background-color: rgba(159, 18, 57, 0.35) !important;
+  border-color: rgba(251, 113, 133, 0.4) !important;
+  color: #cbd5e1 !important;
+}
+
+/* Các khối thông tin tím nhạt (Purple Tints) */
+body.dark-mode [style*="background: #fae8ff"],
+body.dark-mode [style*="background:#fae8ff"],
+body.dark-mode [style*="background: #ede9fe"],
+body.dark-mode [style*="background:#ede9fe"],
+body.dark-mode [style*="background: #f3e8ff"],
+body.dark-mode [style*="background:#f3e8ff"] {
+  background-color: rgba(88, 28, 135, 0.35) !important;
+  border-color: rgba(167, 139, 250, 0.4) !important;
+  color: #cbd5e1 !important;
+}
+
+/* ── BACKUP RESTORE DRIVER GUIDE CARDS ── */
+body.dark-mode .driver-guide-backup {
+  background: linear-gradient(135deg, rgba(12, 74, 110, 0.4) 0%, rgba(3, 105, 161, 0.25) 100%) !important;
+  border-color: rgba(56, 189, 248, 0.4) !important;
+}
+body.dark-mode .driver-guide-backup .guide-title {
+  color: #38bdf8 !important;
+}
+body.dark-mode .driver-guide-backup .guide-list,
+body.dark-mode .driver-guide-backup .guide-list li {
+  color: #cbd5e1 !important;
+}
+body.dark-mode .driver-guide-backup .guide-list strong {
+  color: #f8fafc !important;
+}
+body.dark-mode .driver-guide-backup .guide-list code {
+  background-color: #0f172a !important;
+  color: #38bdf8 !important;
+  border: 1px solid #334155 !important;
+}
+
+body.dark-mode .driver-guide-restore {
+  background: linear-gradient(135deg, rgba(6, 78, 59, 0.4) 0%, rgba(6, 95, 70, 0.25) 100%) !important;
+  border-color: rgba(52, 211, 153, 0.4) !important;
+}
+body.dark-mode .driver-guide-restore .guide-title {
+  color: #4ade80 !important;
+}
+body.dark-mode .driver-guide-restore .guide-list,
+body.dark-mode .driver-guide-restore .guide-list li {
+  color: #cbd5e1 !important;
+}
+body.dark-mode .driver-guide-restore .guide-list strong {
+  color: #f8fafc !important;
+}
+body.dark-mode .driver-guide-restore .guide-list em {
+  color: #86efac !important;
+}
+
+/* 3. TỐI ƯU CÁC MÃ MÀU CHỮ TỐI TRỞ NÊN SÁNG RÕ */
+body.dark-mode [style*="color: #1e293b"],
+body.dark-mode [style*="color:#1e293b"],
+body.dark-mode [style*="color: #1E293B"],
+body.dark-mode [style*="color:#1E293B"],
+body.dark-mode [style*="color: #0f172a"],
+body.dark-mode [style*="color:#0f172a"],
+body.dark-mode [style*="color: #0F172A"],
+body.dark-mode [style*="color:#0F172A"],
+body.dark-mode [style*="color: #334155"],
+body.dark-mode [style*="color:#334155"] {
+  color: #f8fafc !important;
+}
+
+body.dark-mode [style*="color: #64748b"],
+body.dark-mode [style*="color:#64748b"],
+body.dark-mode [style*="color: #475569"],
+body.dark-mode [style*="color:#475569"] {
+  color: #94a3b8 !important;
+}
+
+body.dark-mode [style*="color: #0284c7"],
+body.dark-mode [style*="color:#0284c7"] {
+  color: #38bdf8 !important;
+}
+
+body.dark-mode [style*="color: #10b981"],
+body.dark-mode [style*="color:#10b981"],
+body.dark-mode [style*="color: #166534"],
+body.dark-mode [style*="color:#166534"] {
+  color: #4ade80 !important;
+}
+
+body.dark-mode [style*="color: #d97706"],
+body.dark-mode [style*="color:#d97706"] {
+  color: #fbbf24 !important;
+}
+
+body.dark-mode [style*="color: #b91c1c"],
+body.dark-mode [style*="color:#b91c1c"] {
+  color: #f87171 !important;
+}
+
+/* 4. CÁC ĐƯỜNG VIỀN TRONG DARK MODE */
+body.dark-mode [style*="border: 1px solid #e2e8f0"],
+body.dark-mode [style*="border: 1px solid #cbd5e1"],
+body.dark-mode [style*="border: 1px solid #f1f5f9"],
+body.dark-mode [style*="border-bottom: 1px solid #f1f5f9"],
+body.dark-mode [style*="border-bottom: 2px solid #f1f5f9"],
+body.dark-mode [style*="border-bottom: 1px solid #e2e8f0"],
+body.dark-mode [style*="border-bottom: 2px solid #e2e8f0"],
+body.dark-mode [style*="border-top: 1px solid #f1f5f9"],
+body.dark-mode [style*="border-top: 1px dashed #e2e8f0"] {
+  border-color: #334155 !important;
+}
+
+/* 5. INPUT, SELECT, TEXTAREA TOÀN HỆ THỐNG */
+body.dark-mode input[type="text"],
+body.dark-mode input[type="password"],
+body.dark-mode input[type="number"],
+body.dark-mode input[type="search"],
+body.dark-mode input[type="date"],
+body.dark-mode input[type="time"],
+body.dark-mode select,
+body.dark-mode textarea,
+body.dark-mode .form-control {
+  background-color: #0f172a !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+body.dark-mode input::placeholder,
+body.dark-mode textarea::placeholder {
+  color: #64748b !important;
+}
+
+body.dark-mode label {
+  color: #cbd5e1 !important;
+}
+
+/* 6. MODALS VÀ POPUP TOÀN BỘ PHẦN MỀM */
+body.dark-mode .modal-content,
+body.dark-mode .custom-modal-overlay .ui-card,
+body.dark-mode .custom-modal-overlay > div {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+/* 7. KHO PHẦN MỀM (APP MANAGER) & CARD MẠNG (IP MANAGER) */
+body.dark-mode .software-name {
+  color: #f8fafc !important;
+}
+
+body.dark-mode .software-card {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+}
+
+body.dark-mode .software-card:hover {
+  border-color: #0284c7 !important;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.2) !important;
+}
+
+body.dark-mode .btn-pin-single {
+  background: #243247;
+  color: #cbd5e1;
+  border-color: #334155;
+}
+
+body.dark-mode .btn-pin-single:hover:not(:disabled) {
+  background: #334155;
+  color: #ffffff;
+  border-color: #475569;
+}
+
+/* Office Selection Cards */
+body.dark-mode .office-version-card {
+  background: #162032 !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+body.dark-mode .office-version-card:hover {
+  background: #1e293b !important;
+  border-color: #0284c7 !important;
+}
+
+body.dark-mode .office-version-card.active {
+  background: rgba(2, 132, 199, 0.15) !important;
+  border-color: #0284c7 !important;
+}
+
+/* IP Manager Quick Info Bar */
+.ip-quick-info-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: 12px;
+  background: #f8fafc;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+body.dark-mode .ip-quick-info-bar {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+/* 8. MAIN LEFT SIDEBAR & NAVIGATION (DARK MODE) */
+body.dark-mode .sidebar {
+  background-color: #1e293b;
+  border-color: #334155;
+}
+
+body.dark-mode .brand-header {
+  background-color: rgba(15, 23, 42, 0.6);
+  border-color: #334155;
+}
+
+body.dark-mode .brand-name {
+  color: #f8fafc;
+}
+
+body.dark-mode .brand-sub {
+  color: #94a3b8;
+}
+
+body.dark-mode .sidebar-sec-label {
+  color: #38bdf8;
+  font-weight: 700;
+}
+
+body.dark-mode .nav-item {
+  color: #cbd5e1;
+  background: transparent;
+}
+
+body.dark-mode .nav-item:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #38bdf8;
+}
+
+body.dark-mode .nav-item.active {
+  background-color: #0284c7;
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4);
+}
+
+body.dark-mode .sidebar-footer {
+  background-color: #0f172a !important;
+  border-top-color: #334155 !important;
+}
+
+body.dark-mode .sidebar-footer div {
+  color: #cbd5e1 !important;
+}
+
+body.dark-mode .sidebar-footer strong {
+  color: #f8fafc !important;
+}
+
+/* 9. KHO PHẦN MỀM - DANH MỤC & ĐIỀU KHIỂN CÀI ĐẶT (DARK MODE) */
+body.dark-mode .store-sidebar {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+}
+
+body.dark-mode .store-sec-title {
+  color: #38bdf8 !important;
+}
+
+body.dark-mode .cat-item {
+  color: #cbd5e1 !important;
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+body.dark-mode .cat-item:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color: #38bdf8 !important;
+}
+
+body.dark-mode .cat-item.active {
+  background: rgba(2, 132, 199, 0.25) !important;
+  color: #38bdf8 !important;
+  border-color: rgba(56, 189, 248, 0.4) !important;
+  font-weight: 600 !important;
+}
+
+body.dark-mode .cat-count-badge {
+  background-color: #0f172a !important;
+  color: #94a3b8 !important;
+  border: 1px solid #334155 !important;
+}
+
+body.dark-mode .cat-item.active .cat-count-badge {
+  background-color: #0284c7 !important;
+  color: #ffffff !important;
+  border-color: #0284c7 !important;
+}
+
+body.dark-mode .auto-pin-notice {
+  background: linear-gradient(135deg, rgba(12, 74, 110, 0.8) 0%, rgba(3, 105, 161, 0.5) 100%) !important;
+  border: 1px solid rgba(56, 189, 248, 0.4) !important;
+  color: #7dd3fc !important;
+}
+
+body.dark-mode .auto-pin-notice strong {
+  color: #e0f2fe !important;
+}
+
+body.dark-mode .bg-install-notice {
+  background: linear-gradient(135deg, rgba(6, 78, 59, 0.8) 0%, rgba(6, 95, 70, 0.5) 100%) !important;
+  border: 1px solid rgba(52, 211, 153, 0.4) !important;
+  color: #6ee7b7 !important;
+}
+
+body.dark-mode .bg-install-notice strong {
+  color: #a7f3d0 !important;
+}
+
+body.dark-mode .install-control-box {
+  background-color: #162032 !important;
+  border-color: #334155 !important;
+}
+
+body.dark-mode .install-status-box {
+  background-color: #0f172a !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+body.dark-mode .install-status-box .status-row span {
+  color: #94a3b8 !important;
+}
+
+body.dark-mode #install-progress-text {
+  color: #94a3b8 !important;
+}
+
+body.dark-mode .progress-bar-bg {
+  background-color: #334155 !important;
+}
+
+body.dark-mode .btn-outline-danger {
+  background-color: rgba(225, 29, 72, 0.15) !important;
+  border-color: rgba(251, 113, 133, 0.35) !important;
+  color: #fb7185 !important;
+}
+
+body.dark-mode .btn-outline-danger:hover {
+  background-color: rgba(225, 29, 72, 0.3) !important;
+  color: #fda4af !important;
+}
+
+body.dark-mode .btn-slate-light {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+
+body.dark-mode .btn-slate-light:hover {
+  background-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+/* 10. SOFTWARE CARDS & CATALOG ACTIONS (DARK MODE) */
+body.dark-mode .software-card {
+  background-color: #162032 !important;
+  border-color: #334155 !important;
+}
+
+body.dark-mode .software-card:hover {
+  background-color: #1a273e !important;
+  border-color: #0284c7 !important;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.25) !important;
+}
+
+body.dark-mode .software-name {
+  color: #f8fafc !important;
+}
+
+body.dark-mode .software-id {
+  color: #94a3b8 !important;
+}
+
+body.dark-mode .selected-counter-badge {
+  background-color: rgba(2, 132, 199, 0.25) !important;
+  color: #38bdf8 !important;
+  border-color: rgba(56, 189, 248, 0.4) !important;
+}
+
+body.dark-mode .btn-install-single.installed {
+  background: linear-gradient(135deg, rgba(6, 78, 59, 0.75) 0%, rgba(6, 95, 70, 0.55) 100%) !important;
+  color: #6ee7b7 !important;
+  border-color: rgba(52, 211, 153, 0.45) !important;
+}
+
+body.dark-mode .btn-install-single.installed:hover {
+  background: linear-gradient(135deg, rgba(6, 78, 59, 0.9) 0%, rgba(6, 95, 70, 0.75) 100%) !important;
+  color: #a7f3d0 !important;
+}
+
+body.dark-mode .btn-pin-single {
+  background: #1e293b !important;
+  color: #cbd5e1 !important;
+  border-color: #334155 !important;
+}
+
+body.dark-mode .btn-pin-single:hover:not(:disabled) {
+  background: #334155 !important;
+  color: #ffffff !important;
+  border-color: #475569 !important;
+}
+
+body.dark-mode .btn-pin-single.pinned {
+  background: linear-gradient(135deg, rgba(76, 29, 149, 0.75) 0%, rgba(91, 33, 182, 0.55) 100%) !important;
+  color: #c4b5fd !important;
+  border-color: rgba(167, 139, 250, 0.45) !important;
+}
+
+body.dark-mode .btn-pin-single.pinned:hover {
+  background: linear-gradient(135deg, rgba(76, 29, 149, 0.9) 0%, rgba(91, 33, 182, 0.75) 100%) !important;
+  color: #ddd6fe !important;
+}
+
+/* 11. TOP HEADER STATUS PILLS (DARK MODE) */
+body.dark-mode .cyan-pill {
+  background-color: rgba(2, 132, 199, 0.2) !important;
+  color: #38bdf8 !important;
+  border-color: rgba(56, 189, 248, 0.4) !important;
+}
+
+body.dark-mode .clock-pill {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+/* 12. SUBTABS & CHECKLISTS ACROSS ALL FUNCTIONS (DARK MODE) */
+body.dark-mode .subtab-bar {
+  background-color: #162032;
+  border-color: #334155;
+}
+
+body.dark-mode .subtab-btn {
+  color: #cbd5e1;
+}
+
+body.dark-mode .subtab-btn:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #38bdf8;
+}
+
+body.dark-mode .subtab-btn.active {
+  background-color: #0284c7;
+  color: #ffffff;
+}
+
+body.dark-mode .error-col {
+  background-color: #0f172a;
+  border-color: #334155;
+}
+
+body.dark-mode .col-title {
+  color: #38bdf8;
+}
+
+body.dark-mode .check-item {
+  color: #cbd5e1;
+}
+
+body.dark-mode [style*="background: #ecfdf5"],
+body.dark-mode [style*="background:#ecfdf5"] {
+  background-color: rgba(16, 185, 129, 0.2) !important;
+  border-color: rgba(52, 211, 153, 0.4) !important;
+  color: #4ade80 !important;
+}
+
+body.dark-mode [style*="background: #e0f2fe"],
+body.dark-mode [style*="background:#e0f2fe"] {
+  background-color: rgba(2, 132, 199, 0.2) !important;
+  border-color: rgba(56, 189, 248, 0.4) !important;
+  color: #38bdf8 !important;
+}
+
+body.dark-mode [style*="background: #fef3c7"],
+body.dark-mode [style*="background:#fef3c7"] {
+  background-color: rgba(245, 158, 11, 0.2) !important;
+  border-color: rgba(251, 191, 36, 0.4) !important;
+  color: #fbbf24 !important;
+}
+
+body.dark-mode [style*="background: #fee2e2"],
+body.dark-mode [style*="background:#fee2e2"] {
+  background-color: rgba(239, 68, 68, 0.2) !important;
+  border-color: rgba(248, 113, 113, 0.4) !important;
+  color: #f87171 !important;
+}
+
+/* ── LOCAL GROUP & USER REAL-TIME MONITORING ──────────────────────────── */
+.group-user-grid {
+  display: grid;
+  grid-template-columns: 370px 1fr;
+  gap: 12px;
+  align-items: stretch;
+}
+
+@media (max-width: 1100px) {
+  .group-user-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.realtime-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.pulse-green-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  animation: greenPulse 2s infinite;
+}
+
+@keyframes greenPulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+
+.btn-filter-pill {
+  border: 1px solid var(--border-color, #E2E8F0);
+  background: #F8FAFC;
+  color: #475569;
+  border-radius: 9999px;
+  padding: 2px 10px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-filter-pill:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+}
+
+.btn-filter-pill.active {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0284c7;
+  box-shadow: 0 1px 3px rgba(2, 132, 199, 0.3);
+}
+
+.user-chips-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #F1F5F9;
+  color: #1E293B;
+  border: 1px solid #CBD5E1;
+  line-height: 1.2;
+  transition: all 0.2s ease;
+}
+
+.user-chip:hover {
+  border-color: #94A3B8;
+  transform: translateY(-1px);
+}
+
+.user-chip .chip-icon {
+  font-size: 0.82rem;
+}
+
+.user-chip.domain-user {
+  background: rgba(14, 165, 233, 0.1);
+  color: #0284c7;
+  border-color: rgba(14, 165, 233, 0.3);
+}
+
+.user-chip.nested-group {
+  background: rgba(245, 158, 11, 0.1);
+  color: #d97706;
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.user-chip.highlight-created {
+  background: rgba(16, 185, 129, 0.18) !important;
+  color: #047857 !important;
+  border-color: #10b981 !important;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+  font-weight: 600;
+  animation: chipPulse 1.5s ease 3;
+}
+
+@keyframes chipPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.group-badge-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+}
+
+.group-member-count-tag {
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: #E2E8F0;
+  color: #475569;
+  font-weight: 600;
+  margin-left: 6px;
+}
+
+/* Dark mode overrides for Group & User components */
+body.dark-mode .realtime-live-badge {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+body.dark-mode .btn-filter-pill {
+  background: #1e293b;
+  color: #94a3b8;
+  border-color: #334155;
+}
+
+body.dark-mode .btn-filter-pill:hover {
+  background: #334155;
+  color: #f1f5f9;
+}
+
+body.dark-mode .btn-filter-pill.active {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #38bdf8;
+}
+
+body.dark-mode .user-chip {
+  background: #1e293b;
+  color: #e2e8f0;
+  border-color: #334155;
+}
+
+body.dark-mode .user-chip.domain-user {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+body.dark-mode .user-chip.nested-group {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.4);
+}
+
+body.dark-mode .user-chip.highlight-created {
+  background: rgba(16, 185, 129, 0.25) !important;
+  color: #6ee7b7 !important;
+  border-color: #34d399 !important;
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.4);
+}
+
+body.dark-mode .group-member-count-tag {
+  background: #334155;
+  color: #cbd5e1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ONE CLICK FIX TẤT CẢ LỖI MÁY IN MẠNG LAN - MODAL STYLES
+   ═══════════════════════════════════════════════════════════════════════ */
+.printer-fix-modal-box {
+  width: 720px;
+  max-width: 95vw;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 22px 26px;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  animation: modalFadeIn 0.25s ease-out;
+}
+
+.printer-fix-badge {
+  width: 46px;
+  height: 46px;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 15px;
+  color: #ffffff;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.35);
+}
+
+.pf-step-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  border-radius: 9px;
+  border: 1.5px solid #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 13.5px;
+  font-weight: 600;
+  transition: all 0.25s ease;
+}
+
+.pf-step-card .pf-step-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.8px solid #cbd5e1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  flex-shrink: 0;
+  color: transparent;
+  transition: all 0.25s ease;
+}
+
+/* Pending */
+.pf-step-card.pf-step-pending {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+  color: #94a3b8;
+}
+
+/* Running */
+.pf-step-card.pf-step-running {
+  border-color: #38bdf8;
+  background: #f0f9ff;
+  color: #0369a1;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);
+}
+
+.pf-step-card.pf-step-running .pf-step-icon {
+  border-color: #0284c7;
+  border-right-color: transparent;
+  animation: spin 0.75s linear infinite;
+}
+
+/* Done - exact match to screenshot */
+.pf-step-card.pf-step-done {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.pf-step-card.pf-step-done .pf-step-icon {
+  border-color: #16a34a;
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.pf-step-card.pf-step-done .pf-step-icon .pf-icon-mark {
+  color: #16a34a;
+}
+
+/* Dark mode overrides */
+body.dark-mode .printer-fix-modal-box {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+}
+
+body.dark-mode #pf-terminal-log {
+  background: #020617 !important;
+  border-color: #0284c7 !important;
+  color: #e2e8f0 !important;
+}
+
+body.dark-mode .pf-step-card.pf-step-pending {
+  border-color: #1e293b;
+  background: #0b1120;
+  color: #64748b;
+}
+
+body.dark-mode .pf-step-card.pf-step-running {
+  border-color: #0284c7;
+  background: #0c4a6e;
+  color: #38bdf8;
+}
+
+body.dark-mode .pf-step-card.pf-step-done {
+  border-color: #166534;
+  background: #052e16;
+  color: #4ade80;
+}
+
+body.dark-mode .pf-step-card.pf-step-done .pf-step-icon {
+  border-color: #22c55e;
+  color: #22c55e;
+  background: #14532d;
+}
+
+body.dark-mode .pf-step-card.pf-step-done .pf-step-icon .pf-icon-mark {
+  color: #22c55e;
+}
+
+
+
+
 

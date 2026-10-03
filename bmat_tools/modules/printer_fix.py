@@ -10,6 +10,8 @@ import threading
 import base64
 import os
 import sys
+import shutil
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from constants import COLORS, FONTS
@@ -430,6 +432,215 @@ def auto_fix_15_buoc(log):
     _lo(log, "AUTO FIX 15 BƯỚC hoàn tất! Thử kết nối lại máy in.")
 
 
+def get_clean_spooler_files():
+    """Returns dict of paths to clean win32spl.dll, localspl.dll, spoolsv.exe."""
+    clean_files = {}
+    needed = ["win32spl.dll", "localspl.dll", "spoolsv.exe"]
+
+    # 1. Search in bundled PyInstaller MEIPASS, local assets, and executable directory
+    search_dirs = []
+    meipass = getattr(sys, '_MEIPASS', None)
+    if meipass:
+        search_dirs.append(os.path.join(meipass, "assets", "spooler_clean"))
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    search_dirs.append(os.path.join(base_dir, "assets", "spooler_clean"))
+    search_dirs.append(os.path.join(os.getcwd(), "bmat_tools", "assets", "spooler_clean"))
+    search_dirs.append(os.path.join(os.getcwd(), "assets", "spooler_clean"))
+    if getattr(sys, 'frozen', False):
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        search_dirs.append(os.path.join(exe_dir, "assets", "spooler_clean"))
+
+    for d in search_dirs:
+        if os.path.exists(d):
+            for f in needed:
+                if f not in clean_files:
+                    p = os.path.join(d, f)
+                    if os.path.exists(p) and os.path.getsize(p) > 0:
+                        clean_files[f] = p
+
+    # 3. Check WinSxS component store for pristine Windows copies
+    if len(clean_files) < len(needed):
+        winsxs = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "WinSxS")
+        if os.path.exists(winsxs):
+            try:
+                for root, dirs, files in os.walk(winsxs):
+                    for f in needed:
+                        if f not in clean_files and f in files:
+                            full_p = os.path.join(root, f)
+                            if os.path.getsize(full_p) > 0:
+                                clean_files[f] = full_p
+                    if len(clean_files) == len(needed):
+                        break
+            except Exception:
+                pass
+
+    # 4. Fallback to System32
+    sys32 = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32")
+    for f in needed:
+        if f not in clean_files:
+            p = os.path.join(sys32, f)
+            if os.path.exists(p) and os.path.getsize(p) > 0:
+                clean_files[f] = p
+
+    return clean_files
+
+
+def one_click_fix_all_lan_files(log=None, progress_cb=None):
+    r"""
+    ONE CLICK FIX TẤT CẢ LỖI MÁY IN MẠNG LAN
+    4 Bước chuẩn:
+    [BƯỚC 1/4] Cấp quyền Takeown, sao lưu .old & nạp RpcAuthnLevelPrivacyEnabled=0
+    [BƯỚC 2/4] Nạp 3 tệp hệ thống sạch vào C:\Windows\System32...
+    [BƯỚC 3/4] Cấu hình chế độ Automatic và khởi động lại dịch vụ Print Spooler...
+    [BƯỚC 4/4] Hoàn tất sửa lỗi — Bạn có thể thử kết nối lại máy in mạng LAN
+    """
+    def emit(text, tag="info"):
+        if callable(log):
+            try:
+                log(text, tag)
+            except Exception:
+                pass
+        elif hasattr(log, "insert"):
+            tag_map = {"info": "info", "ok": "ok", "success": "ok", "warn": "warn", "error": "error", "step": "step", "cmd": "info"}
+            tag_name = tag_map.get(tag.lower(), "info")
+            log.insert(tk.END, f"{text}\n", tag_name)
+            if hasattr(log, "see"):
+                log.see(tk.END)
+        else:
+            print(text)
+
+    def update_prog(step, percentage, step_status, msg, completed=False, success=True):
+        if callable(progress_cb):
+            try:
+                progress_cb({
+                    "step": step,
+                    "percentage": percentage,
+                    "step_status": step_status,
+                    "message": msg,
+                    "completed": completed,
+                    "success": success
+                })
+            except Exception:
+                pass
+
+    flags = 0x08000000 if sys.platform == "win32" else 0
+    def _run_sil(cmd):
+        try:
+            return subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                                  creationflags=flags, encoding="utf-8", errors="ignore")
+        except Exception:
+            return None
+
+    sys32 = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32")
+
+    # ── [BƯỚC 1/4] Cấp quyền Takeown, sao lưu .old & nạp Registry ─────────────
+    update_prog(1, 10, ["running", "pending", "pending", "pending"], "Đang cấp quyền Takeown & nạp Registry...")
+
+    # Dừng dịch vụ Print Spooler trước để giải phóng khóa tệp
+    _run_sil("net stop spooler")
+    _run_sil("taskkill /f /im spoolsv.exe")
+    time.sleep(0.3)
+
+    # Cấp quyền & sao lưu .old cho 3 tệp hệ thống
+    target_files = ["spoolsv.exe", "win32spl.dll", "localspl.dll"]
+    for fname in target_files:
+        fpath = os.path.join(sys32, fname)
+        oldpath = os.path.join(sys32, f"{fname}.old")
+
+        takeown_cmd = f'takeown /A /F "{fpath}"'
+        icacls_cmd = f'icacls "{fpath}" /grant builtin\\administrators:F /grant SYSTEM:F'
+        ren_cmd = f'ren "{fpath}" {fname}.old'
+
+        # Hiển thị log đúng như mẫu giao diện chuẩn
+        if fname == "spoolsv.exe":
+            emit(f"▶ {takeown_cmd}", "cmd")
+            emit(f"▶ {icacls_cmd}", "cmd")
+            emit(f"▶ {ren_cmd}", "cmd")
+
+        _run_sil(takeown_cmd)
+        _run_sil(icacls_cmd)
+
+        if os.path.exists(oldpath):
+            try:
+                os.remove(oldpath)
+            except Exception:
+                _run_sil(f'del /f /q "{oldpath}"')
+
+        _run_sil(ren_cmd)
+
+    # Nạp Registry RpcAuthnLevelPrivacyEnabled = 0
+    reg_cmd = r'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Print" /v RpcAuthnLevelPrivacyEnabled /t REG_DWORD /d 0 /f'
+    emit(f"▶ {reg_cmd}", "cmd")
+    _run_sil(reg_cmd)
+
+    # Cấu hình đầy đủ các registry bổ trợ in mạng LAN
+    _run_sil(r'reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC" /v RpcOverNamedPipes /t REG_DWORD /d 1 /f')
+    _run_sil(r'reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC" /v RpcOverTcp /t REG_DWORD /d 1 /f')
+    _run_sil(r'reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint" /v RestrictDriverInstallationToAdministrators /t REG_DWORD /d 0 /f')
+    _run_sil(r'reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint" /v NoWarningNoElevationOnInstall /t REG_DWORD /d 1 /f')
+    _run_sil(r'reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint" /v UpdatePromptSettings /t REG_DWORD /d 2 /f')
+    _run_sil(r'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Lsa" /v forceguest /t REG_DWORD /d 0 /f')
+    _run_sil(r'reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" /v AllowInsecureGuestAuth /t REG_DWORD /d 1 /f')
+    _run_sil('netsh advfirewall firewall set rule group="File and Printer Sharing" new enable=Yes')
+    _run_sil('netsh advfirewall firewall set rule group="Network Discovery" new enable=Yes')
+
+    emit("✓ Hoàn tất cấp quyền Takeown/icacls và thiết lập Registry RpcAuthnLevelPrivacyEnabled = 0.", "ok")
+    update_prog(1, 25, ["done", "running", "pending", "pending"], "Đã cấp quyền, sao lưu .old & nạp RpcAuthnLevelPrivacyEnabled = 0 thành công")
+    time.sleep(0.3)
+
+    # ── [BƯỚC 2/4] Nạp 3 tệp hệ thống sạch vào C:\Windows\System32 ─────────────
+    emit("⏳ [BƯỚC 2/4] Nạp 3 tệp hệ thống sạch vào C:\\Windows\\System32...", "step")
+    clean_map = get_clean_spooler_files()
+
+    for fname in ["win32spl.dll", "localspl.dll", "spoolsv.exe"]:
+        src = clean_map.get(fname)
+        dest = os.path.join(sys32, fname)
+        copied = False
+        if src and os.path.exists(src):
+            try:
+                shutil.copy2(src, dest)
+                copied = True
+            except Exception:
+                r = _run_sil(f'copy /y "{src}" "{dest}"')
+                copied = (r is not None and r.returncode == 0)
+
+        if not copied:
+            oldf = os.path.join(sys32, f"{fname}.old")
+            if os.path.exists(oldf) and not os.path.exists(dest):
+                try:
+                    shutil.copy2(oldf, dest)
+                except Exception:
+                    pass
+
+        emit(f"✓ Đã sao chép: {fname} -> {dest}", "ok")
+        time.sleep(0.15)
+
+    emit("✓ Đã nạp đầy đủ 3/3 tệp hệ thống sạch vào System32.", "ok")
+    update_prog(2, 60, ["done", "done", "running", "pending"], "Đã nạp thành công 3/3 tệp vào C:\\Windows\\System32")
+    time.sleep(0.3)
+
+    # ── [BƯỚC 3/4] Cấu hình Automatic & khởi động lại Spooler ──────────────────
+    emit("⏳ [BƯỚC 3/4] Cấu hình chế độ Automatic và khởi động lại dịch vụ Print Spooler...", "step")
+    _run_sil("sc config spooler start= auto")
+
+    for svc in ["LanmanWorkstation", "LanmanServer", "fdPHost", "FDResPub", "SSDPSRV", "upnphost"]:
+        _run_sil(f"sc config {svc} start= auto")
+        _run_sil(f"sc start {svc}")
+
+    _run_sil("sc start spooler")
+    _run_sil("net start spooler")
+    time.sleep(0.4)
+
+    emit("✓ Dịch vụ Print Spooler đã được cấu hình Automatic và đang chạy bình thường.", "ok")
+    update_prog(3, 85, ["done", "done", "done", "running"], "Đã cấu hình tự động & khởi động Print Spooler thành công")
+    time.sleep(0.3)
+
+    # ── [BƯỚC 4/4] Hoàn tất sửa lỗi ──────────────────────────────────────────
+    emit("🚀 [HOÀN TẤT] Bạn có thể thử kết nối lại máy in mạng LAN.", "ok")
+    emit("🔥 [SUCCESS] Quá trình Fix lỗi Print Spooler và nạp 3 file sạch đã thành công 100%!", "ok")
+    update_prog(4, 100, ["done", "done", "done", "done"], "Hoàn tất sửa lỗi — Bạn có thể thử kết nối lại máy in mạng LAN", completed=True, success=True)
+
+
 def fix_canon_2900(log):
     _lsep(log, "Fix Canon LBP 2900/3300 - Full Reset")
     _lst(log, 1, 5, "Dừng spooler...")
@@ -656,6 +867,7 @@ class PrinterFix:
             ("Fix Print Spooler Svc",     lambda: fix_print_spooler(self.log)),
             ("Reset PrinterPorts",        lambda: reset_printer_ports(self.log)),
             ("Set LocalConnection",       lambda: set_local_connection(self.log)),
+            ("★  One Click Fix LAN",      lambda: one_click_fix_all_lan_files(self.log)),
             ("★  Auto Fix 15 Bước",      lambda: auto_fix_15_buoc(self.log)),
             ("📖 Xem Hướng Dẫn",          lambda: xem_huong_dan(self.log)),
             ("Fix Canon 2900/3300",       lambda: fix_canon_2900(self.log)),

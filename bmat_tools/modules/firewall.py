@@ -199,6 +199,7 @@ class FirewallManager:
 
 def get_firewall_status():
     """Returns real-time status of Domain, Private, and Public Firewall profiles, inbound policy, and common rule groups."""
+    import winreg
     from concurrent.futures import ThreadPoolExecutor
 
     profiles = {"domain": False, "private": False, "public": False}
@@ -208,6 +209,12 @@ def get_firewall_status():
     fps_count = 0
     rdp_active = False
     rdp_count = 0
+    ping_active = False
+    ping_count = 0
+    kaspersky_active = False
+    has_block_fps = False
+    has_block_ping = False
+    has_block_rdp = False
 
     def _fetch_profiles():
         nonlocal profiles, policies, inbound_allowed
@@ -229,32 +236,127 @@ def get_firewall_status():
             pass
 
     def _fetch_rules():
-        nonlocal fps_active, fps_count, rdp_active, rdp_count
+        nonlocal fps_active, fps_count, rdp_active, rdp_count, ping_active, ping_count, kaspersky_active
+        nonlocal has_block_fps, has_block_ping, has_block_rdp
         try:
             res = subprocess.run(["netsh", "advfirewall", "firewall", "show", "rule", "name=all"], capture_output=True, text=True, timeout=8)
             for block in res.stdout.split("Rule Name:"):
                 if not block.strip():
                     continue
                 is_enabled = False
+                is_inbound = False
                 is_fps = False
                 is_rdp = False
+                is_ping = False
+                is_block = False
+                name = block.splitlines()[0].strip()
+                name_u = name.upper()
+
+                if "ITTOOL_BLOCK_PING" in name_u:
+                    has_block_ping = True
+                if "ITTOOL_BLOCK_FILE_SHARING" in name_u:
+                    has_block_fps = True
+                if "ITTOOL_BLOCK_RDP" in name_u:
+                    has_block_rdp = True
+
                 for line in block.splitlines():
                     line_s = line.strip()
                     if line_s.startswith("Enabled:"):
                         is_enabled = (line_s.split(":", 1)[1].strip().lower() == "yes")
+                    elif line_s.startswith("Direction:"):
+                        is_inbound = ("in" in line_s.split(":", 1)[1].strip().lower())
+                    elif line_s.startswith("Action:"):
+                        is_block = ("block" in line_s.split(":", 1)[1].strip().lower())
                     elif line_s.startswith("Grouping:"):
                         grp = line_s.split(":", 1)[1].strip()
                         if "File and Printer Sharing" in grp or "@FirewallAPI.dll,-28502" in grp or "@FirewallAPI.dll,-28672" in grp:
                             is_fps = True
                         elif "Remote Desktop" in grp or "@FirewallAPI.dll,-28752" in grp or "@FirewallAPI.dll,-28753" in grp:
                             is_rdp = True
-                if is_enabled:
-                    if is_fps:
+
+                if "ECHO REQUEST" in name_u or "ICMP4-ERQ" in name_u or "ICMP6-ERQ" in name_u:
+                    is_ping = True
+
+                if is_enabled and not is_block:
+                    if is_fps and is_inbound:
                         fps_count += 1
-                    if is_rdp:
+                    if is_rdp and is_inbound:
                         rdp_count += 1
-            fps_active = fps_count > 0
-            rdp_active = rdp_count > 0
+                    if is_ping and is_inbound:
+                        ping_count += 1
+
+            # Check LanmanServer (Server) service status for SMB File Sharing
+            fps_service_running = False
+            fps_service_disabled = False
+            try:
+                sc_res = subprocess.run(["sc", "query", "LanmanServer"], capture_output=True, text=True, timeout=3)
+                fps_service_running = ("RUNNING" in sc_res.stdout.upper())
+                sc_qc = subprocess.run(["sc", "qc", "LanmanServer"], capture_output=True, text=True, timeout=3)
+                fps_service_disabled = ("DISABLED" in sc_qc.stdout.upper())
+            except Exception:
+                pass
+
+            # True state of File Sharing:
+            # File sharing is live and accessible if LanmanServer is running and not disabled.
+            # When LanmanServer is stopped and disabled, no remote PC can connect to IP or share names.
+            fps_active = fps_service_running and (not fps_service_disabled)
+
+            # Check IPSec ICMP policy
+            has_ipsec_block_ping = False
+            try:
+                ipsec_res = subprocess.run(["netsh", "ipsec", "static", "show", "policy", "name=ITTOOL_BLOCK_ICMP_POLICY"], capture_output=True, text=True, timeout=3)
+                has_ipsec_block_ping = ("YES" in ipsec_res.stdout.upper() and "ITTOOL_BLOCK_ICMP_POLICY" in ipsec_res.stdout)
+            except Exception:
+                pass
+
+            # Check Kaspersky Service
+            kaspersky_active = False
+            try:
+                k_res = subprocess.run(["sc", "query", "AVP21.25"], capture_output=True, text=True, timeout=3)
+                if "RUNNING" in k_res.stdout.upper():
+                    kaspersky_active = True
+            except Exception:
+                pass
+
+            # Check Registry for RDP fDenyTSConnections (checking both GPO Policy key and Local key)
+            rdp_reg_allowed = True
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services") as key:
+                    fDeny, _ = winreg.QueryValueEx(key, "fDenyTSConnections")
+                    if fDeny == 1:
+                        rdp_reg_allowed = False
+            except Exception:
+                try:
+                    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Terminal Server") as key:
+                        fDeny, _ = winreg.QueryValueEx(key, "fDenyTSConnections")
+                        if fDeny == 1:
+                            rdp_reg_allowed = False
+                except Exception:
+                    pass
+
+            # Check TermService service status
+            rdp_service_running = False
+            try:
+                sc_rdp = subprocess.run(["sc", "query", "TermService"], capture_output=True, text=True, timeout=2)
+                rdp_service_running = ("RUNNING" in sc_rdp.stdout.upper())
+            except Exception:
+                pass
+
+            # Check if port 3389 is actively listening
+            rdp_port_open = False
+            try:
+                import socket
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(0.2)
+                    rdp_port_open = (s.connect_ex(('127.0.0.1', 3389)) == 0)
+            except Exception:
+                pass
+
+            if has_ipsec_block_ping or has_block_ping:
+                ping_active = False
+            else:
+                ping_active = (ping_count > 0)
+            rdp_active = rdp_service_running and rdp_port_open and rdp_reg_allowed
         except Exception:
             pass
 
@@ -280,50 +382,169 @@ def get_firewall_status():
         "file_sharing": fps_active,
         "file_sharing_count": fps_count,
         "rdp": rdp_active,
-        "rdp_count": rdp_count
+        "rdp_count": rdp_count,
+        "ping": ping_active,
+        "ping_count": ping_count,
+        "kaspersky_active": kaspersky_active,
+        "domain_gpo_locked": True
     }
 
 
+def _run_bg(cmd):
+    """Runs secondary synchronization commands in a background daemon thread."""
+    def _worker():
+        try:
+            subprocess.run(cmd, capture_output=True, timeout=10)
+        except Exception:
+            pass
+    threading.Thread(target=_worker, daemon=True).start()
+
+
 def set_firewall_action(action):
-    """Executes firewall enable, disable, reset, or rule commands."""
+    """Executes firewall enable, disable, reset, or rule commands with dual PowerShell/netsh sync and explicit block overrides."""
     try:
         if action == "enable_all":
             subprocess.run("netsh advfirewall set allprofiles state on", shell=True)
             return {"success": True, "message": "✅ Đã BẬT Windows Firewall cho tất cả Profile!"}
+
         elif action == "disable_all":
             subprocess.run("netsh advfirewall set allprofiles state off", shell=True)
             return {"success": True, "message": "🚫 Đã TẮT Windows Firewall cho tất cả Profile!"}
+
         elif action == "reset_defaults":
             subprocess.run("netsh advfirewall reset", shell=True)
             return {"success": True, "message": "⚙️ Đã khôi phục cài đặt Firewall mặc định!"}
+
         elif action == "allow_inbound":
             subprocess.run("netsh advfirewall set allprofiles firewallpolicy allowinbound,allowoutbound", shell=True)
             return {"success": True, "message": "🔓 Đã Cho Phép tất cả kết nối Inbound!"}
+
         elif action == "block_inbound":
             subprocess.run("netsh advfirewall set allprofiles firewallpolicy blockinbound,allowoutbound", shell=True)
             return {"success": True, "message": "🔒 Đã Chặn Inbound (Khôi phục mặc định an toàn)!"}
+
         elif action == "enable_sharing":
-            # Tối ưu an toàn tuyệt đối: Chỉ mở Inbound cho Private và Domain, loại bỏ hoàn toàn Public và Outbound
-            ps_enable = (
-                "$privRules = @('FPS-SMB-In-TCP','FPS-SpoolSvc-In-TCP','FPS-SpoolWorker-In-TCP','FPS-RPCSS-In-TCP','FPS-NB_Name-In-UDP','FPS-NB_Datagram-In-UDP','FPS-NB_Session-In-TCP','FPS-ICMP4-ERQ-In'); "
-                "foreach ($r in $privRules) { Set-NetFirewallRule -Name $r -Profile Private -Enabled True }; "
-                "$domRules = @('FPS-SMB-In-TCP-NoScope','FPS-SpoolSvc-In-TCP-NoScope','FPS-SpoolWorker-In-TCP-NoScope','FPS-RPCSS-In-TCP-NoScope','FPS-NB_Name-In-UDP-NoScope','FPS-NB_Datagram-In-UDP-NoScope','FPS-NB_Session-In-TCP-NoScope','FPS-ICMP4-ERQ-In-NoScope'); "
-                "foreach ($r in $domRules) { Set-NetFirewallRule -Name $r -Profile Domain -Enabled True }"
-            )
-            subprocess.run(["powershell", "-NoProfile", "-Command", ps_enable], capture_output=True, text=True)
-            return {"success": True, "message": "📂 Đã kích hoạt 16 quy tắc File & Printer Sharing an toàn (Chỉ chiều IN trên Private & Domain, đóng hoàn toàn Public & Outbound)!"}
+            # 1. Delete explicit block rule
+            subprocess.run(["netsh", "advfirewall", "firewall", "delete", "rule", "name=ITTOOL_BLOCK_FILE_SHARING"], capture_output=True)
+            # 2. Enable standard rules via netsh
+            subprocess.run(['netsh', 'advfirewall', 'firewall', 'set', 'rule', 'group=File and Printer Sharing', 'new', 'enable=Yes'], capture_output=True)
+            subprocess.run(['netsh', 'advfirewall', 'firewall', 'set', 'rule', 'group=File and Printer Sharing (Restrictive)', 'new', 'enable=Yes'], capture_output=True)
+            # 3. Restore registry AutoShare parameters
+            subprocess.run(r'reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v AutoShareWks /t REG_DWORD /d 1 /f', shell=True, capture_output=True)
+            subprocess.run(r'reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v AutoShareServer /t REG_DWORD /d 1 /f', shell=True, capture_output=True)
+            # 4. Set LanmanServer to automatic and start it
+            subprocess.run("sc config LanmanServer start= auto", shell=True, capture_output=True)
+            subprocess.run("net start LanmanServer", shell=True, capture_output=True)
+            # 5. Background PowerShell sync
+            _run_bg(['powershell', '-NoProfile', '-Command', 'Set-Service -Name LanmanServer -StartupType Automatic -ErrorAction SilentlyContinue; Start-Service -Name LanmanServer -ErrorAction SilentlyContinue; Set-NetFirewallRule -DisplayGroup "File and Printer Sharing*" -Enabled True -ErrorAction SilentlyContinue'])
+            return {"success": True, "message": "📂 Đã MỞ Chia Sẻ File & Máy In (LAN)! Dịch vụ Server và cổng 445/139 đã sẵn sàng nhận kết nối."}
+
         elif action == "disable_sharing":
-            subprocess.run('netsh advfirewall firewall set rule group="File and Printer Sharing" new enable=No', shell=True)
-            subprocess.run('netsh advfirewall firewall set rule group="File and Printer Sharing (Restrictive)" new enable=No', shell=True)
-            return {"success": True, "message": "🔒 Đã tắt/chặn toàn bộ Firewall cho File Sharing & Máy In!"}
+            # 1. Terminate all active sessions immediately (kicks out connected workstations instantly)
+            subprocess.run("net session /delete /y", shell=True, capture_output=True)
+            # 2. Force stop LanmanServer service
+            subprocess.run("net stop LanmanServer /y", shell=True, capture_output=True)
+            subprocess.run(['powershell', '-NoProfile', '-Command', 'Stop-Service -Name LanmanServer -Force -ErrorAction SilentlyContinue'], capture_output=True)
+            # 3. Set LanmanServer to DISABLED (crucial: prevents Windows from demand-restarting it)
+            subprocess.run("sc config LanmanServer start= disabled", shell=True, capture_output=True)
+            subprocess.run(['powershell', '-NoProfile', '-Command', 'Set-Service -Name LanmanServer -StartupType Disabled -ErrorAction SilentlyContinue'], capture_output=True)
+            # 4. Disable registry AutoShare parameters
+            subprocess.run(r'reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v AutoShareWks /t REG_DWORD /d 0 /f', shell=True, capture_output=True)
+            subprocess.run(r'reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v AutoShareServer /t REG_DWORD /d 0 /f', shell=True, capture_output=True)
+            # 5. Disable standard rules via netsh
+            subprocess.run(['netsh', 'advfirewall', 'firewall', 'set', 'rule', 'group=File and Printer Sharing', 'new', 'enable=No'], capture_output=True)
+            subprocess.run(['netsh', 'advfirewall', 'firewall', 'set', 'rule', 'group=File and Printer Sharing (Restrictive)', 'new', 'enable=No'], capture_output=True)
+            # 6. Add explicit high-priority BLOCK rule for all profiles (overrides allow rules even on Domain networks)
+            subprocess.run(["netsh", "advfirewall", "firewall", "delete", "rule", "name=ITTOOL_BLOCK_FILE_SHARING"], capture_output=True)
+            subprocess.run(["netsh", "advfirewall", "firewall", "add", "rule", "name=ITTOOL_BLOCK_FILE_SHARING", "protocol=TCP", "localport=445,139", "dir=in", "action=block", "profile=domain,private,public"], capture_output=True)
+            subprocess.run(["netsh", "advfirewall", "firewall", "add", "rule", "name=ITTOOL_BLOCK_FILE_SHARING", "protocol=UDP", "localport=137,138", "dir=in", "action=block", "profile=domain,private,public"], capture_output=True)
+            # 7. Background PowerShell sync
+            _run_bg(['powershell', '-NoProfile', '-Command', 'Set-NetFirewallRule -DisplayGroup "File and Printer Sharing*" -Enabled False -ErrorAction SilentlyContinue'])
+            return {"success": True, "message": "🔒 Đã ĐÓNG & CHẶN hoàn toàn Chia Sẻ File! Dịch vụ Server đã dừng và toàn bộ kết nối từ máy khác đã bị ngắt."}
+
+        elif action == "enable_ping":
+            # 1. Unassign and delete IPSec ICMP policy
+            subprocess.run('netsh ipsec static set policy name="ITTOOL_BLOCK_ICMP_POLICY" assign=n', shell=True, capture_output=True)
+            subprocess.run('netsh ipsec static delete policy name="ITTOOL_BLOCK_ICMP_POLICY"', shell=True, capture_output=True)
+            subprocess.run('netsh ipsec static delete filterlist name="ITTOOL_ICMP_LIST"', shell=True, capture_output=True)
+            subprocess.run('netsh ipsec static delete filteraction name="ITTOOL_BLOCK_ACTION"', shell=True, capture_output=True)
+            # 2. Delete explicit block rule
+            subprocess.run(["netsh", "advfirewall", "firewall", "delete", "rule", "name=ITTOOL_BLOCK_PING"], capture_output=True)
+            # 3. Enable all ICMPv4 and ICMPv6 echo request rules
+            for rule_name in [
+                'File and Printer Sharing (Echo Request - ICMPv4-In)',
+                'File and Printer Sharing (Echo Request - ICMPv6-In)',
+                'Core Networking Diagnostics - ICMP Echo Request (ICMPv4-In)',
+                'Core Networking Diagnostics - ICMP Echo Request (ICMPv6-In)',
+                'File and Printer Sharing (Restrictive) (Echo Request - ICMPv4-In)',
+                'File and Printer Sharing (Restrictive) (Echo Request - ICMPv6-In)',
+                'Virtual Machine Monitoring (Echo Request - ICMPv4-In)',
+                'Virtual Machine Monitoring (Echo Request - ICMPv6-In)'
+            ]:
+                subprocess.run(['netsh', 'advfirewall', 'firewall', 'set', 'rule', f'name={rule_name}', 'new', 'enable=Yes'], capture_output=True)
+            # 4. Background PowerShell sync
+            _run_bg(['powershell', '-NoProfile', '-Command', "Get-NetFirewallRule | Where-Object { $_.Direction -eq 'Inbound' -and ($_.DisplayName -like '*Echo Request*' -or $_.Name -like '*EchoRequest*' -or $_.Name -like '*ERQ*') } | Set-NetFirewallRule -Enabled True -ErrorAction SilentlyContinue"])
+            return {"success": True, "message": "🏓 Đã BẬT phản hồi Ping (ICMP Echo Request Inbound)! Các máy khác có thể ping tới máy này."}
+
+        elif action == "disable_ping":
+            # 1. Disable all ICMPv4 and ICMPv6 echo request rules
+            for rule_name in [
+                'File and Printer Sharing (Echo Request - ICMPv4-In)',
+                'File and Printer Sharing (Echo Request - ICMPv6-In)',
+                'Core Networking Diagnostics - ICMP Echo Request (ICMPv4-In)',
+                'Core Networking Diagnostics - ICMP Echo Request (ICMPv6-In)',
+                'File and Printer Sharing (Restrictive) (Echo Request - ICMPv4-In)',
+                'File and Printer Sharing (Restrictive) (Echo Request - ICMPv6-In)',
+                'Virtual Machine Monitoring (Echo Request - ICMPv4-In)',
+                'Virtual Machine Monitoring (Echo Request - ICMPv6-In)'
+            ]:
+                subprocess.run(['netsh', 'advfirewall', 'firewall', 'set', 'rule', f'name={rule_name}', 'new', 'enable=No'], capture_output=True)
+            # 2. Add explicit high-priority BLOCK rule for both IPv4 and IPv6 ICMP echo
+            subprocess.run(["netsh", "advfirewall", "firewall", "delete", "rule", "name=ITTOOL_BLOCK_PING"], capture_output=True)
+            subprocess.run(["netsh", "advfirewall", "firewall", "add", "rule", "name=ITTOOL_BLOCK_PING", "protocol=icmpv4:8,any", "dir=in", "action=block"], capture_output=True)
+            subprocess.run(["netsh", "advfirewall", "firewall", "add", "rule", "name=ITTOOL_BLOCK_PING", "protocol=icmpv6:128,any", "dir=in", "action=block"], capture_output=True)
+            # 3. Create and assign Layer-3 IPSec ICMP Block Policy (enforced directly at IP driver layer)
+            subprocess.run('netsh ipsec static set policy name="ITTOOL_BLOCK_ICMP_POLICY" assign=n & netsh ipsec static delete policy name="ITTOOL_BLOCK_ICMP_POLICY"', shell=True, capture_output=True)
+            subprocess.run('netsh ipsec static add policy name="ITTOOL_BLOCK_ICMP_POLICY"', shell=True, capture_output=True)
+            subprocess.run('netsh ipsec static add filteraction name="ITTOOL_BLOCK_ACTION" action=block', shell=True, capture_output=True)
+            subprocess.run('netsh ipsec static add filterlist name="ITTOOL_ICMP_LIST"', shell=True, capture_output=True)
+            subprocess.run('netsh ipsec static add filter filterlist="ITTOOL_ICMP_LIST" srcaddr=any dstaddr=me protocol=ICMP', shell=True, capture_output=True)
+            subprocess.run('netsh ipsec static add rule name="ITTOOL_BLOCK_ICMP_RULE" policy="ITTOOL_BLOCK_ICMP_POLICY" filterlist="ITTOOL_ICMP_LIST" filteraction="ITTOOL_BLOCK_ACTION"', shell=True, capture_output=True)
+            subprocess.run('netsh ipsec static set policy name="ITTOOL_BLOCK_ICMP_POLICY" assign=y', shell=True, capture_output=True)
+            # 4. Background PowerShell sync
+            _run_bg(['powershell', '-NoProfile', '-Command', "Get-NetFirewallRule | Where-Object { $_.Direction -eq 'Inbound' -and ($_.DisplayName -like '*Echo Request*' -or $_.Name -like '*EchoRequest*' -or $_.Name -like '*ERQ*') } | Set-NetFirewallRule -Enabled False -ErrorAction SilentlyContinue"])
+            return {"success": True, "message": "🔒 Đã ĐÓNG & CHẶN phản hồi Ping (IPSec + Firewall Layer-3 Block)! Các máy khác sẽ không thể ping tới máy này."}
+
         elif action == "enable_rdp":
-            subprocess.run('netsh advfirewall firewall set rule group="Remote Desktop" new enable=Yes', shell=True)
-            subprocess.run('netsh advfirewall firewall set rule group="Remote Desktop (WebSocket)" new enable=Yes', shell=True)
-            return {"success": True, "message": "🖥️ Đã mở Firewall cho Remote Desktop (RDP)!"}
+            # 1. Registry: enable Remote Desktop in both Local and GPO Policy trees
+            subprocess.run('reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f', shell=True, capture_output=True)
+            subprocess.run('reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp" /v UserAuthentication /t REG_DWORD /d 0 /f', shell=True, capture_output=True)
+            subprocess.run('reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\Terminal Services" /v fDenyTSConnections /t REG_DWORD /d 0 /f', shell=True, capture_output=True)
+            # 2. Start and ensure TermService is running cleanly with port 3389 listening
+            subprocess.run(['powershell', '-NoProfile', '-Command', 'Set-Service TermService -StartupType Automatic; Restart-Service TermService -Force'], capture_output=True)
+            # 3. Delete block rule
+            subprocess.run(["netsh", "advfirewall", "firewall", "delete", "rule", "name=ITTOOL_BLOCK_RDP"], capture_output=True)
+            # 4. Enable firewall rules
+            subprocess.run(['netsh', 'advfirewall', 'firewall', 'set', 'rule', 'group=Remote Desktop', 'new', 'enable=Yes'], capture_output=True)
+            subprocess.run(['netsh', 'advfirewall', 'firewall', 'set', 'rule', 'group=Remote Desktop (WebSocket)', 'new', 'enable=Yes'], capture_output=True)
+            _run_bg(['powershell', '-NoProfile', '-Command', 'Set-NetFirewallRule -DisplayGroup "Remote Desktop*" -Enabled True -ErrorAction SilentlyContinue'])
+            return {"success": True, "message": "🖥️ Đã MỞ Remote Desktop (RDP)! Dịch vụ TermService đã bật và cổng 3389 sẵn sàng nhận kết nối."}
+
         elif action == "disable_rdp":
-            subprocess.run('netsh advfirewall firewall set rule group="Remote Desktop" new enable=No', shell=True)
-            subprocess.run('netsh advfirewall firewall set rule group="Remote Desktop (WebSocket)" new enable=No', shell=True)
-            return {"success": True, "message": "🔒 Đã tắt/chặn Firewall cho Remote Desktop (RDP)!"}
+            # 1. Stop TermService immediately (closes port 3389 and disconnects active remote sessions)
+            subprocess.run(['powershell', '-NoProfile', '-Command', 'Stop-Service TermService -Force; Set-Service TermService -StartupType Disabled'], capture_output=True)
+            # 2. Registry: disable Remote Desktop in both Local and GPO Policy trees
+            subprocess.run('reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 1 /f', shell=True, capture_output=True)
+            subprocess.run('reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\Terminal Services" /v fDenyTSConnections /t REG_DWORD /d 1 /f', shell=True, capture_output=True)
+            # 3. Disable firewall rules
+            subprocess.run(['netsh', 'advfirewall', 'firewall', 'set', 'rule', 'group=Remote Desktop', 'new', 'enable=No'], capture_output=True)
+            subprocess.run(['netsh', 'advfirewall', 'firewall', 'set', 'rule', 'group=Remote Desktop (WebSocket)', 'new', 'enable=No'], capture_output=True)
+            # 4. Add explicit high-priority BLOCK rule
+            subprocess.run(["netsh", "advfirewall", "firewall", "delete", "rule", "name=ITTOOL_BLOCK_RDP"], capture_output=True)
+            subprocess.run(["netsh", "advfirewall", "firewall", "add", "rule", "name=ITTOOL_BLOCK_RDP", "protocol=TCP", "localport=3389", "dir=in", "action=block"], capture_output=True)
+            _run_bg(['powershell', '-NoProfile', '-Command', 'Set-NetFirewallRule -DisplayGroup "Remote Desktop*" -Enabled False -ErrorAction SilentlyContinue'])
+            return {"success": True, "message": "🔒 Đã ĐÓNG & DỪNG Remote Desktop (RDP)! Cổng 3389 đã đóng và ngắt kết nối điều khiển từ xa ngay lập tức."}
+
         else:
             return {"success": False, "message": "Hành động không hợp lệ."}
     except Exception as e:
@@ -359,12 +580,15 @@ def get_firewall_rules_detail(filter_type="fps"):
                         r[key] = line_s.split(":", 1)[1].strip()
 
             grp = r.get("grouping", "")
+            name_u = r["name"].upper()
             is_fps = "File and Printer Sharing" in grp or "@FirewallAPI.dll,-28502" in grp or "@FirewallAPI.dll,-28672" in grp
             is_rdp = "Remote Desktop" in grp or "@FirewallAPI.dll,-28752" in grp or "@FirewallAPI.dll,-28753" in grp
+            is_ping = "ECHO REQUEST" in name_u or "ICMP4-ERQ" in name_u or ("ICMP" in name_u and r.get("direction", "").lower() == "in")
 
             # Category detection for UX
-            name_u = r["name"].upper()
-            if "SMB" in name_u:
+            if "ECHO REQUEST" in name_u or "ICMP" in name_u:
+                r["category"] = "ICMP Ping (Kiểm tra kết nối)"
+            elif "SMB" in name_u:
                 r["category"] = "SMB (Chia sẻ File & In)"
             elif "SPOOLER" in name_u or "RPC" in name_u:
                 r["category"] = "Print Spooler RPC (Máy in)"
@@ -372,8 +596,6 @@ def get_firewall_rules_detail(filter_type="fps"):
                 r["category"] = "NetBIOS (Định danh LAN)"
             elif "LLMNR" in name_u:
                 r["category"] = "LLMNR (Dò tìm Hostname)"
-            elif "ECHO REQUEST" in name_u or "ICMP" in name_u:
-                r["category"] = "ICMP Ping (Kiểm tra kết nối)"
             elif "REMOTE DESKTOP" in name_u or "RDP" in name_u:
                 r["category"] = "Remote Desktop (RDP)"
             else:
@@ -383,8 +605,59 @@ def get_firewall_rules_detail(filter_type="fps"):
                 rules.append(r)
             elif filter_type == "rdp" and is_rdp:
                 rules.append(r)
+            elif filter_type == "ping" and is_ping:
+                rules.append(r)
             elif filter_type == "all":
                 rules.append(r)
+
+        if filter_type == "ping":
+            try:
+                ipsec_res = subprocess.run(["netsh", "ipsec", "static", "show", "policy", "name=ITTOOL_BLOCK_ICMP_POLICY"], capture_output=True, text=True, timeout=2)
+                if "YES" in ipsec_res.stdout.upper() and "ITTOOL_BLOCK_ICMP_POLICY" in ipsec_res.stdout:
+                    rules.insert(0, {
+                        "name": "⚡ Windows IPSec Layer-3 Filter (ITTOOL_BLOCK_ICMP_POLICY)",
+                        "enabled": "Yes",
+                        "direction": "In",
+                        "profiles": "Domain / Private / Public",
+                        "grouping": "IPSec Security Policy",
+                        "protocol": "ICMP",
+                        "action": "Block",
+                        "category": "IPSec Layer-3 Policy (Chặn triệt để tại Driver IP)"
+                    })
+            except Exception:
+                pass
+        elif filter_type == "fps":
+            try:
+                sc_res = subprocess.run(["sc", "query", "LanmanServer"], capture_output=True, text=True, timeout=2)
+                is_running = "RUNNING" in sc_res.stdout.upper()
+                rules.insert(0, {
+                    "name": "📂 Dịch Vụ Máy Chủ Tệp Windows (LanmanServer Service)",
+                    "enabled": "Yes" if is_running else "No",
+                    "direction": "In",
+                    "profiles": "Hệ thống mạng LAN",
+                    "grouping": "Windows File Server",
+                    "protocol": "TCP (Port 445, 139)",
+                    "action": "Allow" if is_running else "Block",
+                    "category": "Dịch vụ chia sẻ file LAN (Đang Bật)" if is_running else "Dịch vụ đã DỪNG (Ngắt mọi kết nối)"
+                })
+            except Exception:
+                pass
+        elif filter_type == "rdp":
+            try:
+                sc_res = subprocess.run(["sc", "query", "TermService"], capture_output=True, text=True, timeout=2)
+                is_running = "RUNNING" in sc_res.stdout.upper()
+                rules.insert(0, {
+                    "name": "🖥️ Dịch Vụ Remote Desktop (TermService)",
+                    "enabled": "Yes" if is_running else "No",
+                    "direction": "In",
+                    "profiles": "Hệ thống mạng LAN & Internet",
+                    "grouping": "Windows Remote Desktop",
+                    "protocol": "TCP / UDP (Port 3389)",
+                    "action": "Allow" if is_running else "Block",
+                    "category": "Dịch vụ RDP (Đang Lắng Nghe Cổng 3389)" if is_running else "Dịch vụ đã DỪNG (Đóng cổng 3389)"
+                })
+            except Exception:
+                pass
 
         return {"success": True, "rules": rules, "total": len(rules)}
     except Exception as e:

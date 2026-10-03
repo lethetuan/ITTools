@@ -15,6 +15,7 @@ clr_loader_datas = collect_data_files('clr_loader')
 datas = [
     (os.path.join(base_dir, 'web'), 'web'),
     (os.path.join(base_dir, 'assets'), 'assets'),
+    (os.path.join(base_dir, 'config'), 'config'),
     (os.path.join(base_dir, 'modules', 'install_office_silent.ps1'), 'modules'),
     (os.path.join(base_dir, 'modules', 'winget_runner.ps1'), 'modules'),
 ] + webview_datas + pythonnet_datas + clr_loader_datas
@@ -28,6 +29,13 @@ hiddenimports = [
     'webview.platforms.winforms',
     'webview.platforms.edgechromium',
     'webview.platforms.win32',
+    'bottle',
+    'psutil',
+    'PIL',
+    'PIL.Image',
+    'PIL.ImageTk',
+    'PIL.ImageDraw',
+    'openpyxl',
     'tkinter',
     'tkinter.ttk',
     'tkinter.messagebox',
@@ -59,6 +67,8 @@ hiddenimports = [
     'modules.uninstall_manager',
     'modules.win_update',
     'modules.wincheck',
+    'modules.zoom_screen',
+    'modules.zoom_screen_gui',
     'ui.main_window',
 ] + [m for m in collect_submodules('webview') if 'android' not in m and 'cocoa' not in m and 'gtk' not in m] + collect_submodules('pythonnet') + collect_submodules('clr_loader')
 

@@ -77,8 +77,8 @@ Object.assign(AppController.prototype, {
 
     const batPresentEl = document.getElementById("hw-bat-present");
     if (batPresentEl) {
-      batPresentEl.innerText = isLaptop ? "? Co pin (Laptop)" : "? Khong co pin (Desktop PC)";
-      batPresentEl.style.color = isLaptop ? "#166534" : "#94a3b8";
+      batPresentEl.innerText = isLaptop ? "🔋 Có pin (Laptop)" : "🖥️ Không có pin (Desktop PC)";
+      batPresentEl.style.color = isLaptop ? "#22c55e" : "var(--text-muted)";
     }
     set("hw-bat-name", info.battery?.name || "N/A");
     const batLevel = info.battery?.level_pct ?? 0;
@@ -119,9 +119,9 @@ Object.assign(AppController.prototype, {
     const ramContainer = document.getElementById("hw-ram-sticks-list");
     if (ramContainer) {
       if (info.ram_modules && info.ram_modules.length > 0) {
-        ramContainer.innerHTML = info.ram_modules.map(m => `<div style="display:flex;gap:6px;align-items:baseline;margin-bottom:3px;"><span style="color:#64748b;font-size:12px;font-weight:500;">${m.locator}:</span><strong style="color:#0f172a;font-size:12px;">${m.details || "N/A"}</strong></div>`).join("");
+        ramContainer.innerHTML = info.ram_modules.map(m => `<div style="display:flex;gap:6px;align-items:baseline;margin-bottom:3px;"><span class="hw-label">${m.locator}:</span><strong class="hw-val">${m.details || "N/A"}</strong></div>`).join("");
       } else {
-        ramContainer.innerHTML = `<div class="text-muted text-sm">N/A</div>`;
+        ramContainer.innerHTML = `<div class="hw-val-muted text-sm">N/A</div>`;
       }
     }
 
@@ -129,20 +129,20 @@ Object.assign(AppController.prototype, {
     const gpuContainer = document.getElementById("hw-gpus-list");
     if (gpuContainer) {
       if (info.gpus && info.gpus.length > 0) {
-        gpuContainer.innerHTML = info.gpus.map(g => `<div style="display:flex;gap:6px;align-items:baseline;margin-bottom:3px;"><span style="color:#64748b;font-size:12px;font-weight:500;">${g.label}:</span><strong style="color:#0f172a;font-size:12px;">${g.details || "N/A"}</strong></div>`).join("");
+        gpuContainer.innerHTML = info.gpus.map(g => `<div style="display:flex;gap:6px;align-items:baseline;margin-bottom:3px;"><span class="hw-label">${g.label}:</span><strong class="hw-val">${g.details || "N/A"}</strong></div>`).join("");
       } else {
-        gpuContainer.innerHTML = `<div class="text-muted text-sm">N/A</div>`;
+        gpuContainer.innerHTML = `<div class="hw-val-muted text-sm">N/A</div>`;
       }
     }
 
     // Disk + Partition list
     const diskContainer = document.getElementById("hw-disks-list");
     if (diskContainer) {
-      let diskHtml = (info.disks || []).map(d => `<div style="display:flex;gap:6px;align-items:baseline;margin-bottom:3px;"><span style="color:#64748b;font-size:12px;font-weight:500;">${d.label}:</span><strong style="color:#0f172a;font-size:12px;">${d.details || "N/A"}</strong></div>`).join("");
+      let diskHtml = (info.disks || []).map(d => `<div style="display:flex;gap:6px;align-items:baseline;margin-bottom:3px;"><span class="hw-label">${d.label}:</span><strong class="hw-val">${d.details || "N/A"}</strong></div>`).join("");
       if (info.partitions && info.partitions.length > 0) {
-        diskHtml += `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">` + info.partitions.map(p => `<span style="background:#e0f2fe;color:#0369a1;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">? ${p.label}</span>`).join("") + `</div>`;
+        diskHtml += `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">` + info.partitions.map(p => `<span class="badge badge-location-subtle">💽 ${p.label}</span>`).join("") + `</div>`;
       }
-      diskContainer.innerHTML = diskHtml || `<div class="text-muted text-sm">N/A</div>`;
+      diskContainer.innerHTML = diskHtml || `<div class="hw-val-muted text-sm">N/A</div>`;
     }
 
     // OS
@@ -161,7 +161,7 @@ Object.assign(AppController.prototype, {
 
     const pollStats = async () => {
       const tab = document.getElementById("tab-computer-info");
-      if (!tab || tab.style.display === "none" || tab.classList.contains("hidden")) return;
+      if (!tab || !tab.classList.contains("active")) return;
       if (!window.pywebview || !window.pywebview.api) return;
 
       try {

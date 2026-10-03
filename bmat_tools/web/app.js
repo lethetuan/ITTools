@@ -45,27 +45,159 @@ class AppController {
 
   onApiReady() {
     this.addLog("info", "Đã kết nối thành công với Python Backend API.");
-    if (typeof this.scanPrinters === 'function') this.scanPrinters();
-    if (typeof this.scanCredentials === 'function') this.scanCredentials();
-    if (typeof this.loadComputerInfo === 'function') this.loadComputerInfo();
-    if (typeof this.loadSystemDrives === 'function') this.loadSystemDrives();
-    if (typeof this.loadClassicMenuStatus === 'function') this.loadClassicMenuStatus();
-    if (typeof this.loadHosts === 'function') this.loadHosts();
-    if (typeof this.loadInstalledDrivers === 'function') this.loadInstalledDrivers();
-    if (typeof this.loadServices === 'function') this.loadServices();
-    if (typeof this.loadBrowserBackupInfo === 'function') this.loadBrowserBackupInfo();
-    if (typeof this.loadDateTimeInfo === 'function') this.loadDateTimeInfo();
-    if (typeof this.loadSoftwareCatalog === 'function') this.loadSoftwareCatalog();
-    if (typeof this.loadFirewallStatus === 'function') this.loadFirewallStatus();
-    if (typeof this.loadSystemTweaksStatus === 'function') this.loadSystemTweaksStatus();
-    if (typeof this.runWinCheckAudit === 'function') this.runWinCheckAudit();
-    if (typeof this.checkExistingOfficeInstall === 'function') this.checkExistingOfficeInstall();
-    if (typeof this.loadScheduledShutdownTasks === 'function') this.loadScheduledShutdownTasks();
+    // Auto-detect currently active tab and refresh its live data immediately
+    const activeNav = document.querySelector(".nav-item.active");
+    const activeTabId = activeNav ? activeNav.getAttribute("data-tab") : "tab-printer-fix";
+    this.currentActiveTabId = activeTabId;
+    this.refreshTabData(activeTabId);
     this.loadAutostartStatus();
   }
 
+  /**
+   * Refreshes real-time system data automatically for whichever tab the user enters.
+   * No manual "Refresh" button needed.
+   */
+  async refreshTabData(tabId) {
+    if (!tabId) return;
+
+    try {
+      switch (tabId) {
+        case "tab-computer-info":
+          if (typeof this.loadComputerInfo === 'function') await this.loadComputerInfo();
+          if (typeof this.startRealtimeMonitoring === 'function') this.startRealtimeMonitoring();
+          break;
+
+        case "tab-test-computer":
+          if (window.testComputer && typeof window.testComputer.onTabActivated === 'function') {
+            window.testComputer.onTabActivated();
+          }
+          break;
+
+        case "tab-auto-win":
+        case "tab-win-update":
+          if (typeof this.loadWinUpdateStatus === 'function') await this.loadWinUpdateStatus();
+          break;
+
+        case "tab-startup":
+          if (typeof this.loadStartupEntries === 'function') await this.loadStartupEntries();
+          if (typeof this.loadAutostartStatus === 'function') await this.loadAutostartStatus();
+          break;
+
+        case "tab-uninstall":
+          if (typeof this.loadInstalledApps === 'function') await this.loadInstalledApps();
+          break;
+
+        case "tab-bitlocker":
+          if (typeof this.loadBitlockerDrives === 'function') await this.loadBitlockerDrives();
+          break;
+
+        case "tab-printer-fix":
+          // Refresh printer list, credentials, and local groups & users automatically
+          if (typeof this.scanPrinters === 'function') await this.scanPrinters();
+          if (typeof this.scanCredentials === 'function') await this.scanCredentials();
+          if (typeof this.loadLocalGroupsAndUsers === 'function') await this.loadLocalGroupsAndUsers();
+          break;
+
+        case "tab-ip-manager":
+          if (typeof this.loadNetworkAdapters === 'function') await this.loadNetworkAdapters();
+          if (typeof this.loadIpv6Status === 'function') await this.loadIpv6Status();
+          break;
+
+        case "tab-ip-scanner":
+          if (typeof this.loadIpScannerDefaults === 'function') await this.loadIpScannerDefaults();
+          break;
+
+        case "tab-firewall":
+          if (typeof this.loadFirewallStatus === 'function') await this.loadFirewallStatus();
+          break;
+
+        case "tab-server-tools":
+          if (typeof this.loadServerTools === 'function') await this.loadServerTools();
+          if (typeof this.loadNicTeams === 'function') await this.loadNicTeams();
+          break;
+
+        case "tab-zoom-screen":
+          if (window.zoomScreen && typeof window.zoomScreen.loadStatus === 'function') {
+            await window.zoomScreen.loadStatus();
+          } else if (typeof this.loadZoomScreenStatus === 'function') {
+            await this.loadZoomScreenStatus();
+          }
+          break;
+
+        case "tab-auto-shutdown":
+          if (typeof this.loadScheduledShutdownTasks === 'function') await this.loadScheduledShutdownTasks();
+          break;
+
+        case "tab-hosts":
+          if (typeof this.loadHosts === 'function') await this.loadHosts();
+          break;
+
+        case "tab-sendto":
+          if (typeof this.loadSendToEntries === 'function') await this.loadSendToEntries();
+          break;
+
+        case "tab-classic-menu":
+          if (typeof this.loadClassicMenuStatus === 'function') await this.loadClassicMenuStatus();
+          break;
+
+        case "tab-desktop-icon":
+          if (typeof this.loadDesktopIconSettings === 'function') await this.loadDesktopIconSettings();
+          break;
+
+        case "tab-datetime":
+          if (typeof this.loadDateTimeInfo === 'function') await this.loadDateTimeInfo();
+          break;
+
+        case "tab-boot-manager":
+          if (typeof this.loadBootEntries === 'function') await this.loadBootEntries();
+          break;
+
+        case "tab-services":
+          if (typeof this.loadServices === 'function') await this.loadServices();
+          break;
+
+        case "tab-folder-size":
+          if (typeof this.loadSystemDrives === 'function') await this.loadSystemDrives();
+          break;
+
+        case "tab-currency":
+          if (typeof this.loadCurrencyRates === 'function') await this.loadCurrencyRates();
+          break;
+
+        case "tab-other-tweaks":
+          if (typeof this.loadSystemTweaksStatus === 'function') await this.loadSystemTweaksStatus();
+          break;
+
+        case "tab-office":
+          if (typeof this.checkExistingOfficeInstall === 'function') await this.checkExistingOfficeInstall();
+          break;
+
+        case "tab-activation":
+          if (typeof this.runWinCheckAudit === 'function') await this.runWinCheckAudit();
+          break;
+
+        case "tab-backup-driver":
+          if (typeof this.loadInstalledDrivers === 'function') await this.loadInstalledDrivers();
+          break;
+
+        case "tab-browser-backup":
+          if (typeof this.loadBrowserBackupInfo === 'function') await this.loadBrowserBackupInfo();
+          break;
+
+        case "tab-free-software":
+          if (typeof this.loadSoftwareCatalog === 'function') await this.loadSoftwareCatalog();
+          break;
+
+        default:
+          break;
+      }
+    } catch (tabErr) {
+      console.error(`Lỗi cập nhật thời gian thực cho tab ${tabId}:`, tabErr);
+    }
+  }
+
   bindEvents() {
-    // Navigation Tabs
+    // Navigation Tabs - Automatic Real-Time Data Refresh on Tab Access
     const navItems = document.querySelectorAll(".nav-item");
     navItems.forEach(item => {
       item.addEventListener("click", (e) => {
@@ -78,6 +210,20 @@ class AppController {
           const tabId = item.getAttribute("data-tab");
           const icon = item.querySelector(".nav-icon")?.innerText || "";
           const label = item.querySelector(".nav-label")?.innerText || "";
+
+          // Clean up previous tab if switching away
+          if (this.currentActiveTabId && this.currentActiveTabId !== tabId) {
+            if (this.currentActiveTabId === "tab-computer-info" && typeof this.stopRealtimeMonitoring === 'function') {
+              this.stopRealtimeMonitoring();
+            }
+            if (this.currentActiveTabId === "tab-test-computer" && window.testComputer && typeof window.testComputer.onTabDeactivated === 'function') {
+              window.testComputer.onTabDeactivated();
+            }
+            if (this.currentActiveTabId === "tab-printer-fix" && typeof this.stopGroupUserRealtimeMonitor === 'function') {
+              this.stopGroupUserRealtimeMonitor();
+            }
+          }
+          this.currentActiveTabId = tabId;
 
           navItems.forEach(n => n.classList.remove("active"));
           item.classList.add("active");
@@ -93,60 +239,19 @@ class AppController {
           if (iconEl) iconEl.innerText = icon;
           if (titleEl) titleEl.innerText = label;
 
-          if (tabId === "tab-computer-info") {
-            if (typeof this.loadComputerInfo === 'function') this.loadComputerInfo();
-          } else if (tabId === "tab-auto-shutdown") {
-            if (typeof this.loadScheduledShutdownTasks === 'function') this.loadScheduledShutdownTasks();
-          } else if (tabId === "tab-folder-size") {
-            if (typeof this.loadSystemDrives === 'function') this.loadSystemDrives();
-
-          } else if (tabId === "tab-desktop-icon") {
-            if (typeof this.loadDesktopIconSettings === 'function') this.loadDesktopIconSettings();
-          } else if (tabId === "tab-startup") {
-            if (typeof this.loadStartupEntries === 'function') this.loadStartupEntries();
-          } else if (tabId === "tab-auto-win" || tabId === "tab-win-update") {
-            if (typeof this.loadWinUpdateStatus === 'function') this.loadWinUpdateStatus();
-          } else if (tabId === "tab-uninstall") {
-            if (typeof this.loadInstalledApps === 'function') this.loadInstalledApps();
-          } else if (tabId === "tab-bitlocker") {
-            if (typeof this.loadBitlockerDrives === 'function') this.loadBitlockerDrives();
-          } else if (tabId === "tab-ip-manager") {
-            if (typeof this.loadNetworkAdapters === 'function') this.loadNetworkAdapters();
-          } else if (tabId === "tab-ip-scanner") {
-            if (typeof this.loadIpScannerDefaults === 'function') this.loadIpScannerDefaults();
-          } else if (tabId === "tab-classic-menu") {
-            if (typeof this.loadClassicMenuStatus === 'function') this.loadClassicMenuStatus();
-          } else if (tabId === "tab-hosts") {
-            if (typeof this.loadHosts === 'function') this.loadHosts();
-          } else if (tabId === "tab-backup-driver") {
-            if (typeof this.loadInstalledDrivers === 'function') this.loadInstalledDrivers();
-          } else if (tabId === "tab-services") {
-            if (typeof this.loadServices === 'function') this.loadServices();
-          } else if (tabId === "tab-browser-backup") {
-            if (typeof this.loadBrowserBackupInfo === 'function') this.loadBrowserBackupInfo();
-          } else if (tabId === "tab-datetime") {
-            if (typeof this.loadDateTimeInfo === 'function') this.loadDateTimeInfo();
-          } else if (tabId === "tab-free-software") {
-            if (typeof this.loadSoftwareCatalog === 'function') this.loadSoftwareCatalog();
-          } else if (tabId === "tab-firewall") {
-            if (typeof this.loadFirewallStatus === 'function') this.loadFirewallStatus();
-          } else if (tabId === "tab-other-tweaks") {
-            if (typeof this.loadSystemTweaksStatus === 'function') this.loadSystemTweaksStatus();
-          } else if (tabId === "tab-server-tools") {
-            if (typeof this.loadServerTools === 'function') this.loadServerTools();
-          } else if (tabId === "tab-boot-manager") {
-            if (typeof this.loadBootEntries === 'function') this.loadBootEntries();
-          } else if (tabId === "tab-currency") {
-            if (typeof this.loadCurrencyRates === 'function') this.loadCurrencyRates();
-          } else if (tabId === "tab-office") {
-            if (typeof this.checkExistingOfficeInstall === 'function') this.checkExistingOfficeInstall();
-          } else if (tabId === "tab-sendto") {
-            if (typeof this.loadSendToEntries === 'function') this.loadSendToEntries();
-          }
+          // Automatically load and reflect accurate real-time PC state
+          this.refreshTabData(tabId);
         } catch (err) {
           console.error("Lỗi chuyển tab chính:", err);
         }
       });
+    });
+
+    // Auto-refresh the active tab when the window regains focus from other applications
+    window.addEventListener("focus", () => {
+      if (this.currentActiveTabId) {
+        this.refreshTabData(this.currentActiveTabId);
+      }
     });
 
     // Sub-Tabs handler (scoped per parent section)
@@ -176,10 +281,17 @@ class AppController {
             if (typeof this.scanCredentials === 'function') this.scanCredentials();
           } else if (subtabId === "subtab-printer-lan") {
             if (typeof this.scanPrinters === 'function') this.scanPrinters();
+          } else if (subtabId === "subtab-create-user") {
+            if (typeof this.loadLocalGroupsAndUsers === 'function') this.loadLocalGroupsAndUsers();
+            if (typeof this.startGroupUserRealtimeMonitor === 'function') this.startGroupUserRealtimeMonitor();
           } else if (subtabId === "subtab-boot-bcd") {
             if (typeof this.loadBootEntries === 'function') this.loadBootEntries();
           } else if (subtabId === "subtab-boot-winpe") {
             if (typeof this.loadPartitions === 'function') this.loadPartitions();
+          }
+
+          if (subtabId !== "subtab-create-user" && typeof this.stopGroupUserRealtimeMonitor === 'function') {
+            this.stopGroupUserRealtimeMonitor();
           }
         } catch (err) {
           console.error("Lỗi chuyển subtab:", err);
@@ -190,6 +302,14 @@ class AppController {
     // Theme Toggle
     document.getElementById("theme-toggle")?.addEventListener("click", () => {
       document.body.classList.toggle("dark-mode");
+    });
+
+    // Support F5 and Ctrl + R to refresh application UI
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "F5" || (e.ctrlKey && (e.key === "r" || e.key === "R"))) {
+        e.preventDefault();
+        window.location.reload();
+      }
     });
   }
 
@@ -417,4 +537,34 @@ class AppController {
       this.addLog("error", "Lỗi cài đặt khởi động: " + e);
     }
   }
+
+  showToast(type, message) {
+    let container = document.getElementById('app-toast-container');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'app-toast-container';
+      container.style.cssText = 'position: fixed; top: 20px; right: 24px; z-index: 9999999; display: flex; flex-direction: column; gap: 8px; pointer-events: none;';
+      document.body.appendChild(container);
+    }
+    while (container.children.length >= 2) {
+      container.removeChild(container.firstChild);
+    }
+    const toast = document.createElement('div');
+    const colors = {
+      success: '#10b981',
+      warning: '#f59e0b',
+      error: '#ef4444',
+      info: '#38bdf8'
+    };
+    const borderColor = colors[type] || '#38bdf8';
+    toast.style.cssText = `background: #1e293b; border-left: 4px solid ${borderColor}; color: #f8fafc; padding: 12px 18px; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); font-size: 13px; font-weight: 700; pointer-events: auto; display: flex; align-items: center; gap: 10px; transition: all 0.3s ease;`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateX(20px)';
+      setTimeout(() => toast.remove(), 300);
+    }, 3500);
+  }
 }
+

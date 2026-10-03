@@ -25,59 +25,76 @@ def get_win_update_status():
     """
     Returns complete, accurate real-time status of Windows Update,
     Antivirus/Defender, UAC, and SmartScreen.
+    Strictly reports real machine state without false assumptions.
+    If a status cannot be accurately verified, returns None (displayed as '⚪ N/A').
     """
-    # ── 1. WINDOWS UPDATE DETECTION ──────────────────────────────────────────
-    wu_enabled = True
-    wu_badge = "🟢 ĐANG BẬT"
-    wu_text = "🟢 Đang BẬT (Tự động cập nhật)"
-
-    # A. Check Services (wuauserv & UsoSvc)
-    wuauserv_running = False
-    wuauserv_start = "manual"
-    usosvc_running = False
-
+    # ── BATCH QUERY POWERSHELL FOR FAST, CONSOLIDATED STATUS ──────────────────
+    ps_data = {}
     try:
-        ps_cmd = 'Get-Service wuauserv, UsoSvc -ErrorAction SilentlyContinue | Select-Object Name, Status, StartType | ConvertTo-Json'
-        r = subprocess.run(['powershell', '-NoProfile', '-Command', ps_cmd],
-                           capture_output=True, text=True, timeout=8)
+        ps_cmd = """& {
+            $ProgressPreference = 'SilentlyContinue'
+            $r = [ordered]@{}
+            try {
+                $r['av'] = @(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct -ErrorAction Stop | Select-Object displayName, productState)
+            } catch {
+                $r['av'] = $null
+            }
+            try {
+                $s = Get-MpComputerStatus -ErrorAction Stop
+                $r['mp_rt'] = [bool]$s.RealTimeProtectionEnabled
+                $r['mp_av'] = [bool]$s.AntivirusEnabled
+                $r['mp_ok'] = $true
+            } catch {
+                $r['mp_rt'] = $null
+                $r['mp_av'] = $null
+                $r['mp_ok'] = $false
+            }
+            try {
+                $p = Get-MpPreference -ErrorAction Stop
+                $r['pref_drm'] = [bool]$p.DisableRealtimeMonitoring
+                $r['pref_ok'] = $true
+            } catch {
+                $r['pref_drm'] = $null
+                $r['pref_ok'] = $false
+            }
+            try {
+                $r['svc'] = @(Get-Service wuauserv, UsoSvc -ErrorAction SilentlyContinue | Select-Object Name, Status, StartType)
+            } catch {
+                $r['svc'] = $null
+            }
+            $r | ConvertTo-Json -Depth 3 -Compress
+        }"""
+        r = subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', ps_cmd],
+                           capture_output=True, text=True, timeout=10)
         if r.returncode == 0 and r.stdout.strip():
-            data = json.loads(r.stdout)
-            if isinstance(data, dict):
-                data = [data]
-            for s in data:
-                name = str(s.get('Name', '')).lower()
-                status_raw = s.get('Status')
-                start_raw = s.get('StartType')
-
-                # 4=Running, 1=Stopped; or string 'Running'
-                is_running = (status_raw == 4 or str(status_raw).lower() == 'running')
-                start_type_str = str(start_raw).lower()
-
-                if name == 'wuauserv':
-                    wuauserv_running = is_running
-                    wuauserv_start = start_type_str
-                elif name == 'usosvc':
-                    usosvc_running = is_running
+            ps_data = json.loads(r.stdout.strip())
     except Exception:
-        pass
+        ps_data = {}
 
-    # B. Check Pause Expiry in UX Settings
+    # ── 1. WINDOWS UPDATE DETECTION ──────────────────────────────────────────
+    wu_enabled = None
+    wu_badge = "⚪ N/A"
+    wu_text = "⚪ N/A (Không lấy được trạng thái Windows Update)"
+
+    # A. Check Pause Expiry in UX Settings
     pause_until_str = None
     try:
         k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, WU_UX_REG, 0, winreg.KEY_READ)
-        try:
-            val, _ = winreg.QueryValueEx(k, 'PauseUpdatesExpiryTime')
-            if val:
-                dt = datetime.datetime.fromisoformat(str(val).replace('Z', '+00:00'))
-                if dt > datetime.datetime.now(datetime.timezone.utc):
-                    pause_until_str = dt.astimezone().strftime('%d/%m/%Y %H:%M')
-        except Exception:
-            pass
+        for p_key in ['PauseUpdatesExpiryTime', 'PauseFeatureUpdatesEndTime', 'PauseQualityUpdatesEndTime']:
+            try:
+                val, _ = winreg.QueryValueEx(k, p_key)
+                if val:
+                    dt = datetime.datetime.fromisoformat(str(val).replace('Z', '+00:00'))
+                    if dt > datetime.datetime.now(datetime.timezone.utc):
+                        pause_until_str = dt.astimezone().strftime('%d/%m/%Y %H:%M')
+                        break
+            except Exception:
+                pass
         winreg.CloseKey(k)
     except Exception:
         pass
 
-    # C. Check Group Policy
+    # B. Check Group Policy
     no_auto = 0
     disable_access = 0
     try:
@@ -100,110 +117,250 @@ def get_win_update_status():
     except Exception:
         pass
 
-    # D. Determine Windows Update Status
+    # C. Service details (Primary Source of Truth: wuauserv service)
+    svc_list = ps_data.get('svc')
+    wuauserv_found = False
+    wuauserv_running = False
+    wuauserv_start = ""
+    usosvc_running = False
+
+    if isinstance(svc_list, list):
+        for s in svc_list:
+            if not isinstance(s, dict):
+                continue
+            name = str(s.get('Name', '')).lower()
+            status_raw = s.get('Status')
+            start_raw = s.get('StartType')
+            is_running = (status_raw == 4 or str(status_raw).lower() == 'running')
+            start_str = str(start_raw).lower()
+
+            if name == 'wuauserv':
+                wuauserv_found = True
+                wuauserv_running = is_running
+                wuauserv_start = start_str
+            elif name == 'usosvc':
+                usosvc_running = is_running
+
+    # Fallback to direct sc command if not found via PowerShell
+    if not wuauserv_found:
+        try:
+            qc = subprocess.run('sc qc wuauserv', shell=True, capture_output=True, text=True, timeout=3).stdout
+            q = subprocess.run('sc query wuauserv', shell=True, capture_output=True, text=True, timeout=3).stdout
+            if 'START_TYPE' in qc:
+                wuauserv_found = True
+                if 'AUTO_START' in qc:
+                    wuauserv_start = '2'
+                elif 'DEMAND_START' in qc:
+                    wuauserv_start = '3'
+                elif 'DISABLED' in qc:
+                    wuauserv_start = '4'
+                wuauserv_running = ('STATE' in q and 'RUNNING' in q)
+        except Exception:
+            pass
+
+    # D. Evaluate Windows Update status based on real machine state
     if pause_until_str:
         wu_enabled = False
         wu_badge = "⏸️ TẠM DỪNG"
         wu_text = f"⏸️ Đang TẠM DỪNG cập nhật đến {pause_until_str}"
-    elif (wuauserv_start in ('disabled', '4') and not wuauserv_running) or disable_access == 1:
+    elif wuauserv_found:
+        if wuauserv_running:
+            wu_enabled = True
+            wu_badge = "🟢 ĐANG BẬT"
+            wu_text = "🟢 Đang BẬT (Dịch vụ Windows Update đang chạy)"
+        elif wuauserv_start in ('disabled', '4'):
+            wu_enabled = False
+            wu_badge = "🔴 ĐÃ TẮT"
+            wu_text = "🔴 Đã TẮT VĨNH VIỄN (Dịch vụ wuauserv: Disabled)"
+        elif wuauserv_start in ('automatic', 'auto', '2'):
+            wu_enabled = True
+            wu_badge = "🟢 ĐANG BẬT"
+            wu_text = "🟢 Đang BẬT (Khởi động: Tự động / Trigger Start)"
+        elif wuauserv_start in ('manual', 'demand', '3'):
+            wu_enabled = True
+            wu_badge = "🟢 SẴN SÀNG"
+            wu_text = "🟢 Đang BẬT (Khởi động: Thủ công / Manual)"
+        elif usosvc_running:
+            wu_enabled = True
+            wu_badge = "🟢 ĐANG BẬT"
+            wu_text = "🟢 Đang BẬT (Update Orchestrator đang chạy)"
+        else:
+            wu_enabled = None
+            wu_badge = "⚪ N/A"
+            wu_text = "⚪ N/A (Không xác định được trạng thái)"
+    elif disable_access == 1:
         wu_enabled = False
         wu_badge = "🔴 ĐÃ TẮT"
-        wu_text = "🔴 Đã TẮT VĨNH VIỄN (Dịch vụ wuauserv: Disabled)"
-    elif wuauserv_running or usosvc_running:
-        wu_enabled = True
-        wu_badge = "🟢 ĐANG BẬT"
-        if no_auto == 1:
-            wu_text = "🟢 Đang BẬT (Dịch vụ đang chạy, bật chế độ tải thủ công)"
-        else:
-            wu_text = "🟢 Đang BẬT (Dịch vụ Windows Update đang hoạt động)"
+        wu_text = "🔴 Đã TẮT (Chính sách: DisableWindowsUpdateAccess)"
     else:
-        wu_enabled = True
-        wu_badge = "🟢 SẴN SÀNG"
-        wu_text = "🟢 Đang BẬT (Sẵn sàng khởi động khi có cập nhật)"
+        wu_enabled = None
+        wu_badge = "⚪ N/A"
+        wu_text = "⚪ N/A (Không lấy được trạng thái Windows Update)"
 
-    # ── 2. ANTIVIRUS / DEFENDER DETECTION ────────────────────────────────────
-    wd_enabled = True
-    wd_badge = "🟢 ĐANG BẬT"
-    wd_text = "🟢 Đang BẬT (Real-Time Protection)"
+    # ── 2. ANTIVIRUS / DEFENDER REAL-TIME PROTECTION DETECTION ───────────────
+    wd_enabled = None
+    wd_badge = "⚪ N/A"
+    wd_text = "⚪ N/A (Không xác định được trạng thái)"
     has_third_party = False
     third_party_name = ""
 
-    # A. Check 3rd party antivirus in SecurityCenter2
-    try:
-        ps_av = subprocess.run([
-            'powershell', '-NoProfile', '-Command',
-            'Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct -ErrorAction SilentlyContinue | Select-Object displayName, productState | ConvertTo-Json'
-        ], capture_output=True, text=True, timeout=8)
-        if ps_av.returncode == 0 and ps_av.stdout.strip():
-            av_data = json.loads(ps_av.stdout)
-            if isinstance(av_data, dict):
-                av_data = [av_data]
-            for p in av_data:
-                name = str(p.get('displayName', '')).strip()
-                state = int(p.get('productState', 0))
-                # Bitmask: (state & 0x1000) != 0 indicates real-time protection is enabled
-                is_rt_enabled = bool((state & 0x1000) != 0)
-                if 'windows defender' not in name.lower() and is_rt_enabled and name:
-                    has_third_party = True
-                    third_party_name = name
-                    break
-    except Exception:
-        pass
+    av_list = ps_data.get('av')
+    if isinstance(av_list, dict):
+        av_list = [av_list]
+    elif not isinstance(av_list, list):
+        av_list = []
 
-    if has_third_party:
-        wd_enabled = True
-        wd_badge = "🟢 AN TOÀN"
-        wd_text = f"🛡️ Đang bảo vệ bởi: {third_party_name} (Defender đã nhường quyền)"
-    else:
-        # B. Check Windows Defender directly
-        is_def_rt = False
-        try:
-            ps_def = subprocess.run([
-                'powershell', '-NoProfile', '-Command',
-                '$s = Get-MpComputerStatus -ErrorAction SilentlyContinue; [PSCustomObject]@{RT=$s.RealTimeProtectionEnabled; AM=$s.AMServiceEnabled} | ConvertTo-Json'
-            ], capture_output=True, text=True, timeout=8)
-            if ps_def.returncode == 0 and ps_def.stdout.strip():
-                d_info = json.loads(ps_def.stdout)
-                is_def_rt = bool(d_info.get('RT') or d_info.get('AM'))
+    # Check for 3rd-party antivirus first
+    for p in av_list:
+        if not isinstance(p, dict):
+            continue
+        name = str(p.get('displayName', '')).strip()
+        if not name or 'windows defender' in name.lower():
+            continue
+
+        has_third_party = True
+        third_party_name = name
+        state = int(p.get('productState', 0))
+        # Bitmask 0x1000 indicates real-time protection enabled in SecurityCenter2
+        is_rt_enabled = bool((state & 0x1000) != 0)
+        wd_enabled = is_rt_enabled
+        if is_rt_enabled:
+            wd_badge = "🟢 AN TOÀN"
+            wd_text = f"🛡️ Đang bảo vệ bởi: {third_party_name} (Defender đã nhường quyền)"
+        else:
+            wd_badge = "🔴 ĐÃ TẮT"
+            wd_text = f"🔴 Đã TẮT bảo vệ: {third_party_name}"
+        break
+
+    if not has_third_party:
+        # NO 3rd-party antivirus -> Check Windows Defender Real-Time Protection directly
+        mp_ok = ps_data.get('mp_ok', False)
+        mp_rt = ps_data.get('mp_rt')
+
+        if mp_ok and mp_rt is not None:
+            # Direct status from Get-MpComputerStatus.RealTimeProtectionEnabled
+            wd_enabled = bool(mp_rt)
+            if wd_enabled:
+                wd_badge = "🟢 ĐANG BẬT"
+                wd_text = "🟢 Đang BẬT (Real-Time Protection)"
             else:
-                # Fallback to checking WinDefend service
-                ps_svc = subprocess.run(
-                    ['sc', 'query', 'WinDefend'],
-                    capture_output=True, text=True, timeout=5
-                )
-                is_def_rt = 'RUNNING' in ps_svc.stdout
-        except Exception:
-            is_def_rt = True
+                wd_badge = "🔴 ĐÃ TẮT"
+                wd_text = "🔴 Đã TẮT (Real-Time Protection không hoạt động)"
+        else:
+            # Fallback 1: Check Get-MpPreference.DisableRealtimeMonitoring
+            pref_ok = ps_data.get('pref_ok', False)
+            pref_drm = ps_data.get('pref_drm')
+            if pref_ok and pref_drm is not None:
+                if pref_drm is True:
+                    wd_enabled = False
+                    wd_badge = "🔴 ĐÃ TẮT"
+                    wd_text = "🔴 Đã TẮT (DisableRealtimeMonitoring = True)"
+                else:
+                    wd_enabled = True
+                    wd_badge = "🟢 ĐANG BẬT"
+                    wd_text = "🟢 Đang BẬT (Real-Time Protection)"
+            else:
+                # Fallback 2: Check Windows Defender entry in SecurityCenter2
+                defender_in_sc = None
+                for p in av_list:
+                    if isinstance(p, dict) and 'windows defender' in str(p.get('displayName', '')).lower():
+                        defender_in_sc = p
+                        break
 
-        wd_enabled = is_def_rt
-        wd_badge = "🟢 ĐANG BẬT" if is_def_rt else "🔴 ĐÃ TẮT"
-        wd_text = "🟢 Đang BẬT (Real-Time Protection)" if is_def_rt else "🔴 Đã TẮT (Real-Time Protection không hoạt động)"
+                if defender_in_sc:
+                    state = int(defender_in_sc.get('productState', 0))
+                    is_rt = bool((state & 0x1000) != 0)
+                    wd_enabled = is_rt
+                    wd_badge = "🟢 ĐANG BẬT" if is_rt else "🔴 ĐÃ TẮT"
+                    wd_text = "🟢 Đang BẬT (Real-Time Protection)" if is_rt else "🔴 Đã TẮT (Real-Time Protection không hoạt động)"
+                else:
+                    # Fallback 3: Registry policies
+                    try:
+                        k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection', 0, winreg.KEY_READ)
+                        drm, _ = winreg.QueryValueEx(k, 'DisableRealtimeMonitoring')
+                        winreg.CloseKey(k)
+                        if drm == 1:
+                            wd_enabled = False
+                            wd_badge = "🔴 ĐÃ TẮT"
+                            wd_text = "🔴 Đã TẮT (Chính sách: DisableRealtimeMonitoring)"
+                    except Exception:
+                        pass
+
+                    if wd_enabled is None:
+                        try:
+                            k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Policies\Microsoft\Windows Defender', 0, winreg.KEY_READ)
+                            das, _ = winreg.QueryValueEx(k, 'DisableAntiSpyware')
+                            winreg.CloseKey(k)
+                            if das == 1:
+                                wd_enabled = False
+                                wd_badge = "🔴 ĐÃ TẮT"
+                                wd_text = "🔴 Đã TẮT (Chính sách: DisableAntiSpyware)"
+                        except Exception:
+                            pass
 
     # ── 3. UAC DETECTION ─────────────────────────────────────────────────────
-    uac_enabled = True
-    uac_text = "🟢 Đang BẬT (Mặc định Windows)"
+    uac_enabled = None
+    uac_badge = "⚪ N/A"
+    uac_text = "⚪ N/A (Không đọc được Registry UAC)"
     try:
         k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, UAC_REG_PATH, 0, winreg.KEY_READ)
         v, _ = winreg.QueryValueEx(k, 'EnableLUA')
         winreg.CloseKey(k)
         if v == 0:
             uac_enabled = False
+            uac_badge = "🔴 ĐÃ TẮT"
             uac_text = "🔴 Đã TẮT (EnableLUA = 0)"
+        else:
+            uac_enabled = True
+            uac_badge = "🟢 ĐANG BẬT"
+            uac_text = "🟢 Đang BẬT (Mặc định Windows)"
     except Exception:
         pass
 
     # ── 4. SMARTSCREEN DETECTION ─────────────────────────────────────────────
-    ss_enabled = True
-    ss_text = "🟢 Đang BẬT"
+    ss_enabled = None
+    ss_badge = "⚪ N/A"
+    ss_text = "⚪ N/A (Không đọc được Registry SmartScreen)"
+    ss_found = False
+
+    # Check Explorer key
     try:
         k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, SMARTSCREEN_REG_PATH, 0, winreg.KEY_READ)
         v, _ = winreg.QueryValueEx(k, 'SmartScreenEnabled')
         winreg.CloseKey(k)
-        if str(v).lower() in ('off', '0'):
+        val_str = str(v).strip().lower()
+        if val_str in ('off', '0'):
             ss_enabled = False
-            ss_text = "🔴 Đã TẮT"
+            ss_found = True
+        elif val_str in ('warn', 'requireadmin', 'on', '1'):
+            ss_enabled = True
+            ss_found = True
     except Exception:
         pass
+
+    # Check Policy key
+    if not ss_found:
+        try:
+            k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Policies\Microsoft\Windows\System', 0, winreg.KEY_READ)
+            v, _ = winreg.QueryValueEx(k, 'EnableSmartScreen')
+            winreg.CloseKey(k)
+            val_str = str(v).strip().lower()
+            if val_str in ('0', 'off'):
+                ss_enabled = False
+                ss_found = True
+            elif val_str in ('1', 'warn', 'on'):
+                ss_enabled = True
+                ss_found = True
+        except Exception:
+            pass
+
+    if ss_found:
+        if ss_enabled:
+            ss_badge = "🟢 ĐANG BẬT"
+            ss_text = "🟢 Đang BẬT"
+        else:
+            ss_badge = "🔴 ĐÃ TẮT"
+            ss_text = "🔴 Đã TẮT"
 
     return {
         "success": True,
@@ -216,8 +373,10 @@ def get_win_update_status():
         "has_third_party": has_third_party,
         "third_party_name": third_party_name,
         "uac_enabled": uac_enabled,
+        "uac_badge": uac_badge,
         "uac_status_text": uac_text,
         "smartscreen_enabled": ss_enabled,
+        "smartscreen_badge": ss_badge,
         "smartscreen_status_text": ss_text
     }
 

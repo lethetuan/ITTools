@@ -616,6 +616,10 @@ def run_deep_clean_uninstall(app_name, uninstall_cmd, install_location=None, reg
         results["step3_folders"] = []
         results["folders_cleaned"] = []
 
+    # If the app's registry key was cleaned by Step 2 or native uninstaller:
+    if reg_key_name and not _check_reg_key_exists(reg_key_name):
+        results["step1_success"] = True
+
     # ── SUMMARY ──────────────────────────────────────────────────────────
     reg_cnt = len(results["step2_keys"])
     folder_cnt = len(results["step3_folders"])

@@ -141,7 +141,10 @@ Object.assign(AppController.prototype, {
     items.forEach(app => {
       const card = document.createElement("div");
       const isChecked = this.selectedSoftwareIds.has(app.id);
-      card.className = "software-card" + (isChecked ? " selected" : "");
+      const isInstalled = Boolean(app.is_installed);
+      const isPinned = Boolean(app.is_pinned);
+
+      card.className = "software-card" + (isChecked ? " selected" : "") + (isInstalled ? " app-installed" : "");
       card.setAttribute("data-id", app.id);
 
       // Dùng getAppIconHtml nếu có, fallback về emoji từ catalog
@@ -149,20 +152,34 @@ Object.assign(AppController.prototype, {
         ? window.getAppIconHtml(app.id, 32)
         : `<span class="software-icon">${app.icon}</span>`;
 
+      // Nút Ghim / Đã ghim đẹp mắt
+      const pinBtnHtml = isPinned
+        ? `<button type="button" class="btn-pin-single pinned" onclick="app.pinSingleApp('${app.id}', '${app.name.replace(/'/g, "\\'")}', event)" title="Đã có shortcut trên Desktop / Start Menu (Bấm để ghim lại)"><span>📌</span> Đã ghim</button>`
+        : `<button type="button" class="btn-pin-single" onclick="app.pinSingleApp('${app.id}', '${app.name.replace(/'/g, "\\'")}', event)" title="Ghim ứng dụng này ra Desktop & Start Menu"><span>📌</span> Ghim</button>`;
+
+      // Nút Cài đặt / Đã cài đặt
+      const installBtnHtml = isInstalled
+        ? `<button type="button" class="btn-install-single installed" onclick="app.installSingleApp('${app.id}', event)" title="Đã cài đặt trên máy tính (Bấm để cài lại/nâng cấp)"><span>✓</span> Đã cài đặt</button>`
+        : `<button type="button" class="btn-install-single" onclick="app.installSingleApp('${app.id}', event)" title="Cài đặt nhanh ứng dụng này"><span>⚡</span> Cài đặt</button>`;
+
       card.innerHTML = `
         <input type="checkbox" class="soft-checkbox" value="${app.id}" ${isChecked ? "checked" : ""} onchange="app.toggleSoftwareSelect('${app.id}', this.checked)">
         <span class="software-icon-wrap">${iconHtml}</span>
         <div class="software-info">
-          <span class="software-name">${app.name}</span>
+          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <span class="software-name">${app.name}</span>
+            ${isInstalled ? '<span class="badge" style="background: #ecfdf5; color: #15803d; border: 1px solid #a7f3d0; border-radius: 4px; font-size: 9.5px; font-weight: 700; padding: 1px 5px; line-height: 1.2;">ĐÃ CÀI</span>' : ''}
+          </div>
           <span class="software-id">${app.id}</span>
         </div>
-        <button class="btn-install-single" onclick="app.installSingleApp('${app.id}', event)" title="Cài đặt nhanh ứng dụng này">
-          ⚡ Cài đặt
-        </button>
+        <div class="software-card-actions">
+          ${pinBtnHtml}
+          ${installBtnHtml}
+        </div>
       `;
 
       card.addEventListener("click", (e) => {
-        if (e.target.tagName !== "INPUT" && !e.target.closest(".btn-install-single")) {
+        if (e.target.tagName !== "INPUT" && !e.target.closest(".software-card-actions") && !e.target.closest(".btn-install-single") && !e.target.closest(".btn-pin-single")) {
           const willBeChecked = !this.selectedSoftwareIds.has(app.id);
           this.toggleSoftwareSelect(app.id, willBeChecked);
         }
@@ -272,6 +289,63 @@ Object.assign(AppController.prototype, {
     }
   },
 
+  // ── GHIM NHANH 1 ỨNG DỤNG RA START MENU, DESKTOP, PROGRAMS ──────────
+  async pinSingleApp(appId, appName, event) {
+    if (event) event.stopPropagation();
+    const btn = event ? event.currentTarget : null;
+    const originalHtml = btn ? btn.innerHTML : "<span>📌</span> Ghim";
+    if (btn) {
+      btn.innerHTML = `<span>⏳</span> Đang ghim...`;
+      btn.disabled = true;
+    }
+
+    this.addLog("info", `📌 Đang xử lý ghim ứng dụng: ${appName || appId}...`);
+
+    if (window.pywebview && window.pywebview.api) {
+      try {
+        const res = await window.pywebview.api.pin_app_shortcut(appId, appName);
+        if (res.success) {
+          this.addLog("success", `📌 ${res.message}`);
+          const appItem = (this.softwareCatalog || []).find(s => s.id === appId);
+          if (appItem) {
+            appItem.is_pinned = true;
+          }
+          if (btn) {
+            btn.className = "btn-pin-single pinned";
+            btn.innerHTML = `<span>📌</span> Đã ghim`;
+            btn.title = "Đã có shortcut trên Desktop / Start Menu (Bấm để ghim lại)";
+            btn.disabled = false;
+          }
+        } else {
+          this.addLog("warning", `⚠️ ${res.message}`);
+          if (btn) {
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+          }
+          alert(res.message);
+        }
+      } catch (err) {
+        if (btn) {
+          btn.innerHTML = originalHtml;
+          btn.disabled = false;
+        }
+        this.addLog("error", `Lỗi ghim shortcut: ${err}`);
+      }
+    } else {
+      alert(`[MOCK] Đã ghim ${appName || appId} ra Desktop, Start Menu và Programs!`);
+      const appItem = (this.softwareCatalog || []).find(s => s.id === appId);
+      if (appItem) {
+        appItem.is_pinned = true;
+      }
+      if (btn) {
+        btn.className = "btn-pin-single pinned";
+        btn.innerHTML = `<span>📌</span> Đã ghim`;
+        btn.title = "Đã có shortcut trên Desktop / Start Menu (Bấm để ghim lại)";
+        btn.disabled = false;
+      }
+    }
+  },
+
   // ── CÀI ĐẶT NHANH 1 ỨNG DỤNG (Hỗ trợ thêm trực tiếp khi đang chạy nền) ──
   async installSingleApp(appId, event) {
     if (event) event.stopPropagation();
@@ -376,6 +450,10 @@ Object.assign(AppController.prototype, {
             const line = st.log[i];
             if (line.includes("[OK]")) {
               this.addLog("success", line);
+            } else if (line.includes("[GHIM]")) {
+              this.addLog("success", `📌 ${line}`);
+            } else if (line.includes("[CANH BAO]")) {
+              this.addLog("warning", `⚠️ ${line}`);
             } else if (line.includes("[LOI]") || line.includes("[EXCEPTION]")) {
               this.addLog("error", line);
             } else if (line.includes("[HUY]") || line.includes("[QUA THOI GIAN]") || line.includes("Thu lai")) {
@@ -721,8 +799,8 @@ Object.assign(AppController.prototype, {
     entries.forEach((item, idx) => {
       const isChecked = item.is_enabled;
       const statusBadge = isChecked 
-        ? `<span class="badge" style="background:#dcfce7; color:#15803d; padding: 3px 8px; border-radius: 4px; font-weight: 700;">Enable</span>` 
-        : `<span class="badge" style="background:#fee2e2; color:#b91c1c; padding: 3px 8px; border-radius: 4px;">Disabled</span>`;
+        ? `<span class="badge badge-status-enable">Enable</span>` 
+        : `<span class="badge badge-status-disabled">Disabled</span>`;
 
       let iconHtml = "";
       if (item.icon && item.icon.startsWith("data:image/")) {
@@ -738,21 +816,22 @@ Object.assign(AppController.prototype, {
         iconHtml = `<span style="font-size: 16px;">${icon}</span>`;
       }
 
+      const escapedPath = (item.path || "").replace(/"/g, '&quot;');
       html += `<tr>
         <td style="text-align: center;">
-          <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="app.toggleStartupStatusByIndex(${idx}, this.checked)" style="width: 18px; height: 18px; cursor: pointer;">
+          <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="app.toggleStartupStatusByIndex(${idx}, this.checked)" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
         </td>
         <td>
           <div style="display: flex; align-items: center; gap: 8px;">
             ${iconHtml}
-            <strong style="color: var(--text-main); font-size: 13.5px;">${item.name}</strong>
+            <strong class="startup-item-name">${item.name}</strong>
           </div>
         </td>
         <td>
-          <code class="code-badge" style="word-break: break-all; font-size: 12px; color: #334155; background: #f8fafc; padding: 3px 6px; border-radius: 4px; border: 1px solid #e2e8f0;">${item.path}</code>
+          <code class="code-badge startup-path-code" title="${escapedPath}">${item.path}</code>
         </td>
         <td>
-          <span class="badge" style="background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-size: 11px;">${item.location}</span>
+          <span class="badge badge-location-subtle">${item.location}</span>
         </td>
         <td style="text-align: center;">${statusBadge}</td>
         <td style="text-align: right;">
@@ -1105,7 +1184,7 @@ Object.assign(AppController.prototype, {
     const nameEl = document.getElementById("wiz-app-name");
     if (nameEl) nameEl.innerText = item.display_name;
 
-    const iconImg = document.getElementById("wiz-app-icon-img");
+    const iconImg = document.getElementById("wiz-app-icon") || document.getElementById("wiz-app-icon-img");
     const iconFallback = document.getElementById("wiz-app-icon-fallback");
 
     let wizIconData = item.icon_b64 || item.icon;
@@ -1151,6 +1230,8 @@ Object.assign(AppController.prototype, {
     const summaryMsg = document.getElementById("wiz-summary-msg");
     if (summaryMsg) {
       summaryMsg.style.color = "#0284c7";
+      summaryMsg.style.background = "#f0f9ff";
+      summaryMsg.style.border = "1px solid #bae6fd";
       summaryMsg.innerText = 'Nhấn "Bắt Đầu Gỡ Sạch" để tiến hành quy trình 3 bước gỡ cài đặt.';
     }
 
@@ -1158,7 +1239,12 @@ Object.assign(AppController.prototype, {
     const btnCancel = document.getElementById("wiz-btn-cancel");
     const btnSkip = document.getElementById("wiz-btn-skip");
     if (btnStart) { btnStart.style.display = "inline-flex"; btnStart.disabled = false; }
-    if (btnCancel) { btnCancel.innerText = "Hủy Bỏ"; btnCancel.disabled = false; }
+    if (btnCancel) {
+      btnCancel.innerText = "Hủy Bỏ";
+      btnCancel.className = "btn btn-slate-light";
+      btnCancel.style.padding = "7px 18px";
+      btnCancel.disabled = false;
+    }
     if (btnSkip) {
       btnSkip.style.display = "none";
       btnSkip.disabled = false;
@@ -1280,7 +1366,7 @@ Object.assign(AppController.prototype, {
     if (step2Status) {
       step2Status.style.background = "#dcfce7";
       step2Status.style.color = "#15803d";
-      step2Status.innerText = regCount > 0 ? `Done! (${regCount} keys xóa)` : "Done! (Sạch)";
+      step2Status.innerText = regCount > 0 ? `Đã dọn ${regCount} key` : "Sạch (0 key)";
     }
     if (step2Details && regCount > 0) {
       step2Details.style.display = "block";
@@ -1301,7 +1387,7 @@ Object.assign(AppController.prototype, {
     if (step3Status) {
       step3Status.style.background = "#dcfce7";
       step3Status.style.color = "#15803d";
-      step3Status.innerText = folderCount > 0 ? `Done! (${folderCount} thư mục xóa)` : "Done! (Sạch)";
+      step3Status.innerText = folderCount > 0 ? `Đã dọn ${folderCount} mục` : "Sạch (0 mục)";
     }
     if (step3Details && folderCount > 0) {
       step3Details.style.display = "block";
@@ -1314,17 +1400,24 @@ Object.assign(AppController.prototype, {
     // ── SUMMARY ────────────────────────────────────────────────────────────
     if (summaryMsg) {
       if (step1Success) {
-        summaryMsg.style.color = "#10b981";
+        summaryMsg.style.color = "#15803d";
+        summaryMsg.style.background = "#dcfce7";
+        summaryMsg.style.border = "1px solid #bbf7d0";
         summaryMsg.innerText = `🎉 Hoàn tất gỡ sạch 100%! Đã xóa triệt để phần mềm, ${regCount} Registry keys và ${folderCount} Thư mục rác.`;
       } else {
-        summaryMsg.style.color = "#d97706";
-        summaryMsg.innerText = `⚠️ Phần mềm có thể chưa được gỡ hoàn toàn. Hãy kiểm tra lại. Đã dọn ${regCount} Registry keys và ${folderCount} Thư mục rác phụ.`;
+        summaryMsg.style.color = "#b45309";
+        summaryMsg.style.background = "#fffbeb";
+        summaryMsg.style.border = "1px solid #fde68a";
+        summaryMsg.innerText = `⚠️ Phần mềm có thể chưa được gỡ hoàn toàn. Đã dọn ${regCount} Registry keys & ${folderCount} Thư mục rác phụ.`;
       }
     }
 
     if (btnStart) btnStart.style.display = "none";
     if (btnCancel) {
       btnCancel.innerText = "Đóng";
+      btnCancel.className = "btn btn-primary-gradient";
+      btnCancel.style.padding = "7px 24px";
+      btnCancel.style.fontWeight = "700";
       btnCancel.disabled = false;
     }
 
@@ -2122,7 +2215,7 @@ Object.assign(AppController.prototype, {
       { key: 'cmd', title: 'Enable CommandPrompt', icon: '💻', desc: 'Mở cửa sổ dòng lệnh CMD' },
       { key: 'camera', title: 'Enable Webcam', icon: '📷', desc: 'Cho phép ứng dụng dùng Webcam' },
       { key: 'fix_hidden', title: 'Fix Hidden Folder', icon: '📁', desc: 'Sửa lỗi file/thư mục bị ẩn hệ thống', actionOnly: true, btnText: 'Sửa Ẩn File' },
-      { key: 'repair_taskbar', title: 'Repair TaskBar', icon: '📌', desc: 'Khôi phục thanh Taskbar bị đơ/lỗi', actionOnly: true, btnText: 'Sửa Taskbar' },
+      { key: 'repair_taskbar', title: 'Repair TaskBar', icon: '📌', desc: 'Sửa lỗi Taskbar/Start bị đơ lag (Giữ nguyên toàn bộ icon đã ghim)', actionOnly: true, btnText: 'Sửa Taskbar' },
       { key: 'unblock_files', title: 'Unblock Files', icon: '🏷️', desc: 'Bỏ chặn các file tải về bị dán nhãn', actionOnly: true, btnText: 'Bỏ Chặn Files' },
       { key: 'shortcut_arrow', title: 'Enable Shortcut Arrow', icon: '↗️', desc: 'Mũi tên trên icon Shortcut Desktop' },
       { key: 'shortcut_prefix', title: 'Enable "Shortcut to"', icon: '✂️', desc: 'Tiền tố "Shortcut to" khi tạo shortcut' },
@@ -2148,7 +2241,14 @@ Object.assign(AppController.prototype, {
             </div>
           </div>
           <div style="flex-shrink: 0; display: flex; align-items: center; gap: 8px;">
-            ${item.actionOnly ? `
+            ${item.key === 'unblock_files' ? `
+              <button class="btn btn-action-card" style="padding: 6px 12px; font-size: 12px; font-weight: 600; border-radius: 6px;" onclick="app.unblockFilesQuick()" title="Bỏ chặn toàn bộ file trong thư mục Downloads, Desktop & cấu hình Registry">
+                ⚡ Bỏ Chặn Nhanh
+              </button>
+              <button class="btn btn-slate-light" style="padding: 6px 12px; font-size: 12px; font-weight: 600; border-radius: 6px;" onclick="app.unblockFilesCustom()" title="Chọn tệp tin hoặc thư mục cụ thể cần bỏ chặn">
+                📂 Chọn File/Folder
+              </button>
+            ` : item.actionOnly ? `
               <button class="btn btn-action-card" style="padding: 6px 12px; font-size: 12px; font-weight: 600; border-radius: 6px;" onclick="app.toggleTweak('${item.key}', true)">
                 ⚡ ${item.btnText}
               </button>
@@ -2168,11 +2268,33 @@ Object.assign(AppController.prototype, {
     container.innerHTML = html;
   },
 
+  async unblockFilesQuick() {
+    this.addLog("info", "Đang quét và bỏ chặn (Unblock) toàn bộ file trong Downloads, Desktop & Documents...");
+    if (window.pywebview && window.pywebview.api) {
+      const res = await window.pywebview.api.unblock_files_quick();
+      this.addLog(res.success ? "success" : "error", res.message);
+      alert(res.message);
+    }
+  },
+
+  async unblockFilesCustom() {
+    this.addLog("info", "Đang mở hộp thoại chọn tệp tin hoặc thư mục cần bỏ chặn...");
+    if (window.pywebview && window.pywebview.api) {
+      const res = await window.pywebview.api.unblock_files_custom();
+      if (res && res.cancelled) return;
+      this.addLog(res.success ? "success" : "error", res.message);
+      if (res.message) alert(res.message);
+    }
+  },
+
   async toggleTweak(tweakKey, enable) {
     this.addLog("info", `Đang thay đổi thiết lập hệ thống (${tweakKey})...`);
     if (window.pywebview && window.pywebview.api) {
       const res = await window.pywebview.api.toggle_system_tweak(tweakKey, enable);
       this.addLog(res.success ? "success" : "error", res.message);
+      if (tweakKey === 'unblock_files' && res && res.message) {
+        alert(res.message);
+      }
       if (typeof this.loadSystemTweaksStatus === 'function') {
         this.loadSystemTweaksStatus();
       }

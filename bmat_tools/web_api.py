@@ -106,6 +106,17 @@ class Api:
         }
         self._last_winget_status = None
         self._current_winget_pid = None
+        self._printer_fix_progress = {
+            "active": False,
+            "status": "idle",
+            "step": 0,
+            "step_status": ["pending", "pending", "pending", "pending"],
+            "percentage": 0,
+            "message": "",
+            "logs": [],
+            "completed": False,
+            "success": True
+        }
 
     def log(self, level, message):
         entry = {
@@ -571,8 +582,67 @@ class Api:
     def fix_canon_2900(self):
         return self.run_printer_fix_func("fix_canon_2900")
 
+    def start_one_click_printer_fix(self):
+        """Starts asynchronous execution of the 4-step LAN printer fix with real-time log streaming."""
+        self._printer_fix_progress = {
+            "active": True,
+            "status": "running",
+            "step": 1,
+            "step_status": ["running", "pending", "pending", "pending"],
+            "percentage": 5,
+            "message": "Đang khởi tạo tiến trình sửa lỗi...",
+            "logs": [],
+            "completed": False,
+            "success": True
+        }
+
+        def worker():
+            import modules.printer_fix as pf
+
+            def log_cb(text, tag="info"):
+                self._printer_fix_progress["logs"].append(text)
+                self.log(tag.upper() if tag in ["ok", "warn", "error"] else "INFO", text)
+
+            def prog_cb(data):
+                self._printer_fix_progress["step"] = data.get("step", 1)
+                self._printer_fix_progress["percentage"] = data.get("percentage", 0)
+                self._printer_fix_progress["step_status"] = data.get("step_status", ["pending"] * 4)
+                self._printer_fix_progress["message"] = data.get("message", "")
+                if data.get("completed"):
+                    self._printer_fix_progress["completed"] = True
+                    self._printer_fix_progress["status"] = "completed"
+                    self._printer_fix_progress["active"] = False
+
+            try:
+                pf.one_click_fix_all_lan_files(log=log_cb, progress_cb=prog_cb)
+            except Exception as ex:
+                self._printer_fix_progress["status"] = "error"
+                self._printer_fix_progress["completed"] = True
+                self._printer_fix_progress["active"] = False
+                self._printer_fix_progress["success"] = False
+                self._printer_fix_progress["message"] = f"Lỗi: {ex}"
+                self._printer_fix_progress["logs"].append(f"[ERROR] {ex}")
+                self.log("ERROR", f"Lỗi one_click_printer_fix: {ex}")
+
+        threading.Thread(target=worker, daemon=True).start()
+        return {"success": True, "message": "Đã bắt đầu sửa lỗi máy in LAN."}
+
+    def get_one_click_printer_fix_status(self):
+        """Returns current status and log buffer of the 4-step LAN printer fix."""
+        return getattr(self, "_printer_fix_progress", {
+            "active": False,
+            "status": "idle",
+            "step": 0,
+            "step_status": ["pending"] * 4,
+            "percentage": 0,
+            "message": "",
+            "logs": [],
+            "completed": False,
+            "success": True
+        })
+
     def one_click_fix_all_printers(self):
-        return self.run_printer_fix_func("auto_fix_15_buoc")
+        return self.start_one_click_printer_fix()
 
     # ── WINDOWS CREDENTIALS MODULE ─────────────────────────────────────────
     def get_credentials(self):
@@ -843,6 +913,245 @@ class Api:
                 subprocess.run(f"sc start {svc}", shell=True, capture_output=True)
             self.log("SUCCESS", "Đã cấu hình Fix Chia Sẻ Dữ Liệu & Mạng LAN toàn diện!")
             return {"success": True, "message": "Đã cấu hình Fix Chia Sẻ Dữ Liệu thành công!"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    # ── LOCAL GROUPS & USERS (REAL-TIME WINDOWS CONFIG) ─────────────────
+    def get_local_groups_and_users(self):
+        """Fetches all Windows local groups and their users in real-time using native Win32 NetAPI with PowerShell fallback."""
+        try:
+            import ctypes
+            from ctypes import wintypes
+            import socket
+
+            computer_name = socket.gethostname()
+            groups_list = []
+            users_list = []
+            user_to_groups = {}
+
+            # Primary high-performance method: Win32 NetAPI32 (~15-20ms)
+            try:
+                netapi32 = ctypes.WinDLL("netapi32.dll")
+
+                class LOCALGROUP_INFO_1(ctypes.Structure):
+                    _fields_ = [
+                        ("lgrpi1_name", wintypes.LPWSTR),
+                        ("lgrpi1_comment", wintypes.LPWSTR),
+                    ]
+
+                class LOCALGROUP_MEMBERS_INFO_2(ctypes.Structure):
+                    _fields_ = [
+                        ("lgrmi2_sid", ctypes.c_void_p),
+                        ("lgrmi2_sidusage", wintypes.DWORD),
+                        ("lgrmi2_domainandname", wintypes.LPWSTR),
+                    ]
+
+                class USER_INFO_1(ctypes.Structure):
+                    _fields_ = [
+                        ("usri1_name", wintypes.LPWSTR),
+                        ("usri1_password", wintypes.LPWSTR),
+                        ("usri1_password_age", wintypes.DWORD),
+                        ("usri1_priv", wintypes.DWORD),
+                        ("usri1_home_dir", wintypes.LPWSTR),
+                        ("usri1_comment", wintypes.LPWSTR),
+                        ("usri1_flags", wintypes.DWORD),
+                        ("usri1_script_path", wintypes.LPWSTR),
+                    ]
+
+                # 1. Enumerate all local groups
+                bufptr = ctypes.c_void_p()
+                entriesread = wintypes.DWORD()
+                totalentries = wintypes.DWORD()
+                resume_handle = ctypes.c_void_p()
+
+                res = netapi32.NetLocalGroupEnum(
+                    None, 1, ctypes.byref(bufptr), -1,
+                    ctypes.byref(entriesread), ctypes.byref(totalentries),
+                    ctypes.byref(resume_handle)
+                )
+
+                if res == 0 and bufptr.value:
+                    p_info = ctypes.cast(bufptr, ctypes.POINTER(LOCALGROUP_INFO_1))
+                    for i in range(entriesread.value):
+                        gname = p_info[i].lgrpi1_name or ""
+                        gdesc = p_info[i].lgrpi1_comment or ""
+
+                        # Fetch members of this group
+                        m_buf = ctypes.c_void_p()
+                        m_read = wintypes.DWORD()
+                        m_total = wintypes.DWORD()
+                        m_resume = ctypes.c_void_p()
+                        m_res = netapi32.NetLocalGroupGetMembers(
+                            None, gname, 2, ctypes.byref(m_buf), -1,
+                            ctypes.byref(m_read), ctypes.byref(m_total),
+                            ctypes.byref(m_resume)
+                        )
+                        members = []
+                        if m_res == 0 and m_buf.value:
+                            p_mem = ctypes.cast(m_buf, ctypes.POINTER(LOCALGROUP_MEMBERS_INFO_2))
+                            for j in range(m_read.value):
+                                raw_name = p_mem[j].lgrmi2_domainandname or ""
+                                sid_type = p_mem[j].lgrmi2_sidusage
+                                is_group = (sid_type in (2, 4, 5))
+                                parts = raw_name.split("\\")
+                                short_name = parts[-1] if parts else raw_name
+                                domain = parts[0] if len(parts) > 1 else ""
+                                is_domain = bool(domain and domain.upper() != computer_name.upper())
+
+                                members.append({
+                                    "raw_name": raw_name,
+                                    "name": short_name,
+                                    "domain": domain,
+                                    "is_domain": is_domain,
+                                    "is_group": is_group,
+                                    "sid_type": sid_type
+                                })
+
+                                # Map user -> groups
+                                u_key = short_name.lower()
+                                if u_key not in user_to_groups:
+                                    user_to_groups[u_key] = []
+                                if gname not in user_to_groups[u_key]:
+                                    user_to_groups[u_key].append(gname)
+
+                            netapi32.NetApiBufferFree(m_buf)
+
+                        groups_list.append({
+                            "name": gname,
+                            "description": gdesc,
+                            "member_count": len(members),
+                            "members": members
+                        })
+                    netapi32.NetApiBufferFree(bufptr)
+
+                # 2. Enumerate all local users
+                u_buf = ctypes.c_void_p()
+                u_read = wintypes.DWORD()
+                u_total = wintypes.DWORD()
+                u_resume = ctypes.c_void_p()
+
+                u_res = netapi32.NetUserEnum(
+                    None, 1, 2, ctypes.byref(u_buf), -1,
+                    ctypes.byref(u_read), ctypes.byref(u_total),
+                    ctypes.byref(u_resume)
+                )
+
+                if u_res == 0 and u_buf.value:
+                    p_uinfo = ctypes.cast(u_buf, ctypes.POINTER(USER_INFO_1))
+                    for i in range(u_read.value):
+                        u = p_uinfo[i]
+                        uname = u.usri1_name or ""
+                        disabled = bool(u.usri1_flags & 0x0002)
+                        pwd_never_expires = bool(u.usri1_flags & 0x10000)
+                        comment = u.usri1_comment or ""
+
+                        my_groups = user_to_groups.get(uname.lower(), [])
+
+                        users_list.append({
+                            "username": uname,
+                            "disabled": disabled,
+                            "pwd_never_expires": pwd_never_expires,
+                            "comment": comment,
+                            "groups": my_groups
+                        })
+                    netapi32.NetApiBufferFree(u_buf)
+
+            except Exception as net_err:
+                self.log("WARN", f"NetAPI local groups fallback to PowerShell: {net_err}")
+                ps_code = """
+                $groups = Get-LocalGroup
+                $result = @()
+                foreach ($g in $groups) {
+                    $members = @()
+                    try {
+                        $mList = Get-LocalGroupMember -Group $g.Name -ErrorAction Stop
+                        foreach ($m in $mList) {
+                            $parts = $m.Name.Split('\\')
+                            $members += [PSCustomObject]@{
+                                raw_name = $m.Name
+                                name = $parts[-1]
+                                domain = if ($parts.Length -gt 1) { $parts[0] } else { '' }
+                                is_domain = ($m.PrincipalSource.ToString() -ne 'Local')
+                                is_group = ($m.ObjectClass -eq 'Group')
+                            }
+                        }
+                    } catch {}
+                    $result += [PSCustomObject]@{
+                        name = $g.Name
+                        description = if ($g.Description) { $g.Description } else { '' }
+                        member_count = $members.Count
+                        members = $members
+                    }
+                }
+                $result | ConvertTo-Json -Depth 3
+                """
+                p = subprocess.run(
+                    ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_code],
+                    capture_output=True, text=True, encoding="utf-8", errors="ignore",
+                    creationflags=0x08000000
+                )
+                if p.returncode == 0 and p.stdout.strip():
+                    groups_list = json.loads(p.stdout)
+                    if isinstance(groups_list, dict):
+                        groups_list = [groups_list]
+
+            now_str = datetime.datetime.now().strftime("%H:%M:%S • %d/%m/%Y")
+            return {
+                "success": True,
+                "computer_name": computer_name,
+                "timestamp": now_str,
+                "total_groups": len(groups_list),
+                "total_users": len(users_list),
+                "groups": groups_list,
+                "users": users_list
+            }
+        except Exception as e:
+            self.log("ERROR", f"Lỗi get_local_groups_and_users: {e}")
+            return {"success": False, "message": str(e), "groups": [], "users": []}
+
+    def open_lusrmgr(self):
+        """Opens native Windows Local Users and Groups console (lusrmgr.msc) or Computer Management."""
+        try:
+            subprocess.Popen("lusrmgr.msc", shell=True)
+            return {"success": True, "message": "Đã mở Local Users and Groups (lusrmgr.msc)"}
+        except Exception:
+            try:
+                subprocess.Popen("compmgmt.msc", shell=True)
+                return {"success": True, "message": "Đã mở Computer Management (compmgmt.msc)"}
+            except Exception as e:
+                return {"success": False, "message": f"Không thể mở công cụ quản lý: {e}"}
+
+    def toggle_local_user_active(self, username, enable=True):
+        """Enables or disables a local user account."""
+        try:
+            username = username.strip()
+            if not username:
+                return {"success": False, "message": "Username không hợp lệ!"}
+            action = "yes" if enable else "no"
+            cmd = f'net user "{username}" /active:{action}'
+            r = subprocess.run(cmd, shell=True, capture_output=True, text=True, encoding="utf-8", errors="ignore", creationflags=0x08000000)
+            if r.returncode == 0:
+                verb = "kích hoạt" if enable else "vô hiệu hóa"
+                self.log("SUCCESS", f"Đã {verb} tài khoản '{username}'")
+                return {"success": True, "message": f"Đã {verb} tài khoản '{username}' thành công!"}
+            return {"success": False, "message": f"Lỗi: {r.stderr or r.stdout}"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def delete_local_user(self, username):
+        """Deletes a local user account."""
+        try:
+            username = username.strip()
+            if not username:
+                return {"success": False, "message": "Username không hợp lệ!"}
+            if username.lower() in ("administrator", "guest", "defaultaccount"):
+                return {"success": False, "message": f"Không được xóa tài khoản hệ thống mặc định '{username}'!"}
+            cmd = f'net user "{username}" /delete'
+            r = subprocess.run(cmd, shell=True, capture_output=True, text=True, encoding="utf-8", errors="ignore", creationflags=0x08000000)
+            if r.returncode == 0:
+                self.log("SUCCESS", f"Đã xóa tài khoản '{username}'")
+                return {"success": True, "message": f"Đã xóa tài khoản '{username}' thành công!"}
+            return {"success": False, "message": f"Lỗi khi xóa user: {r.stderr or r.stdout}"}
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -2839,13 +3148,10 @@ $s.Save()
                 subprocess.run("taskkill /f /im explorer.exe & start explorer.exe", shell=True, capture_output=True)
 
             elif tweak_key == "repair_taskbar":
-                subprocess.run(r'reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3" /f', shell=True, capture_output=True)
-                subprocess.run(r'reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Taskband" /f', shell=True, capture_output=True)
-                subprocess.run("taskkill /f /im explorer.exe & start explorer.exe", shell=True, capture_output=True)
+                return self.repair_taskbar()
 
             elif tweak_key == "unblock_files":
-                ps_unblock = 'Get-ChildItem -Path "$env:USERPROFILE\\Downloads" -Recurse -ErrorAction SilentlyContinue | Unblock-File'
-                subprocess.run(["powershell", "-NoProfile", "-Command", ps_unblock], capture_output=True)
+                return self.unblock_files_quick()
 
             elif tweak_key == "shortcut_arrow":
                 key = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons')
@@ -2876,6 +3182,258 @@ $s.Save()
         except Exception as e:
             self.log("ERROR", f"Lỗi thực hiện tweak {tweak_key}: {e}")
             return {"success": False, "message": str(e)}
+
+    def repair_taskbar(self):
+        """Repairs and unfreezes Windows Taskbar and Start Menu without removing any pinned items."""
+        try:
+            self.log("INFO", "Đang tiến hành sửa lỗi đơ Taskbar và nút Start Menu (bảo toàn ứng dụng đã ghim)...")
+
+            ps_script = r"""
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class ShellRefresher {
+    [DllImport("shell32.dll")]
+    public static extern void SHChangeNotify(int wEventId, int uFlags, IntPtr dwItem1, IntPtr dwItem2);
+    public static void Refresh() {
+        try { SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero); } catch {}
+    }
+}
+"@ -ErrorAction SilentlyContinue
+
+# 1. Ket thuc cac tien trinh Shell, Start Menu va Widgets dang bi treo hoac deadlocked
+$culprits = @(
+    'StartMenuExperienceHost',
+    'ShellExperienceHost',
+    'SearchHost',
+    'SearchApp',
+    'TextInputHost',
+    'Widgets',
+    'WindowsWidgets',
+    'SystemSettings'
+)
+foreach ($proc in $culprits) {
+    try {
+        Get-Process -Name $proc -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    } catch {}
+}
+
+# 2. Dang ky lai goi AppX Shell va Start Menu mot cach an toan (Bao toan 100% icon va muc da ghim)
+$shellPackages = @(
+    'Microsoft.Windows.StartMenuExperienceHost',
+    'Microsoft.Windows.ShellExperienceHost',
+    'Microsoft.Windows.Search'
+)
+foreach ($pkg in $shellPackages) {
+    try {
+        Get-AppxPackage -Name $pkg -ErrorAction SilentlyContinue | ForEach-Object {
+            $manifest = Join-Path $_.InstallLocation 'AppXManifest.xml'
+            if (Test-Path $manifest) {
+                Add-AppxPackage -DisableDevelopmentMode -Register $manifest -ErrorAction SilentlyContinue
+            }
+        }
+    } catch {}
+}
+
+# 3. Khoi dong lai dich vu Windows Search neu bi treo
+try {
+    $ws = Get-Service -Name WSearch -ErrorAction SilentlyContinue
+    if ($ws -and $ws.Status -eq 'Running') {
+        Restart-Service -Name WSearch -Force -ErrorAction SilentlyContinue
+    }
+} catch {}
+
+# 4. Khoi dong lai Explorer sach se
+try {
+    Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 600
+    if (-not (Get-Process -Name explorer -ErrorAction SilentlyContinue)) {
+        Start-Process explorer.exe
+    }
+} catch {
+    Start-Process explorer.exe -ErrorAction SilentlyContinue
+}
+
+# 5. Cap nhat thong bao Shell
+try { [ShellRefresher]::Refresh() } catch {}
+
+# 6. Kiem tra so luong ung dung da ghim tren Taskbar de xac nhan
+$pinnedCount = 0
+try {
+    $pinnedDir = "$env:APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"
+    if (Test-Path $pinnedDir) {
+        $pinnedCount = (Get-ChildItem -Path $pinnedDir -Filter "*.lnk" -ErrorAction SilentlyContinue | Measure-Object).Count
+    }
+} catch {}
+
+Write-Output "OK:$pinnedCount"
+"""
+            encoded = base64.b64encode(ps_script.encode('utf-16le')).decode('ascii')
+            r = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded],
+                capture_output=True,
+                text=True,
+                timeout=25
+            )
+
+            pinned_count = 0
+            stdout = r.stdout.strip()
+            if "OK:" in stdout:
+                try:
+                    for line in stdout.splitlines():
+                        if line.startswith("OK:"):
+                            pinned_count = int(line.split(":")[1].strip())
+                except Exception:
+                    pass
+
+            msg = f"Đã khôi phục thanh Taskbar và nút Start Menu hoạt động mượt mà (bảo toàn nguyên vẹn {pinned_count} ứng dụng đang ghim)!"
+            self.log("SUCCESS", msg)
+            return {"success": True, "message": msg}
+        except Exception as e:
+            self.log("ERROR", f"Lỗi sửa Taskbar: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _unblock_path_internal(self, target_path):
+        """Removes Zone.Identifier NTFS Alternate Data Stream directly via Win32 API."""
+        import os
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        scanned = 0
+        unblocked = 0
+
+        def _clean_stream(fpath):
+            nonlocal scanned, unblocked
+            scanned += 1
+            stream_name = f"{fpath}:Zone.Identifier"
+            if kernel32.DeleteFileW(stream_name):
+                unblocked += 1
+                return True
+            else:
+                err = kernel32.GetLastError()
+                if err == 5:  # Access Denied (Read-Only)
+                    try:
+                        old_attrs = kernel32.GetFileAttributesW(fpath)
+                        if old_attrs != 0xFFFFFFFF and (old_attrs & 1):
+                            kernel32.SetFileAttributesW(fpath, old_attrs & ~1)
+                            if kernel32.DeleteFileW(stream_name):
+                                unblocked += 1
+                            kernel32.SetFileAttributesW(fpath, old_attrs)
+                    except Exception:
+                        pass
+            return False
+
+        if not target_path or not os.path.exists(target_path):
+            return 0, 0
+
+        if os.path.isfile(target_path):
+            _clean_stream(target_path)
+        elif os.path.isdir(target_path):
+            for root, dirs, files in os.walk(target_path):
+                for fname in files:
+                    fp = os.path.join(root, fname)
+                    _clean_stream(fp)
+
+        return scanned, unblocked
+
+    def unblock_files_quick(self):
+        """Unblocks all files in standard user download & desktop directories and disables zone tagging."""
+        try:
+            import os
+            import subprocess
+            user_profile = os.environ.get("USERPROFILE", "")
+            target_dirs = []
+            for sub in ["Downloads", "Desktop", "Documents"]:
+                p = os.path.join(user_profile, sub)
+                if os.path.isdir(p):
+                    target_dirs.append(p)
+
+            # Check secondary drives if any
+            for d in [r"D:\Downloads", r"E:\Downloads"]:
+                if os.path.isdir(d) and d not in target_dirs:
+                    target_dirs.append(d)
+
+            total_scanned = 0
+            total_unblocked = 0
+            for d in target_dirs:
+                s, u = self._unblock_path_internal(d)
+                total_scanned += s
+                total_unblocked += u
+
+            # Apply Attachments Policy via registry to stop future blocking
+            try:
+                import winreg
+                for root_hkey in [winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE]:
+                    try:
+                        k = winreg.CreateKey(root_hkey, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Attachments')
+                        winreg.SetValueEx(k, 'SaveZoneInformation', 0, winreg.REG_DWORD, 1)
+                        winreg.SetValueEx(k, 'HideZoneInfoOnProperties', 0, winreg.REG_DWORD, 1)
+                        winreg.CloseKey(k)
+                    except Exception:
+                        pass
+                subprocess.run('reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Attachments" /v SaveZoneInformation /t REG_DWORD /d 1 /f', shell=True, capture_output=True)
+            except Exception:
+                pass
+
+            if total_unblocked > 0:
+                msg = f"🎉 Đã quét {total_scanned} tệp và BỎ CHẶN THÀNH CÔNG {total_unblocked} tệp bị dán nhãn (Zone.Identifier) trong Downloads & Desktop!\n\nĐồng thời đã cấu hình hệ thống không chặn file tải về trong tương lai."
+                self.log("SUCCESS", msg)
+            else:
+                msg = f"✅ Đã quét {total_scanned} tệp trong Downloads, Desktop & Documents. Tất cả các tệp đều sạch (không bị dán nhãn Zone.Identifier).\n\nĐã kích hoạt cấu hình ngăn Windows chặn file tải về."
+                self.log("INFO", msg)
+
+            return {
+                "success": True,
+                "scanned": total_scanned,
+                "unblocked": total_unblocked,
+                "message": msg
+            }
+        except Exception as e:
+            self.log("ERROR", f"Lỗi Unblock Files: {e}")
+            return {"success": False, "message": f"Lỗi khi bỏ chặn file: {e}"}
+
+    def unblock_files_custom(self):
+        """Allows user to select a specific file or folder to unblock."""
+        try:
+            import os
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)
+
+            # First ask for file or folder
+            target_path = filedialog.askopenfilename(
+                title="Chọn TỆP TIN cần Bỏ Chặn (Hoặc bấm Cancel/Hủy để chọn THƯ MỤC)"
+            )
+            if not target_path:
+                target_path = filedialog.askdirectory(title="Chọn THƯ MỤC cần Bỏ Chặn toàn bộ tệp bên trong")
+
+            root.destroy()
+
+            if not target_path:
+                return {"success": False, "cancelled": True, "message": "Đã hủy chọn tệp/thư mục."}
+
+            scanned, unblocked = self._unblock_path_internal(target_path)
+            base_name = os.path.basename(target_path) or target_path
+
+            if unblocked > 0:
+                msg = f"🎉 Đã quét {scanned} tệp tại '{base_name}' và BỎ CHẶN THÀNH CÔNG {unblocked} tệp tin!"
+                self.log("SUCCESS", msg)
+            else:
+                msg = f"ℹ️ Đã quét {scanned} tệp tại '{base_name}'. Tệp/thư mục này hiện không bị Windows khóa nhãn Zone.Identifier."
+                self.log("INFO", msg)
+
+            return {
+                "success": True,
+                "path": target_path,
+                "scanned": scanned,
+                "unblocked": unblocked,
+                "message": msg
+            }
+        except Exception as e:
+            self.log("ERROR", f"Lỗi Unblock Custom: {e}")
+            return {"success": False, "message": f"Lỗi: {e}"}
 
 
     # ── FREE SOFTWARE STORE (WINGET SILENT INSTALLER) ─────────────────────
@@ -3058,6 +3616,186 @@ $s.Save()
             {"id": "Cloudflare.Warp",           "name": "Cloudflare WARP",     "category": "Công cụ mạng",   "icon": "🌐"},
             {"id": "mRemoteNG.mRemoteNG",       "name": "mRemoteNG (RDP/SSH)", "category": "Công cụ mạng",   "icon": "🖥️"},
         ]
+        return self._detect_catalog_installation_and_pin_status(catalog)
+
+    def _detect_catalog_installation_and_pin_status(self, catalog):
+        """Accurately detects whether each catalog application is installed and whether its shortcut is pinned."""
+        import os, winreg, re
+
+        # 1. Collect all installed DisplayNames & Uninstall Registry keys
+        installed_display_names = set()
+        installed_reg_keys = set()
+        reg_paths = [
+            (winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'),
+            (winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'),
+            (winreg.HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'),
+            (winreg.HKEY_CURRENT_USER, r'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'),
+        ]
+        for hive, path in reg_paths:
+            try:
+                k = winreg.OpenKey(hive, path, 0, winreg.KEY_READ)
+                i = 0
+                while True:
+                    try:
+                        sub = winreg.EnumKey(k, i)
+                        i += 1
+                        installed_reg_keys.add(sub.lower())
+                        sk = winreg.OpenKey(k, sub)
+                        try:
+                            dn = winreg.QueryValueEx(sk, 'DisplayName')[0]
+                            if dn:
+                                installed_display_names.add(dn.strip().lower())
+                        except Exception:
+                            pass
+                        winreg.CloseKey(sk)
+                    except OSError:
+                        break
+                winreg.CloseKey(k)
+            except Exception:
+                pass
+
+        # 2. Collect App Paths registered executables
+        app_paths_exes = set()
+        for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+            try:
+                k = winreg.OpenKey(hive, r'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths', 0, winreg.KEY_READ)
+                i = 0
+                while True:
+                    try:
+                        sub = winreg.EnumKey(k, i)
+                        i += 1
+                        app_paths_exes.add(sub.lower())
+                    except OSError:
+                        break
+                winreg.CloseKey(k)
+            except Exception:
+                pass
+
+        # 3. Collect Desktop shortcuts
+        desktop_dirs = [
+            os.path.join(os.environ.get('USERPROFILE', ''), 'Desktop'),
+            r'C:\Users\Public\Desktop'
+        ]
+        desktop_lnks = set()
+        for d in desktop_dirs:
+            if os.path.exists(d):
+                try:
+                    for f in os.listdir(d):
+                        if f.lower().endswith('.lnk'):
+                            desktop_lnks.add(os.path.splitext(f)[0].lower())
+                except Exception:
+                    pass
+
+        # 4. Known Executables Mapping for maximum precision
+        KNOWN_EXES = {
+            'coccoc.coccoc': ['browser.exe'],
+            'google.chrome': ['chrome.exe'],
+            'microsoft.edge': ['msedge.exe'],
+            'mozilla.firefox': ['firefox.exe'],
+            'brave.brave': ['brave.exe'],
+            'opera.opera': ['opera.exe', 'launcher.exe'],
+            'opera.operagx': ['operagx.exe'],
+            'vivaldi.vivaldi': ['vivaldi.exe'],
+            'unikey.unikey': ['unikeynt.exe', 'unikey.exe'],
+            'lamquangminh.evkey': ['evkey64.exe', 'evkey.exe', 'evkey.exe'],
+            'tuyenvm.openkey': ['openkey.exe', 'openkey64.exe'],
+            '7zip.7zip': ['7zfm.exe', '7z.exe'],
+            'rarlab.winrar': ['winrar.exe'],
+            'bandisoft.bandizip': ['bandizip.exe'],
+            'giorgiotani.peazip': ['peazip.exe'],
+            'softdeluxe.freedownloadmanager': ['fdm.exe'],
+            'qbittorrent.qbittorrent': ['qbittorrent.exe'],
+            'winscp.winscp': ['winscp.exe'],
+            'putty.putty': ['putty.exe'],
+            'tonec.internetdownloadmanager': ['idman.exe'],
+            'foxit.foxitreader': ['foxitpdfreader.exe', 'foxitreader.exe'],
+            'sumatrapdf.sumatrapdf': ['sumatrapdf.exe'],
+            'adobe.acrobat.reader.64-bit': ['acrobat.exe', 'acrord32.exe'],
+            'geeksoftwaregmbh.pdf24creator': ['pdf24.exe'],
+            'vngcorp.zalo': ['zalo.exe'],
+            'telegram.telegramdesktop': ['telegram.exe'],
+            'zoom.zoom': ['zoom.exe'],
+            'discord.discord': ['discord.exe'],
+            'microsoft.teams': ['msteams.exe', 'teams.exe'],
+            'slacktechnologies.slack': ['slack.exe'],
+            'rakuten.viber': ['viber.exe'],
+            'notepad++.notepad++': ['notepad++.exe'],
+            'videolan.vlc': ['vlc.exe'],
+            'daum.potplayer': ['potplayer64.exe', 'potplayer.exe'],
+            'obsproject.obsstudio': ['obs64.exe'],
+            'anydesk.anydesk': ['anydesk.exe'],
+            'teamviewer.teamviewer': ['teamviewer.exe'],
+            'ducfabulous.ultraviewer': ['ultraviewer_desktop.exe'],
+            'rufus.rufus': ['rufus.exe'],
+            'cpuid.cpu-z': ['cpuz.exe'],
+            'cpuid.hwmonitor': ['hwmonitor.exe'],
+            'techpowerup.gpu-z': ['gpu-z.exe'],
+            'crystaldewworld.crystaldiskinfo': ['diskinfo64.exe', 'diskinfo32.exe'],
+            'crystaldewworld.crystaldiskmark': ['diskmark64.exe', 'diskmark32.exe'],
+            'microsoft.visualstudiocode': ['code.exe'],
+            'git.git': ['git-bash.exe', 'git.exe'],
+            'python.python.3.12': ['python.exe'],
+            'wiresharkfoundation.wireshark': ['wireshark.exe'],
+            'mremoteng.mremoteng': ['mremoteng.exe'],
+            'voidtools.everything': ['everything.exe'],
+            'bopsoft.listary': ['listary.exe'],
+            'obsidian.obsidian': ['obsidian.exe'],
+            'spotify.spotify': ['spotify.exe'],
+            'piriform.ccleaner': ['ccleaner64.exe', 'ccleaner.exe'],
+            'microsoft.windowsterminal': ['wt.exe'],
+            'insecure.nmap': ['nmap.exe'],
+            'nordsecurity.nordvpn': ['nordvpn.exe'],
+            'cloudflare.warp': ['cloudflare warp.exe'],
+            'postman.postman': ['postman.exe'],
+            'github.githubdesktop': ['githubdesktop.exe'],
+            'openvpntechnologies.openvpn': ['openvpn-gui.exe'],
+            'ezbsystems.ultraiso': ['ultraiso.exe'],
+            'malwarebytes.malwarebytes': ['mbam.exe'],
+            'bitwarden.bitwarden': ['bitwarden.exe'],
+            'thedocumentfoundation.libreoffice': ['soffice.exe'],
+            'kingsoft.wpsoffice': ['wps.exe'],
+            'gimp.gimp': ['gimp.exe'],
+            'audacity.audacity': ['audacity.exe'],
+            'bytedance.capcut': ['capcut.exe'],
+            'sharex.sharex': ['sharex.exe'],
+            'greenshot.greenshot': ['greenshot.exe'],
+        }
+
+        for app in catalog:
+            aid = app.get('id', '').lower()
+            name = app.get('name', '').lower()
+            clean_name = re.sub(r'\(.*?\)', '', name).strip()
+
+            is_installed = False
+            # Check known exes in App Paths
+            if aid in KNOWN_EXES:
+                for ex in KNOWN_EXES[aid]:
+                    if ex.lower() in app_paths_exes:
+                        is_installed = True
+                        break
+
+            # Check App ID in registry keys
+            if not is_installed:
+                if any(aid in rk for rk in installed_reg_keys):
+                    is_installed = True
+
+            # Check clean name in DisplayNames
+            if not is_installed and len(clean_name) >= 3:
+                for dn in installed_display_names:
+                    if clean_name == dn or dn.startswith(clean_name + ' ') or f' {clean_name} ' in f' {dn} ':
+                        is_installed = True
+                        break
+
+            # Check desktop shortcut for pinned status
+            is_pinned = False
+            for lnk in desktop_lnks:
+                if (clean_name in lnk or lnk in clean_name) or (aid in KNOWN_EXES and any(ex.replace('.exe', '') in lnk for ex in KNOWN_EXES[aid])):
+                    is_pinned = True
+                    break
+
+            app['is_installed'] = is_installed
+            app['is_pinned'] = is_pinned
+
         return catalog
 
     # ── Winget background session paths & helpers ───────────────────────
@@ -3463,6 +4201,65 @@ $s.Save()
         except Exception as e:
             self.log("ERROR", f"Không thể khởi chạy winget_runner.ps1: {e}")
             return {"success": False, "message": f"Lỗi khởi động tiến trình nền: {e}"}
+
+    def pin_app_shortcut(self, package_id, package_name=""):
+        """Pins and creates shortcuts for the specified application to Desktop, Start Menu, and Programs."""
+        try:
+            if not package_id:
+                return {"success": False, "message": "Chưa cung cấp mã phần mềm!"}
+
+            if not package_name:
+                catalog = {item["id"]: item["name"] for item in self.get_software_catalog()}
+                package_name = catalog.get(package_id, package_id)
+
+            paths = self._get_winget_session_paths()
+            ps1_path = paths.get("ps1")
+            if not ps1_path or not os.path.exists(ps1_path):
+                from constants import get_resource_path
+                ps1_path = get_resource_path("modules", "winget_runner.ps1")
+
+            clean_pkg_id = package_id.replace("'", "''")
+            clean_pkg_name = package_name.replace("'", "''")
+            clean_ps1_path = ps1_path.replace("'", "''")
+
+            ps_cmd = f"""
+. '{clean_ps1_path}'
+$res = Pin-AppShortcuts -PackageId '{clean_pkg_id}' -PackageName '{clean_pkg_name}'
+$res | ConvertTo-Json -Depth 3 -Compress
+"""
+            encoded = base64.b64encode(ps_cmd.encode('utf-16le')).decode('ascii')
+            r = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded],
+                capture_output=True,
+                text=True,
+                timeout=15
+            )
+
+            stdout = r.stdout.strip()
+            if stdout:
+                try:
+                    data = json.loads(stdout)
+                    if data.get("Success"):
+                        count = data.get("CreatedCount", 0)
+                        self.log("SUCCESS", f"Đã ghim chính xác '{package_name}' ra Desktop, Start Menu và Programs ({count} vị trí)!")
+                        return {
+                            "success": True,
+                            "message": f"Đã ghim chính xác '{package_name}' ra Desktop, Start Menu và Programs!",
+                            "paths": data.get("Paths", []),
+                            "count": count
+                        }
+                    else:
+                        msg = data.get("Message") or "Không tìm thấy file thực thi hoặc shortcut để ghim."
+                        self.log("WARN", f"Không thể ghim {package_name}: {msg}")
+                        return {"success": False, "message": msg}
+                except Exception as ex:
+                    self.log("WARN", f"Lỗi phân tích JSON kết quả ghim: {ex}")
+
+            err_msg = r.stderr.strip() or "Không có phản hồi từ tiến trình tạo shortcut."
+            return {"success": False, "message": f"Lỗi tạo shortcut: {err_msg}"}
+        except Exception as e:
+            self.log("ERROR", f"Lỗi ghim shortcut {package_id}: {e}")
+            return {"success": False, "message": str(e)}
 
 
     # ── IP NETWORK SCANNER ───────────────────────────────────────────────
@@ -4209,3 +5006,89 @@ $s.Save()
         else:
             import os
             os._exit(0)
+
+    # ── Zoom Screen (ZoomIt Engine) APIs ──────────────────────────────────
+    def get_zoom_screen_status(self):
+        try:
+            from modules import zoom_screen
+            return zoom_screen.get_status()
+        except Exception as ex:
+            return {"running": False, "error": str(ex), "settings": {}}
+
+    def start_zoom_screen(self):
+        try:
+            from modules import zoom_screen
+            res = zoom_screen.start_zoomit(silent=True)
+            self.log("INFO", f"Zoom Screen: {res.get('message', '')}")
+            return res
+        except Exception as ex:
+            return {"success": False, "message": str(ex)}
+
+    def stop_zoom_screen(self):
+        try:
+            from modules import zoom_screen
+            res = zoom_screen.stop_zoomit()
+            self.log("INFO", f"Zoom Screen: {res.get('message', '')}")
+            return res
+        except Exception as ex:
+            return {"success": False, "message": str(ex)}
+
+    def trigger_zoom_action(self, action_name):
+        try:
+            from modules import zoom_screen
+            res = zoom_screen.trigger_action(action_name)
+            self.log("INFO", f"Zoom Screen Trigger [{action_name}]: {res.get('message', '')}")
+            return res
+        except Exception as ex:
+            return {"success": False, "message": str(ex)}
+
+    def save_zoom_screen_settings(self, settings):
+        try:
+            from modules import zoom_screen
+            res = zoom_screen.save_zoomit_settings(settings)
+            self.log("INFO", f"Zoom Screen Settings: {res.get('message', '')}")
+            return res
+        except Exception as ex:
+            return {"success": False, "message": str(ex)}
+
+    def open_zoom_screen_native_options(self):
+        try:
+            from modules import zoom_screen
+            res = zoom_screen.open_zoomit_options()
+            self.log("INFO", f"Zoom Screen Options: {res.get('message', '')}")
+            return res
+        except Exception as ex:
+            return {"success": False, "message": str(ex)}
+
+    def update_zoom_screen_hotkey(self, action_name, new_hotkey_text):
+        try:
+            from modules import zoom_screen
+            res = zoom_screen.update_hotkey(action_name, new_hotkey_text)
+            self.log("INFO", f"Zoom Screen Hotkey Update [{action_name} -> {new_hotkey_text}]: {res.get('message', '')}")
+            return res
+        except Exception as ex:
+            return {"success": False, "message": str(ex)}
+
+    def reset_zoom_screen_hotkeys(self):
+        try:
+            from modules import zoom_screen
+            res = zoom_screen.reset_hotkeys_to_default()
+            self.log("INFO", f"Zoom Screen Reset Hotkeys: {res.get('message', '')}")
+            return res
+        except Exception as ex:
+            return {"success": False, "message": str(ex)}
+
+    def pause_zoom_screen_hotkeys(self):
+        try:
+            from modules import zoom_screen
+            return zoom_screen.pause_hotkeys()
+        except Exception as ex:
+            return {"success": False, "message": str(ex)}
+
+    def resume_zoom_screen_hotkeys(self):
+        try:
+            from modules import zoom_screen
+            return zoom_screen.resume_hotkeys()
+        except Exception as ex:
+            return {"success": False, "message": str(ex)}
+

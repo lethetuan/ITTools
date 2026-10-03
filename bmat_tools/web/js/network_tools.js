@@ -212,6 +212,22 @@ Object.assign(AppController.prototype, {
     }
   },
 
+  generateRandomMac(separator = ":") {
+    const hex = "0123456789ABCDEF";
+    const bytes = [];
+    for (let i = 0; i < 6; i++) {
+      let b = "";
+      if (i === 0) {
+        const secondChar = ["2", "6", "A", "E"][Math.floor(Math.random() * 4)];
+        b = hex[Math.floor(Math.random() * 16)] + secondChar;
+      } else {
+        b = hex[Math.floor(Math.random() * 16)] + hex[Math.floor(Math.random() * 16)];
+      }
+      bytes.push(b);
+    }
+    return bytes.join(separator);
+  },
+
   async loadNetworkAdapters() {
     const tbody = document.getElementById("ip-adapters-body");
     const localBadge = document.getElementById("ip-local-badge");
@@ -241,10 +257,10 @@ Object.assign(AppController.prototype, {
     } else {
       data = {
         local_ip: "192.168.1.100",
-        external_ip: "14.234.136.174",
+        external_ip: "203.0.113.1",
         adapters: [
-          { name: "Ethernet", ip: "192.168.1.100", prefix: "24", mask: "255.255.255.0", gateway: "192.168.1.1", dns: "8.8.8.8, 8.8.4.4", dns1: "8.8.8.8", dns2: "8.8.4.4", mac: "1C-1B-0D-59-2E-7D", status: "Up", dhcp: "Enabled" },
-          { name: "Wi-Fi", ip: "-", prefix: "-", mask: "255.255.255.0", gateway: "-", dns: "-", dns1: "", dns2: "", mac: "A4-C3-F0-12-34-56", status: "Disconnected", dhcp: "Enabled" }
+          { name: "Ethernet", ip: "192.168.1.100", prefix: "24", mask: "255.255.255.0", gateway: "192.168.1.1", dns: "8.8.8.8, 8.8.4.4", dns1: "8.8.8.8", dns2: "8.8.4.4", mac: this.generateRandomMac("-"), status: "Up", dhcp: "Enabled" },
+          { name: "Wi-Fi", ip: "-", prefix: "-", mask: "255.255.255.0", gateway: "-", dns: "-", dns1: "", dns2: "", mac: this.generateRandomMac("-"), status: "Disconnected", dhcp: "Enabled" }
         ]
       };
       this.networkAdaptersData = data;
@@ -278,18 +294,18 @@ Object.assign(AppController.prototype, {
       const isUp = (a.status || "").toLowerCase() === "up";
       const isDhcp = (a.dhcp || "").toLowerCase() === "enabled";
       const statusBadge = isUp 
-        ? `<span style="background: #dcfce7; color: #15803d; font-weight: 700; padding: 2px 8px; border-radius: 10px; font-size: 11px;">🟢 Active ${isDhcp ? '(DHCP)' : '(Static)'}</span>`
-        : `<span style="background: #f1f5f9; color: #64748b; font-weight: 600; padding: 2px 8px; border-radius: 10px; font-size: 11px;">⚪ ${this.escapeHtml(a.status)}</span>`;
+        ? `<span class="badge badge-status-enable">🟢 Active ${isDhcp ? '(DHCP)' : '(Static)'}</span>`
+        : `<span class="badge badge-status-disabled">⚪ ${this.escapeHtml(a.status)}</span>`;
 
       return `
-        <tr style="border-bottom: 1px solid #f1f5f9;">
+        <tr>
           <td style="padding: 10px;">
-            <strong style="color: #1e293b; font-size: 13px;">${this.escapeHtml(a.name)}</strong>
+            <strong style="color: var(--text-main); font-size: 13px;">${this.escapeHtml(a.name)}</strong>
           </td>
           <td style="padding: 10px; font-family: monospace; color: #0284c7; font-weight: 600;">${this.escapeHtml(a.ip)}</td>
-          <td style="padding: 10px; text-align: center; color: #64748b;">${this.escapeHtml(a.mask || a.prefix)}</td>
-          <td style="padding: 10px; font-family: monospace; color: #475569;">${this.escapeHtml(a.gateway)}</td>
-          <td style="padding: 10px; font-family: monospace; color: #64748b; font-size: 12px;">${this.escapeHtml(a.mac)}</td>
+          <td style="padding: 10px; text-align: center; color: var(--text-muted);">${this.escapeHtml(a.mask || a.prefix)}</td>
+          <td style="padding: 10px; font-family: monospace; color: var(--text-main);">${this.escapeHtml(a.gateway)}</td>
+          <td style="padding: 10px; font-family: monospace; color: var(--text-muted); font-size: 12px;">${this.escapeHtml(a.mac)}</td>
           <td style="padding: 10px; text-align: center;">${statusBadge}</td>
           <td style="padding: 10px; text-align: right; white-space: nowrap;">
             <button class="btn btn-slate-light btn-sm" onclick="app.copyToClipboard('${this.escapeHtml(a.ip)}', 'IP')" title="Copy IP" style="padding: 2px 6px; font-size: 11px;">📋 IP</button>
@@ -670,9 +686,9 @@ Object.assign(AppController.prototype, {
     } else {
       setTimeout(() => {
         const mockData = [
-          { ip: "192.168.1.1", hostname: "Router-Gateway.home", mac: "FC:AA:14:88:99:AA", vendor: "TP-Link", latency_ms: "<1ms", http: true, https: true },
-          { ip: "192.168.1.100", hostname: "PC-DESKTOP-LTT", mac: "00:E0:4C:12:34:56", vendor: "Realtek", latency_ms: "<1ms", http: false, https: false },
-          { ip: "192.168.1.105", hostname: "iPhone-Tuans", mac: "AC:BC:32:44:55:66", vendor: "Apple", latency_ms: "12ms", http: false, https: false }
+          { ip: "192.168.1.1", hostname: "Router-Gateway.home", mac: this.generateRandomMac(":"), vendor: "TP-Link", latency_ms: "<1ms", http: true, https: true },
+          { ip: "192.168.1.100", hostname: "PC-DESKTOP-LTT", mac: this.generateRandomMac(":"), vendor: "Realtek", latency_ms: "<1ms", http: false, https: false },
+          { ip: "192.168.1.105", hostname: "iPhone-Guest", mac: this.generateRandomMac(":"), vendor: "Apple", latency_ms: "12ms", http: false, https: false }
         ];
         this.lastScanResults = mockData;
         if (badgeCount) badgeCount.innerText = "3 Online";
@@ -712,40 +728,20 @@ Object.assign(AppController.prototype, {
       if (!webPorts) webPorts = `<span style="color:#cbd5e1; font-size:11px;">-</span>`;
 
       return `
-        <tr style="border-bottom: 1px solid #f1f5f9;">
-          <td style="text-align: center; font-weight: 600; color: #64748b; padding: 8px;">${index + 1}</td>
+        <tr>
+          <td style="text-align: center; font-weight: 600; color: var(--text-muted); padding: 8px;">${index + 1}</td>
           <td style="text-align: center; padding: 8px;">
-            <span class="badge" style="background: #dcfce7; color: #15803d; font-weight: 700; font-size: 11px; padding: 3px 8px; border-radius: 12px;">
+            <span class="badge badge-status-enable">
               🟢 Online ${pingText}
             </span>
           </td>
           <td style="padding: 8px;">
-            <strong style="font-family: monospace; color: #0f172a; font-size: 13px;">${item.ip}</strong>
+            <strong style="font-family: monospace; color: var(--text-main); font-size: 13px;">${item.ip}</strong>
           </td>
-          <td style="padding: 8px; color: #0369a1; font-weight: 600;">
+          <td style="padding: 8px; color: #0284c7; font-weight: 600;">
             ${item.hostname || '<span style="color:#94a3b8; font-weight:400; font-style:italic;">(Unknown)</span>'}
           </td>
-          <td style="padding: 8px; font-family: monospace; color: #475569; font-size: 12px;">
-            ${item.mac || '-'}
-          </td>
-          <td style="padding: 8px;">${vendorBadge}</td>
-          <td style="text-align: center; padding: 8px;">${webPorts}</td>
-          <td style="text-align: right; padding: 8px;">
-            <button class="btn btn-slate-light btn-sm" onclick="app.copyToClipboard('${item.ip}')" title="Sao chép IP" style="padding: 2px 6px; font-size: 11px;">
-              📋
-            </button>
-            ${item.http || item.https ? `
-              <button class="btn btn-sky-outline btn-sm" onclick="window.open('${item.https ? 'https' : 'http'}://${item.ip}', '_blank')" title="Mở Web Interface" style="padding: 2px 6px; font-size: 11px;">
-                🌐
-              </button>
-            ` : ''}
-          </td>
-        </tr>
-      `;
-    }).join('');
-  },
-
-  exportIpScanCsv() {
+          <td style="padding: 8px; font-family: monospace; color: var(--text-muted); font-size: 12px;">
     if (!this.lastScanResults || this.lastScanResults.length === 0) {
       alert("Không có kết quả quét để xuất CSV!");
       return;

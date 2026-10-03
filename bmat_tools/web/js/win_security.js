@@ -196,35 +196,69 @@ Object.assign(AppController.prototype, {
 
   async loadWinUpdateStatus() {
     this.addLog("info", "Đang kiểm tra trạng thái Windows Update & Security...");
-    let status = null;
-    if (window.pywebview && window.pywebview.api) {
-      status = await window.pywebview.api.get_win_update_status();
-    } else {
-      status = {
-        success: true,
-        wu_enabled: true,
-        wu_status_text: "🟢 Đang BẬT (Tự động cập nhật)",
-        defender_enabled: true,
-        defender_status_text: "🟢 Đang BẬT (Real-Time Protection)",
-        uac_enabled: false,
-        uac_status_text: "🔴 Đã TẮT (EnableLUA = 0)",
-        smartscreen_enabled: true,
-        smartscreen_status_text: "🟢 Đang BẬT"
-      };
+    const btn = document.getElementById("btn-refresh-win-status");
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `<span style="display:inline-block;animation:spin 0.8s linear infinite;">⏳</span> Đang kiểm tra...`;
     }
 
-    if (!status || !status.success) return;
+    let status = null;
+    try {
+      if (window.pywebview && window.pywebview.api) {
+        status = await window.pywebview.api.get_win_update_status();
+      } else {
+        status = {
+          success: true,
+          wu_enabled: true,
+          wu_badge: "🟢 ĐANG BẬT",
+          wu_status_text: "🟢 Đang BẬT (Khởi động: Tự động / Trigger Start)",
+          defender_enabled: true,
+          defender_badge: "🟢 AN TOÀN",
+          defender_status_text: "🛡️ Đang bảo vệ bởi: Kaspersky Small Office Security (Defender đã nhường quyền)",
+          has_third_party: true,
+          third_party_name: "Kaspersky Small Office Security",
+          uac_enabled: false,
+          uac_badge: "🔴 ĐÃ TẮT",
+          uac_status_text: "🔴 Đã TẮT (EnableLUA = 0)",
+          smartscreen_enabled: true,
+          smartscreen_badge: "🟢 ĐANG BẬT",
+          smartscreen_status_text: "🟢 Đang BẬT"
+        };
+      }
+    } catch (err) {
+      this.addLog("error", "Lỗi khi kiểm tra trạng thái: " + err);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `🔄 Refresh Status`;
+      }
+    }
+
+    if (!status || !status.success) {
+      this.addLog("warn", "Không thể lấy trạng thái thời gian thực từ Windows.");
+      return;
+    }
 
     // Windows Update Card
     const wuText = document.getElementById("wu-status-text");
     const wuBadge = document.getElementById("wu-status-badge");
     const wuCard = document.getElementById("wu-status-card");
-    if (wuText) wuText.innerText = status.wu_status_text;
+    if (wuText) wuText.innerText = status.wu_status_text || "⚪ N/A";
     if (wuBadge) {
-      if (status.wu_badge === "⏸️ TẠM DỪNG" || (!status.wu_enabled && status.wu_status_text.includes("TẠM DỪNG"))) {
+      if (status.wu_enabled === null || status.wu_enabled === undefined || (status.wu_badge && status.wu_badge.includes("N/A"))) {
+        wuBadge.innerText = status.wu_badge || "⚪ N/A";
+        wuBadge.style.background = "#f1f5f9";
+        wuBadge.style.color = "#64748b";
+        wuBadge.style.border = "1px solid #cbd5e1";
+        if (wuCard) {
+          wuCard.style.background = "#f8fafc";
+          wuCard.style.borderColor = "#e2e8f0";
+        }
+      } else if (status.wu_badge === "⏸️ TẠM DỪNG" || (!status.wu_enabled && status.wu_status_text && status.wu_status_text.includes("TẠM DỪNG"))) {
         wuBadge.innerText = status.wu_badge || "⏸️ TẠM DỪNG";
         wuBadge.style.background = "#fef3c7";
         wuBadge.style.color = "#b45309";
+        wuBadge.style.border = "none";
         if (wuCard) {
           wuCard.style.background = "#fffbeb";
           wuCard.style.borderColor = "#fde68a";
@@ -233,6 +267,7 @@ Object.assign(AppController.prototype, {
         wuBadge.innerText = status.wu_badge || "🟢 ĐANG BẬT";
         wuBadge.style.background = "#dcfce7";
         wuBadge.style.color = "#15803d";
+        wuBadge.style.border = "none";
         if (wuCard) {
           wuCard.style.background = "#f0fdf4";
           wuCard.style.borderColor = "#bbf7d0";
@@ -241,6 +276,7 @@ Object.assign(AppController.prototype, {
         wuBadge.innerText = status.wu_badge || "🔴 ĐÃ TẮT";
         wuBadge.style.background = "#fee2e2";
         wuBadge.style.color = "#b91c1c";
+        wuBadge.style.border = "none";
         if (wuCard) {
           wuCard.style.background = "#fef2f2";
           wuCard.style.borderColor = "#fecaca";
@@ -252,20 +288,42 @@ Object.assign(AppController.prototype, {
     const wdText = document.getElementById("wd-status-text");
     const wdBadge = document.getElementById("wd-status-badge");
     const wdCard = document.getElementById("wd-status-card");
-    if (wdText) wdText.innerText = status.defender_status_text;
+    if (wdText) wdText.innerText = status.defender_status_text || "⚪ N/A";
     if (wdBadge) {
-      if (status.has_third_party) {
-        wdBadge.innerText = status.defender_badge || "🟢 AN TOÀN";
-        wdBadge.style.background = "#e0f2fe";
-        wdBadge.style.color = "#0369a1";
+      if (status.defender_enabled === null || status.defender_enabled === undefined || (status.defender_badge && status.defender_badge.includes("N/A"))) {
+        wdBadge.innerText = status.defender_badge || "⚪ N/A";
+        wdBadge.style.background = "#f1f5f9";
+        wdBadge.style.color = "#64748b";
+        wdBadge.style.border = "1px solid #cbd5e1";
         if (wdCard) {
-          wdCard.style.background = "#f0f9ff";
-          wdCard.style.borderColor = "#bae6fd";
+          wdCard.style.background = "#f8fafc";
+          wdCard.style.borderColor = "#e2e8f0";
+        }
+      } else if (status.has_third_party) {
+        if (status.defender_enabled) {
+          wdBadge.innerText = status.defender_badge || "🟢 AN TOÀN";
+          wdBadge.style.background = "#e0f2fe";
+          wdBadge.style.color = "#0369a1";
+          wdBadge.style.border = "none";
+          if (wdCard) {
+            wdCard.style.background = "#f0f9ff";
+            wdCard.style.borderColor = "#bae6fd";
+          }
+        } else {
+          wdBadge.innerText = status.defender_badge || "🔴 ĐÃ TẮT";
+          wdBadge.style.background = "#fee2e2";
+          wdBadge.style.color = "#b91c1c";
+          wdBadge.style.border = "none";
+          if (wdCard) {
+            wdCard.style.background = "#fef2f2";
+            wdCard.style.borderColor = "#fecaca";
+          }
         }
       } else if (status.defender_enabled) {
         wdBadge.innerText = status.defender_badge || "🟢 ĐANG BẬT";
         wdBadge.style.background = "#dcfce7";
         wdBadge.style.color = "#15803d";
+        wdBadge.style.border = "none";
         if (wdCard) {
           wdCard.style.background = "#f0fdf4";
           wdCard.style.borderColor = "#bbf7d0";
@@ -274,6 +332,7 @@ Object.assign(AppController.prototype, {
         wdBadge.innerText = status.defender_badge || "🔴 ĐÃ TẮT";
         wdBadge.style.background = "#fee2e2";
         wdBadge.style.color = "#b91c1c";
+        wdBadge.style.border = "none";
         if (wdCard) {
           wdCard.style.background = "#fef2f2";
           wdCard.style.borderColor = "#fecaca";
@@ -284,28 +343,42 @@ Object.assign(AppController.prototype, {
     // UAC Badge
     const uacBadge = document.getElementById("uac-status-badge");
     if (uacBadge) {
-      if (status.uac_enabled) {
-        uacBadge.innerText = "🟢 ĐANG BẬT";
+      if (status.uac_enabled === null || status.uac_enabled === undefined || (status.uac_badge && status.uac_badge.includes("N/A"))) {
+        uacBadge.innerText = status.uac_badge || "⚪ N/A";
+        uacBadge.style.background = "#f1f5f9";
+        uacBadge.style.color = "#64748b";
+        uacBadge.style.border = "1px solid #cbd5e1";
+      } else if (status.uac_enabled) {
+        uacBadge.innerText = status.uac_badge || "🟢 ĐANG BẬT";
         uacBadge.style.background = "#dcfce7";
         uacBadge.style.color = "#15803d";
+        uacBadge.style.border = "none";
       } else {
-        uacBadge.innerText = "🔴 ĐÃ TẮT";
+        uacBadge.innerText = status.uac_badge || "🔴 ĐÃ TẮT";
         uacBadge.style.background = "#fee2e2";
         uacBadge.style.color = "#b91c1c";
+        uacBadge.style.border = "none";
       }
     }
 
     // SmartScreen Badge
     const ssBadge = document.getElementById("ss-status-badge");
     if (ssBadge) {
-      if (status.smartscreen_enabled) {
-        ssBadge.innerText = "🟢 ĐANG BẬT";
+      if (status.smartscreen_enabled === null || status.smartscreen_enabled === undefined || (status.smartscreen_badge && status.smartscreen_badge.includes("N/A"))) {
+        ssBadge.innerText = status.smartscreen_badge || "⚪ N/A";
+        ssBadge.style.background = "#f1f5f9";
+        ssBadge.style.color = "#64748b";
+        ssBadge.style.border = "1px solid #cbd5e1";
+      } else if (status.smartscreen_enabled) {
+        ssBadge.innerText = status.smartscreen_badge || "🟢 ĐANG BẬT";
         ssBadge.style.background = "#dcfce7";
         ssBadge.style.color = "#15803d";
+        ssBadge.style.border = "none";
       } else {
-        ssBadge.innerText = "🔴 ĐÃ TẮT";
+        ssBadge.innerText = status.smartscreen_badge || "🔴 ĐÃ TẮT";
         ssBadge.style.background = "#fee2e2";
         ssBadge.style.color = "#b91c1c";
+        ssBadge.style.border = "none";
       }
     }
 
@@ -403,10 +476,10 @@ Object.assign(AppController.prototype, {
   async loadFirewallStatus() {
     this.addLog("info", "Đang kiểm tra trạng thái Windows Firewall các profile và quy tắc...");
     let st = null;
-    if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_firewall_status === 'function') {
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.get_firewall_status) {
       st = await window.pywebview.api.get_firewall_status();
     } else {
-      st = { success: true, domain: true, private: true, public: true, all_on: true, any_on: true, allow_inbound: false, file_sharing: true, file_sharing_count: 43, rdp: true, rdp_count: 3 };
+      st = { success: true, domain: true, private: true, public: true, all_on: true, any_on: true, allow_inbound: false, file_sharing: false, file_sharing_count: 0, rdp: false, rdp_count: 0, ping: false, ping_count: 0 };
     }
 
     if (!st) return;
@@ -416,7 +489,10 @@ Object.assign(AppController.prototype, {
     const pubBadge = document.getElementById("fw-status-public");
     const inBadge = document.getElementById("fw-status-inbound");
     const sharingBadge = document.getElementById("fw-status-sharing");
+    const pingBadge = document.getElementById("fw-status-ping");
     const rdpBadge = document.getElementById("fw-status-rdp");
+
+    this._lastFirewallStatus = st;
 
     if (domBadge) {
       domBadge.className = st.domain ? "badge badge-success" : "badge badge-danger";
@@ -436,26 +512,132 @@ Object.assign(AppController.prototype, {
     }
     if (sharingBadge) {
       sharingBadge.className = st.file_sharing ? "badge badge-success" : "badge badge-danger";
-      sharingBadge.innerText = st.file_sharing ? `🟢 ĐANG BẬT (${st.file_sharing_count || 'Active'} quy tắc)` : "🚫 ĐANG TẮT";
+      sharingBadge.innerText = st.file_sharing ? "🟢 ĐANG MỞ (Server đang chạy)" : "🚫 ĐÃ TẮT (Chặn kết nối)";
+    }
+    if (pingBadge) {
+      pingBadge.className = st.ping ? "badge badge-success" : "badge badge-danger";
+      pingBadge.innerText = st.ping ? `🟢 ĐANG BẬT (${st.ping_count || 'Active'} quy tắc)` : "🚫 ĐANG TẮT";
     }
     if (rdpBadge) {
       rdpBadge.className = st.rdp ? "badge badge-success" : "badge badge-danger";
       rdpBadge.innerText = st.rdp ? `🟢 ĐANG BẬT (${st.rdp_count || 'Active'} quy tắc)` : "🚫 ĐANG TẮT";
     }
 
+    // Dynamic 1-Button Toggle State Update: Đang đóng thì hiện nút Mở, đang mở thì hiện nút Đóng
+    const btnSharing = document.getElementById("fw-btn-toggle-sharing");
+    if (btnSharing) {
+      btnSharing.disabled = false;
+      if (st.file_sharing) {
+        btnSharing.className = "btn btn-danger-solid btn-sm";
+        btnSharing.style.width = "100%";
+        btnSharing.style.fontWeight = "700";
+        btnSharing.innerHTML = "<span>🔒</span> Đóng Chia Sẻ";
+        btnSharing.title = "Đang mở. Nhấp để Đóng/Chặn chia sẻ file & máy in";
+      } else {
+        btnSharing.className = "btn btn-success-solid btn-sm";
+        btnSharing.style.width = "100%";
+        btnSharing.style.fontWeight = "700";
+        btnSharing.innerHTML = "<span>🔓</span> Mở Chia Sẻ";
+        btnSharing.title = "Đang đóng. Nhấp để Mở chia sẻ file & máy in";
+      }
+    }
+
+    const btnPing = document.getElementById("fw-btn-toggle-ping");
+    if (btnPing) {
+      btnPing.disabled = false;
+      if (st.ping) {
+        btnPing.className = "btn btn-danger-solid btn-sm";
+        btnPing.style.width = "100%";
+        btnPing.style.fontWeight = "700";
+        btnPing.innerHTML = "<span>🔒</span> Đóng Phản Hồi Ping";
+        btnPing.title = "Đang mở. Nhấp để Đóng/Chặn phản hồi ping từ mạng LAN";
+      } else {
+        btnPing.className = "btn btn-success-solid btn-sm";
+        btnPing.style.width = "100%";
+        btnPing.style.fontWeight = "700";
+        btnPing.innerHTML = "<span>🔓</span> Mở Phản Hồi Ping";
+        btnPing.title = "Đang đóng. Nhấp để Mở phản hồi ping từ mạng LAN";
+      }
+    }
+
+    const btnRdp = document.getElementById("fw-btn-toggle-rdp");
+    if (btnRdp) {
+      btnRdp.disabled = false;
+      if (st.rdp) {
+        btnRdp.className = "btn btn-danger-solid btn-sm";
+        btnRdp.style.width = "100%";
+        btnRdp.style.fontWeight = "700";
+        btnRdp.innerHTML = "<span>🔒</span> Đóng Remote Desktop";
+        btnRdp.title = "Đang mở. Nhấp để Đóng/Chặn kết nối Remote Desktop";
+      } else {
+        btnRdp.className = "btn btn-success-solid btn-sm";
+        btnRdp.style.width = "100%";
+        btnRdp.style.fontWeight = "700";
+        btnRdp.innerHTML = "<span>🔓</span> Mở Remote Desktop";
+        btnRdp.title = "Đang đóng. Nhấp để Mở kết nối Remote Desktop";
+      }
+    }
+
     this.addLog("success", "Đã nạp trạng thái Windows Firewall thực tế!");
+  },
+
+  async toggleFirewallRule(type) {
+    let btn = null;
+    let targetAction = "";
+    if (type === 'sharing') {
+      btn = document.getElementById("fw-btn-toggle-sharing");
+      const isCurrentlyOn = Boolean(this._lastFirewallStatus?.file_sharing);
+      targetAction = isCurrentlyOn ? 'disable_sharing' : 'enable_sharing';
+    } else if (type === 'ping') {
+      btn = document.getElementById("fw-btn-toggle-ping");
+      const isCurrentlyOn = Boolean(this._lastFirewallStatus?.ping);
+      targetAction = isCurrentlyOn ? 'disable_ping' : 'enable_ping';
+    } else if (type === 'rdp') {
+      btn = document.getElementById("fw-btn-toggle-rdp");
+      const isCurrentlyOn = Boolean(this._lastFirewallStatus?.rdp);
+      targetAction = isCurrentlyOn ? 'disable_rdp' : 'enable_rdp';
+    }
+
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `<span style="display:inline-block;animation:spin 0.8s linear infinite;">⏳</span> Đang thực hiện...`;
+    }
+
+    try {
+      await this.setFirewallAction(targetAction);
+    } catch (err) {
+      this.addLog("error", "Lỗi cấu hình Firewall: " + err);
+      if (typeof this.showToast === 'function') {
+        this.showToast("error", "Lỗi cấu hình Firewall: " + err);
+      }
+      await this.loadFirewallStatus();
+    }
   },
 
   async setFirewallAction(action) {
     this.addLog("info", `Đang thực hiện lệnh Firewall: ${action}...`);
-    if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.set_firewall_action === 'function') {
-      const res = await window.pywebview.api.set_firewall_action(action);
-      this.addLog(res.success ? "success" : "error", res.message);
-      // Cập nhật ngay trạng thái trên giao diện trước khi alert
+    try {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.set_firewall_action) {
+        const res = await window.pywebview.api.set_firewall_action(action);
+        this.addLog(res.success ? "success" : "error", res.message);
+        await this.loadFirewallStatus();
+        if (typeof this.showToast === 'function') {
+          this.showToast(res.success ? "success" : "error", res.message);
+        } else {
+          alert(res.message);
+        }
+      } else {
+        alert(`[MOCK] Đã thực hiện ${action} cho Firewall!`);
+        await this.loadFirewallStatus();
+      }
+    } catch (err) {
+      this.addLog("error", "Lỗi thực thi lệnh Firewall: " + err);
+      if (typeof this.showToast === 'function') {
+        this.showToast("error", "Lỗi thực thi: " + err);
+      } else {
+        alert("Lỗi thực thi: " + err);
+      }
       await this.loadFirewallStatus();
-      alert(res.message);
-    } else {
-      alert(`[MOCK] Đã thực hiện ${action} cho Firewall!`);
     }
   },
 
@@ -472,7 +654,12 @@ Object.assign(AppController.prototype, {
 
     if (searchInput) searchInput.value = "";
 
-    const typeName = type === 'fps' ? 'Chia Sẻ File & Máy In (LAN)' : 'Remote Desktop (RDP)';
+    const typeNames = {
+      fps: 'Chia Sẻ File & Máy In (LAN)',
+      ping: 'Phản Hồi Ping (ICMP Echo Request)',
+      rdp: 'Remote Desktop (RDP)'
+    };
+    const typeName = typeNames[type] || 'Quy Tắc Firewall';
     if (titleElem) titleElem.innerText = `Chi Tiết Quy Tắc Firewall: ${typeName}`;
     if (subElem) subElem.innerText = `Đang quét danh sách quy tắc thời gian thực từ Windows...`;
 
@@ -480,7 +667,7 @@ Object.assign(AppController.prototype, {
     modal.style.display = "flex";
 
     let res = null;
-    if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_firewall_rules_detail === 'function') {
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.get_firewall_rules_detail) {
       res = await window.pywebview.api.get_firewall_rules_detail(type);
     } else {
       res = { success: true, rules: [] };
