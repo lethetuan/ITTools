@@ -1319,10 +1319,10 @@ class Api:
         Polled by the frontend for live gauge & battery updates.
         """
         import time
-        from modules.computer_info import get_system_power_status
+        from modules.computer_info import get_system_power_status, get_comprehensive_battery_info
 
-        # 1. Real-time Battery Status (instant via Win32 GetSystemPowerStatus)
-        p_status = get_system_power_status()
+        # 1. Real-time Battery Status — uses cached comprehensive WMI data + instant ctypes power status
+        battery = get_comprehensive_battery_info(quick=True)
 
         def fmt_speed(kb_s):
             if kb_s >= 1024:
@@ -1403,7 +1403,7 @@ class Api:
                 "net_rx_kb": round(net_rx_kb, 1),
                 "net_tx_kb": round(net_tx_kb, 1),
                 "partitions_usage": partitions_usage,
-                "battery": p_status
+                "battery": battery
             }
         except Exception:
             # Fallback using native Windows ctypes
@@ -1472,7 +1472,7 @@ class Api:
                 "net_rx_kb": 0.0,
                 "net_tx_kb": 0.0,
                 "partitions_usage": partitions_usage,
-                "battery": p_status
+                "battery": battery
             }
 
     def open_vendor_driver_site(self, vendor_name, service_tag=""):

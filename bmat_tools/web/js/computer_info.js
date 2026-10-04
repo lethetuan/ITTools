@@ -80,16 +80,60 @@ Object.assign(AppController.prototype, {
       batPresentEl.innerText = isLaptop ? "🔋 Có pin (Laptop)" : "🖥️ Không có pin (Desktop PC)";
       batPresentEl.style.color = isLaptop ? "#22c55e" : "var(--text-muted)";
     }
-    set("hw-bat-name", info.battery?.name || "N/A");
-    const batLevel = info.battery?.level_pct ?? 0;
-    set("hw-bat-level", info.battery?.is_laptop ? `${batLevel}%` : "N/A");
-    const batBar = document.getElementById("hw-bat-bar");
-    if (batBar) { batBar.style.width = info.battery?.is_laptop ? `${batLevel}%` : "0%"; batBar.style.background = batLevel < 20 ? "#ef4444" : batLevel < 50 ? "#f59e0b" : "#22c55e"; }
-    set("hw-bat-wear", info.battery?.is_laptop ? `${info.battery?.wear_pct ?? 0}%` : "N/A");
-    set("hw-bat-design", info.battery?.design_mwh || "N/A");
-    set("hw-bat-full", info.battery?.full_mwh || "N/A");
-    set("hw-bat-status", info.battery?.status_text || "N/A");
-    set("hw-bat-health", info.battery?.health_text || "N/A");
+
+    // Battery section visibility
+    const batSection = document.getElementById("hw-bat-section");
+    if (batSection) batSection.style.display = isLaptop ? "" : "none";
+
+    if (isLaptop) {
+      const bat = info.battery || {};
+      const batLevel = bat.level_pct ?? 0;
+      set("hw-bat-name", bat.name || "Standard Battery");
+      set("hw-bat-level", `${batLevel}%`);
+      const batBar = document.getElementById("hw-bat-bar");
+      if (batBar) {
+        batBar.style.width = `${batLevel}%`;
+        batBar.style.background = bat.is_ac ? "#38bdf8" : (batLevel < 20 ? "#ef4444" : batLevel < 40 ? "#f59e0b" : "#22c55e");
+      }
+      // Health bar
+      const healthPct = bat.health_pct ?? (bat.wear_pct !== undefined ? Math.max(0, 100 - bat.wear_pct) : 0);
+      const healthBarEl = document.getElementById("hw-bat-health-bar");
+      if (healthBarEl) {
+        healthBarEl.style.width = `${healthPct}%`;
+        healthBarEl.style.background = healthPct > 80 ? "#22c55e" : healthPct > 60 ? "#f59e0b" : "#ef4444";
+      }
+      // Wear + health
+      const wearPct = bat.wear_pct ?? 0;
+      set("hw-bat-wear", wearPct > 0 ? `${wearPct}%` : "0%");
+      const healthEl = document.getElementById("hw-bat-health");
+      if (healthEl) {
+        healthEl.textContent = bat.health_text || "✓ Hoạt động tốt";
+        healthEl.style.color = wearPct < 15 ? "#22c55e" : wearPct < 35 ? "#f59e0b" : "#ef4444";
+      }
+      // Capacities
+      set("hw-bat-design", bat.design_mwh || "N/A");
+      set("hw-bat-full", bat.full_mwh || "N/A");
+      set("hw-bat-remaining", bat.remaining_mwh || "N/A");
+      // Extra details
+      set("hw-bat-cycles", bat.cycle_text || "N/A");
+      set("hw-bat-voltage", bat.voltage_v || "N/A");
+      set("hw-bat-chemistry", bat.chemistry || "N/A");
+      set("hw-bat-mfg", bat.manufacturer || "N/A");
+      set("hw-bat-serial", bat.serial_number || "N/A");
+      // New realtime fields
+      set("hw-bat-discharge-rate", bat.discharge_rate || "N/A");
+      set("hw-bat-charge-rate", bat.charge_rate || "N/A");
+      set("hw-bat-time-remaining", bat.time_remaining || "N/A");
+      set("hw-bat-power-source", bat.power_source || (bat.is_ac ? "Nguồn AC" : "Nguồn Pin"));
+      // Status + pulse
+      set("hw-bat-status", bat.status_text || "N/A");
+      set("hw-bat-updated", bat.last_updated || "—");
+      const pulseEl = document.getElementById("hw-bat-pulse");
+      if (pulseEl) {
+        pulseEl.style.display = "block";
+        pulseEl.style.background = bat.is_ac ? "#38bdf8" : "#22c55e";
+      }
+    }
 
     // Box 2: Service Tag
     set("hw-stag-serial", info.service_tag?.serial || "N/A");
@@ -155,75 +199,144 @@ Object.assign(AppController.prototype, {
     this.startRealtimeMonitoring();
   },
 
-  // ── REAL-TIME PERFORMANCE MONITOR (polls every 2.5s) ─────────────────────
+
+  // ── REAL-TIME PERFORMANCE MONITOR ────────────────────────────────────────
   startRealtimeMonitoring() {
-    if (this._realtimeTimer) return; // already running
+    // Always stop existing timer first (allow restart on re-enter tab)
+    this.stopRealtimeMonitoring();
 
     const pollStats = async () => {
-      const tab = document.getElementById("tab-computer-info");
-      if (!tab || !tab.classList.contains("active")) return;
-      if (!window.pywebview || !window.pywebview.api) return;
+      // Check if still on computer-info tab via app's own tracking
+      const activeId = (window.app && window.app.currentActiveTabId) ? window.app.currentActiveTabId : this.currentActiveTabId;
+      if (activeId && activeId !== "tab-computer-info") return;
+
+      // Wait for pywebview to be ready
+      if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api.get_realtime_stats !== "function") return;
 
       try {
         const s = await window.pywebview.api.get_realtime_stats();
         if (!s || !s.success) return;
 
-        const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
-        const setBar = (id, pct, color) => { const el = document.getElementById(id); if (el) { el.style.width = `${Math.min(100, Math.max(0, pct))}%`; if (color) el.style.background = color; } };
+        const setEl = (id, val) => {
+          const el = document.getElementById(id);
+          if (el && val !== undefined && val !== null) el.innerText = String(val);
+        };
+        const setBar = (id, pct, color) => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.style.width = `${Math.min(100, Math.max(0, pct || 0))}%`;
+            if (color) el.style.background = color;
+          }
+        };
 
-        // CPU
+        // ── CPU ──────────────────────────────────────────────────────────
         const cpuPct = s.cpu_pct ?? 0;
         setEl("hw-gauge-cpu-pct", `${cpuPct}%`);
         const cpuColor = cpuPct > 80 ? "#ef4444" : cpuPct > 50 ? "#f59e0b" : "#3b82f6";
         setBar("hw-gauge-cpu-bar", cpuPct, cpuColor);
 
-        // RAM
+        // ── RAM ──────────────────────────────────────────────────────────
         const ramPct = s.ram_pct ?? 0;
         setEl("hw-gauge-ram-pct", `${ramPct}%`);
         if (s.ram_used && s.ram_total) setEl("hw-gauge-ram-detail", `${s.ram_used} / ${s.ram_total}`);
         const ramColor = ramPct > 85 ? "#ef4444" : ramPct > 60 ? "#f59e0b" : "#06b6d4";
         setBar("hw-gauge-ram-bar", ramPct, ramColor);
 
-        // Network
+        // ── Network ──────────────────────────────────────────────────────
         const netTotal = (s.net_rx_kb || 0) + (s.net_tx_kb || 0);
         const netBarPct = Math.min(100, netTotal / 10240 * 100);
         setEl("hw-gauge-net-pct", s.net_rx || "0 KB/s");
-        setEl("hw-gauge-net-speed", s.net_rx && s.net_tx ? `↓ ${s.net_rx}  ↑ ${s.net_tx}` : "0 KB/s");
+        setEl("hw-gauge-net-speed", (s.net_rx && s.net_tx) ? `↓ ${s.net_rx}  ↑ ${s.net_tx}` : "0 KB/s");
         setBar("hw-gauge-net-bar", Math.max(2, netBarPct), null);
 
-        // Disk I/O
+        // ── Disk I/O ─────────────────────────────────────────────────────
         const diskTotal = (s.disk_read_kb || 0) + (s.disk_write_kb || 0);
         const diskBarPct = Math.min(100, diskTotal / 51200 * 100);
-        setEl("hw-gauge-disk-pct", s.disk_read && s.disk_write ? `R:${s.disk_read} W:${s.disk_write}` : "0 KB/s");
+        setEl("hw-gauge-disk-pct", (s.disk_read && s.disk_write) ? `R:${s.disk_read} W:${s.disk_write}` : "0 KB/s");
         if (s.partitions_usage && s.partitions_usage.length > 0) {
           setEl("hw-gauge-disk-summary", s.partitions_usage.map(p => `${p.drive} ${p.free_gb}G`).join(" · "));
         }
         setBar("hw-gauge-disk-bar", Math.max(2, diskBarPct), null);
 
-        // Battery Real-time Update
-        if (s.battery && s.battery.has_battery) {
-          const bLevel = s.battery.level_pct;
-          setEl("hw-bat-level", `${bLevel}%`);
-          setEl("hw-bat-status", s.battery.status_text);
-          const batBar = document.getElementById("hw-bat-bar");
-          if (batBar) {
-            batBar.style.width = `${bLevel}%`;
-            batBar.style.background = s.battery.is_ac ? "#22c55e" : (bLevel < 20 ? "#ef4444" : bLevel < 50 ? "#f59e0b" : "#22c55e");
-          }
-          const batPresentEl = document.getElementById("hw-bat-present");
-          if (batPresentEl) {
-            batPresentEl.innerText = "🔋 Có pin (Laptop)";
-            batPresentEl.style.color = "#22c55e";
-          }
+        // ── Battery Real-time ─────────────────────────────────────────────
+        const bat = s.battery;
+        if (!bat) return;
+
+        const isLaptopBat = !!(bat.is_laptop || bat.has_battery);
+
+        // Show/hide battery section
+        const batSection = document.getElementById("hw-bat-section");
+        if (batSection) batSection.style.display = isLaptopBat ? "" : "none";
+
+        // Battery presence indicator
+        const batPresentEl = document.getElementById("hw-bat-present");
+        if (batPresentEl) {
+          batPresentEl.innerText = isLaptopBat ? "🔋 Có pin (Laptop)" : "🖥️ Không có pin (Desktop PC)";
+          batPresentEl.style.color = isLaptopBat ? "#22c55e" : "var(--text-muted)";
+        }
+
+        if (!isLaptopBat) return;
+
+        // Level + main bar
+        const bLevel = bat.level_pct ?? 0;
+        setEl("hw-bat-level", `${bLevel}%`);
+        const batBarEl = document.getElementById("hw-bat-bar");
+        if (batBarEl) {
+          batBarEl.style.width = `${bLevel}%`;
+          batBarEl.style.background = bat.is_ac
+            ? "#38bdf8"
+            : (bLevel < 20 ? "#ef4444" : bLevel < 40 ? "#f59e0b" : "#22c55e");
+        }
+
+        // Health bar
+        const healthPct = bat.health_pct ?? (bat.wear_pct !== undefined ? Math.max(0, 100 - bat.wear_pct) : 0);
+        const healthBarEl = document.getElementById("hw-bat-health-bar");
+        if (healthBarEl) {
+          healthBarEl.style.width = `${healthPct}%`;
+          healthBarEl.style.background = healthPct > 80 ? "#22c55e" : healthPct > 60 ? "#f59e0b" : "#ef4444";
+        }
+
+        // Health text
+        const healthEl = document.getElementById("hw-bat-health");
+        if (healthEl) {
+          const wearPct = bat.wear_pct ?? 0;
+          healthEl.textContent = bat.health_text || "✓ Hoạt động tốt";
+          healthEl.style.color = wearPct < 15 ? "#22c55e" : wearPct < 35 ? "#f59e0b" : "#ef4444";
+        }
+
+        // All detail fields — always update (don't skip N/A for dynamic values)
+        setEl("hw-bat-name",           bat.name           || "Standard Battery");
+        setEl("hw-bat-status",         bat.status_text    || "N/A");
+        setEl("hw-bat-wear",           bat.wear_pct !== undefined ? `${bat.wear_pct}%` : "N/A");
+        setEl("hw-bat-cycles",         bat.cycle_text     || "N/A");
+        setEl("hw-bat-design",         bat.design_mwh     || "N/A");
+        setEl("hw-bat-full",           bat.full_mwh       || "N/A");
+        setEl("hw-bat-remaining",      bat.remaining_mwh  || "N/A");
+        setEl("hw-bat-voltage",        bat.voltage_v      || "N/A");
+        setEl("hw-bat-chemistry",      bat.chemistry      || "N/A");
+        setEl("hw-bat-mfg",            bat.manufacturer   || "N/A");
+        setEl("hw-bat-serial",         bat.serial_number  || "N/A");
+        setEl("hw-bat-discharge-rate", bat.discharge_rate || "N/A");
+        setEl("hw-bat-charge-rate",    bat.charge_rate    || "N/A");
+        setEl("hw-bat-time-remaining", bat.time_remaining || "N/A");
+        setEl("hw-bat-power-source",   bat.power_source   || (bat.is_ac ? "Nguồn AC" : "Nguồn Pin"));
+        setEl("hw-bat-updated",        bat.last_updated   || new Date().toLocaleTimeString("vi-VN"));
+
+        // Pulse indicator
+        const pulseEl = document.getElementById("hw-bat-pulse");
+        if (pulseEl) {
+          pulseEl.style.display = "block";
+          pulseEl.style.background = bat.is_ac ? "#38bdf8" : "#22c55e";
         }
 
       } catch (err) {
-        console.warn("Realtime stats error:", err);
+        console.warn("[ComputerInfo] Realtime poll error:", err);
       }
     };
 
-    pollStats(); // immediate first poll
-    this._realtimeTimer = setInterval(pollStats, 2500);
+    // Run immediately then every 2s
+    pollStats();
+    this._realtimeTimer = setInterval(pollStats, 2000);
   },
 
   stopRealtimeMonitoring() {

@@ -1043,27 +1043,100 @@
                   </div>
                 </div>
 
-                <!-- BATTERY METRICS (Compact Row) -->
-                <div class="hw-card-divider">
-                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                    <span class="hw-label" style="font-weight: 600;">Pin: <span id="hw-bat-name"
-                        class="hw-val-muted">N/A</span></span>
-                    <div style="display: flex; align-items: center; gap: 6px;">
-                      <div class="hw-track-bar" style="width: 80px; height: 8px;">
-                        <div id="hw-bat-bar" style="width: 0%; height: 100%; background: #22c55e;"></div>
+                <!-- BATTERY METRICS (Full Detail) -->
+                <div class="hw-card-divider" id="hw-bat-section">
+                  <!-- Row 1: Name + bar + % -->
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <span class="hw-label" style="font-weight: 700; font-size: 12px;">🔋 Pin: <span id="hw-bat-name" class="hw-val-muted">N/A</span></span>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <div class="hw-track-bar" style="width: 100px; height: 10px; border-radius: 5px; overflow: hidden;">
+                        <div id="hw-bat-bar" style="width: 0%; height: 100%; background: #22c55e; border-radius: 5px; transition: width 0.5s ease;"></div>
                       </div>
-                      <strong class="hw-val" id="hw-bat-level">N/A</strong>
+                      <strong class="hw-val" style="font-size: 13px; min-width: 36px;" id="hw-bat-level">N/A</strong>
                     </div>
                   </div>
 
-                  <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 12px; font-size: 11.5px;"
-                    class="hw-val-muted">
-                    <div>Độ chai pin: <strong style="color: #ef4444;" id="hw-bat-wear">N/A</strong></div>
-                    <div>Tình trạng: <strong style="color: #22c55e;" id="hw-bat-health">N/A</strong></div>
-                    <div>Dung lượng gốc: <span id="hw-bat-design">N/A</span></div>
-                    <div>Dung lượng thực: <span id="hw-bat-full">N/A</span></div>
-                    <div style="grid-column: span 2;">Trạng thái sạc: <span style="color: #38bdf8; font-weight: 600;"
-                        id="hw-bat-status">N/A</span></div>
+                  <!-- Health bar -->
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                    <span style="color: var(--text-dim); font-size: 10px; white-space: nowrap;">Sức khỏe:</span>
+                    <div style="flex: 1; height: 6px; background: rgba(0,0,0,0.2); border-radius: 3px; overflow: hidden;">
+                      <div id="hw-bat-health-bar" style="height: 100%; width: 0%; background: #22c55e; border-radius: 3px; transition: width 0.5s ease;"></div>
+                    </div>
+                    <strong id="hw-bat-health" style="color: #22c55e; font-size: 11px; white-space: nowrap;">N/A</strong>
+                  </div>
+
+                  <!-- Row 2: 3-col stats grid -->
+                  <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px 8px; font-size: 11px;" class="hw-val-muted">
+                    <!-- Wear -->
+                    <div style="background: var(--card-bg-alt, rgba(0,0,0,0.15)); border-radius: 5px; padding: 4px 7px;">
+                      <div style="color: var(--text-dim); font-size: 10px; margin-bottom: 1px;">Độ chai</div>
+                      <strong style="color: #f97316;" id="hw-bat-wear">N/A</strong>
+                    </div>
+                    <!-- Cycles -->
+                    <div style="background: var(--card-bg-alt, rgba(0,0,0,0.15)); border-radius: 5px; padding: 4px 7px;">
+                      <div style="color: var(--text-dim); font-size: 10px; margin-bottom: 1px;">Chu kỳ sạc</div>
+                      <strong class="hw-val" id="hw-bat-cycles">N/A</strong>
+                    </div>
+                    <!-- Time remaining -->
+                    <div style="background: var(--card-bg-alt, rgba(0,0,0,0.15)); border-radius: 5px; padding: 4px 7px;">
+                      <div style="color: var(--text-dim); font-size: 10px; margin-bottom: 1px;">Thời gian còn</div>
+                      <strong style="color: #38bdf8;" id="hw-bat-time-remaining">N/A</strong>
+                    </div>
+                    <!-- Design cap -->
+                    <div style="background: var(--card-bg-alt, rgba(0,0,0,0.15)); border-radius: 5px; padding: 4px 7px;">
+                      <div style="color: var(--text-dim); font-size: 10px; margin-bottom: 1px;">Dung lượng gốc</div>
+                      <span id="hw-bat-design">N/A</span>
+                    </div>
+                    <!-- Full cap -->
+                    <div style="background: var(--card-bg-alt, rgba(0,0,0,0.15)); border-radius: 5px; padding: 4px 7px;">
+                      <div style="color: var(--text-dim); font-size: 10px; margin-bottom: 1px;">Dung lượng thực</div>
+                      <span id="hw-bat-full">N/A</span>
+                    </div>
+                    <!-- Remaining -->
+                    <div style="background: var(--card-bg-alt, rgba(0,0,0,0.15)); border-radius: 5px; padding: 4px 7px;">
+                      <div style="color: var(--text-dim); font-size: 10px; margin-bottom: 1px;">Còn lại hiện tại</div>
+                      <span id="hw-bat-remaining" style="color: #38bdf8;">N/A</span>
+                    </div>
+                    <!-- Voltage -->
+                    <div style="background: var(--card-bg-alt, rgba(0,0,0,0.15)); border-radius: 5px; padding: 4px 7px;">
+                      <div style="color: var(--text-dim); font-size: 10px; margin-bottom: 1px;">Điện áp</div>
+                      <span id="hw-bat-voltage">N/A</span>
+                    </div>
+                    <!-- Chemistry -->
+                    <div style="background: var(--card-bg-alt, rgba(0,0,0,0.15)); border-radius: 5px; padding: 4px 7px;">
+                      <div style="color: var(--text-dim); font-size: 10px; margin-bottom: 1px;">Loại pin</div>
+                      <span id="hw-bat-chemistry">N/A</span>
+                    </div>
+                    <!-- Manufacturer -->
+                    <div style="background: var(--card-bg-alt, rgba(0,0,0,0.15)); border-radius: 5px; padding: 4px 7px;">
+                      <div style="color: var(--text-dim); font-size: 10px; margin-bottom: 1px;">Nhà sản xuất</div>
+                      <span id="hw-bat-mfg">N/A</span>
+                    </div>
+                    <!-- Discharge Rate -->
+                    <div style="background: var(--card-bg-alt, rgba(0,0,0,0.15)); border-radius: 5px; padding: 4px 7px;">
+                      <div style="color: var(--text-dim); font-size: 10px; margin-bottom: 1px;">Tốc độ xả</div>
+                      <span id="hw-bat-discharge-rate" style="color: #f97316;">N/A</span>
+                    </div>
+                    <!-- Charge Rate -->
+                    <div style="background: var(--card-bg-alt, rgba(0,0,0,0.15)); border-radius: 5px; padding: 4px 7px;">
+                      <div style="color: var(--text-dim); font-size: 10px; margin-bottom: 1px;">Tốc độ sạc</div>
+                      <span id="hw-bat-charge-rate" style="color: #22c55e;">N/A</span>
+                    </div>
+                    <!-- Power Source -->
+                    <div style="background: var(--card-bg-alt, rgba(0,0,0,0.15)); border-radius: 5px; padding: 4px 7px;">
+                      <div style="color: var(--text-dim); font-size: 10px; margin-bottom: 1px;">Nguồn điện</div>
+                      <span id="hw-bat-power-source" style="color: #a78bfa;">N/A</span>
+                    </div>
+                  </div>
+
+                  <!-- Row 3: Charging status + serial + live indicator -->
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; flex-wrap: wrap; gap: 4px;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                      <div id="hw-bat-pulse" style="width: 7px; height: 7px; border-radius: 50%; background: #22c55e; display: none; animation: hw-bat-blink 1.4s ease-in-out infinite;"></div>
+                      <span style="color: #38bdf8; font-weight: 700; font-size: 11px;" id="hw-bat-status">N/A</span>
+                    </div>
+                    <span style="color: var(--text-dim); font-size: 10px;">Serial: <span id="hw-bat-serial" style="font-family: monospace;">N/A</span></span>
+                    <span style="color: var(--text-dim); font-size: 10px;">Cập nhật: <span id="hw-bat-updated">—</span></span>
                   </div>
                 </div>
               </div>

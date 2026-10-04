@@ -1211,6 +1211,16 @@ body.dark-mode .hw-track-bar {
   background: #334155;
 }
 
+/* Battery pulse dot animation */
+@keyframes hw-bat-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+/* Battery stat mini-cards background in light mode */
+:root { --card-bg-alt: rgba(0, 0, 0, 0.04); }
+body.dark-mode { --card-bg-alt: rgba(255, 255, 255, 0.05); }
+
 /* ── LOG DRAWER ──────────────────────────────────────────────────────── */
 .log-drawer {
   position: fixed;

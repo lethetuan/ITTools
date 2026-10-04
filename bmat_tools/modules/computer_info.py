@@ -11,6 +11,7 @@ import sys
 import threading
 import platform
 import ctypes
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from constants import COLORS, FONTS
@@ -492,6 +493,289 @@ def get_system_power_status():
     return None
 
 
+_BATTERY_CACHE = None
+_LAST_BATTERY_FETCH = 0
+_BATTERY_FETCH_LOCK = threading.Lock()
+_BATTERY_IS_FETCHING = False
+
+def _fetch_deep_battery_worker():
+    global _BATTERY_CACHE, _LAST_BATTERY_FETCH, _BATTERY_IS_FETCHING
+    import subprocess
+    import json
+    try:
+        ps_script = """
+$bStatic = Get-WmiObject -Namespace root/wmi -Class BatteryStaticData -ErrorAction SilentlyContinue | Select-Object -First 1
+$bFull = Get-WmiObject -Namespace root/wmi -Class BatteryFullChargedCapacity -ErrorAction SilentlyContinue | Select-Object -First 1
+$bStatus = Get-WmiObject -Namespace root/wmi -Class BatteryStatus -ErrorAction SilentlyContinue | Select-Object -First 1
+$bCycle = Get-WmiObject -Namespace root/wmi -Class BatteryCycleCount -ErrorAction SilentlyContinue | Select-Object -First 1
+$bWin32 = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue | Select-Object -First 1
+$enc = Get-CimInstance Win32_SystemEnclosure -ErrorAction SilentlyContinue | Select-Object -First 1
+
+$chem = ""
+if ($bStatic -and $bStatic.Chemistry) {
+    try {
+        $chem = [System.Text.Encoding]::ASCII.GetString([System.BitConverter]::GetBytes([uint32]$bStatic.Chemistry)).Trim([char]0)
+    } catch {}
+}
+
+$hasBat = if ($bStatic -or $bWin32 -or $bFull) { $true } else { $false }
+$devName = if ($bStatic -and $bStatic.DeviceName) { $bStatic.DeviceName } elseif ($bWin32 -and $bWin32.Name) { $bWin32.Name } else { "" }
+$mfg = if ($bStatic -and $bStatic.ManufactureName) { $bStatic.ManufactureName } else { "" }
+$serial = if ($bStatic -and $bStatic.SerialNumber) { $bStatic.SerialNumber } else { "" }
+$desCap = if ($bStatic -and $bStatic.DesignedCapacity) { [int]$bStatic.DesignedCapacity } elseif ($bWin32 -and $bWin32.DesignCapacity) { [int]$bWin32.DesignCapacity } else { 0 }
+$fullCap = if ($bFull -and $bFull.FullChargedCapacity) { [int]$bFull.FullChargedCapacity } elseif ($bWin32 -and $bWin32.FullChargeCapacity) { [int]$bWin32.FullChargeCapacity } else { 0 }
+$remCap = if ($bStatus -and $bStatus.RemainingCapacity) { [int]$bStatus.RemainingCapacity } else { 0 }
+$cycleCount = if ($bCycle -and $bCycle.CycleCount) { [int]$bCycle.CycleCount } else { 0 }
+$volt = if ($bStatus -and $bStatus.Voltage) { [int]$bStatus.Voltage } elseif ($bWin32 -and $bWin32.DesignVoltage) { [int]$bWin32.DesignVoltage } else { 0 }
+$disRate = if ($bStatus -and $bStatus.DischargeRate -and $bStatus.DischargeRate -ne -2147483648) { [int]$bStatus.DischargeRate } else { 0 }
+$chgRate = if ($bStatus -and $bStatus.ChargeRate) { [int]$bStatus.ChargeRate } else { 0 }
+$isCharging = if ($bStatus) { [bool]$bStatus.Charging } else { $false }
+$isDischarging = if ($bStatus) { [bool]$bStatus.Discharging } else { $false }
+$powerOnline = if ($bStatus) { [bool]$bStatus.PowerOnline } else { $false }
+$estRem = if ($bWin32 -and $bWin32.EstimatedChargeRemaining) { [int]$bWin32.EstimatedChargeRemaining } else { 0 }
+$chassis = if ($enc -and $enc.ChassisTypes) { @($enc.ChassisTypes) } else { @() }
+
+[PSCustomObject]@{
+    HasBattery = $hasBat
+    DeviceName = $devName
+    Manufacturer = $mfg
+    SerialNumber = $serial
+    Chemistry = $chem
+    DesignedCapacity = $desCap
+    FullChargedCapacity = $fullCap
+    RemainingCapacity = $remCap
+    CycleCount = $cycleCount
+    Voltage = $volt
+    DischargeRate = $disRate
+    ChargeRate = $chgRate
+    Charging = $isCharging
+    Discharging = $isDischarging
+    PowerOnline = $powerOnline
+    EstimatedChargeRemaining = $estRem
+    ChassisTypes = $chassis
+} | ConvertTo-Json
+"""
+        res = subprocess.run(['powershell', '-NoProfile', '-Command', ps_script], capture_output=True, text=True, encoding='utf-8', errors='ignore')
+        if res.stdout.strip():
+            raw = json.loads(res.stdout.strip())
+            p_status = get_system_power_status()
+
+            chassis_types = raw.get("ChassisTypes", [])
+            if isinstance(chassis_types, int):
+                chassis_types = [chassis_types]
+            is_laptop_chassis = any(t in [8, 9, 10, 11, 14, 30, 31, 32] for t in (chassis_types if isinstance(chassis_types, list) else []))
+            has_battery = raw.get("HasBattery", False) or (p_status and p_status["has_battery"]) or (raw.get("DesignedCapacity", 0) > 0)
+            is_laptop = is_laptop_chassis or has_battery
+
+            des_cap = float(raw.get("DesignedCapacity", 0) or 0)
+            full_cap = float(raw.get("FullChargedCapacity", 0) or 0)
+            rem_cap = float(raw.get("RemainingCapacity", 0) or 0)
+            cycle_count = int(raw.get("CycleCount", 0) or 0)
+            volt_mv = int(raw.get("Voltage", 0) or 0)
+
+            chem_raw = raw.get("Chemistry", "").strip()
+            chem_clean = "Li-ion (Lithium-Ion)" if chem_raw.lower() in ["lion", "li-ion"] else (chem_raw or "Lithium-Ion")
+
+            if des_cap > 0 and full_cap > 0:
+                wear = round(max(0.0, (1.0 - full_cap / des_cap) * 100.0), 1)
+                health = round(max(0.0, min(100.0, (full_cap / des_cap) * 100.0)), 1)
+                if wear < 15:
+                    health_text = f"✓ Pin rất tốt (Sức khỏe {health}%)"
+                elif wear < 35:
+                    health_text = f"⚠️ Chai nhẹ {wear}% (Sức khỏe {health}%)"
+                elif wear < 55:
+                    health_text = f"⚠️ Chai vừa {wear}% (Sức khỏe {health}%)"
+                else:
+                    health_text = f"❌ Chai nặng {wear}% (Sức khỏe {health}%)"
+            else:
+                wear = 0.0
+                health_text = "✓ Hoạt động tốt" if is_laptop else "PC Desktop (Không dùng pin)"
+
+            level_pct = p_status["level_pct"] if p_status else (raw.get("EstimatedChargeRemaining") or 100)
+            is_ac = p_status["is_ac"] if p_status else raw.get("PowerOnline", False)
+            is_charging = p_status["is_charging"] if p_status else raw.get("Charging", False)
+            status_text = p_status["status_text"] if p_status else ("Đang sạc (AC Powered)" if is_charging else "Đang dùng Pin")
+
+            if rem_cap <= 0 and full_cap > 0:
+                rem_cap = int(full_cap * (level_pct / 100.0))
+
+            mfg = raw.get("Manufacturer", "").strip()
+            dev_name = raw.get("DeviceName", "").strip() or ("Standard Battery" if is_laptop else "N/A")
+            full_name = f"{dev_name} ({mfg})" if (mfg and mfg.lower() not in dev_name.lower()) else dev_name
+
+            dis_rate = int(raw.get("DischargeRate", 0) or 0)
+            chg_rate = int(raw.get("ChargeRate", 0) or 0)
+
+            # Time remaining estimate (minutes)
+            time_remaining_min = None
+            if not is_charging and dis_rate > 0 and rem_cap > 0:
+                time_remaining_min = int(rem_cap * 60 / dis_rate)
+            elif is_charging and chg_rate > 0 and full_cap > 0 and rem_cap > 0:
+                time_remaining_min = int((full_cap - rem_cap) * 60 / chg_rate)
+
+            def fmt_time(mins):
+                if mins is None or mins <= 0:
+                    return "N/A"
+                h, m = divmod(mins, 60)
+                return f"{h}h {m:02d}m" if h > 0 else f"{m} phút"
+
+            health_pct = round(max(0.0, min(100.0, (full_cap / des_cap) * 100.0)), 1) if des_cap > 0 and full_cap > 0 else 0.0
+
+            data = {
+                "is_laptop": is_laptop,
+                "has_battery": has_battery,
+                "name": full_name if is_laptop else "Không có pin (Desktop PC)",
+                "manufacturer": mfg or ("N/A" if not is_laptop else "Chính hãng"),
+                "serial_number": raw.get("SerialNumber", "").strip() or "N/A",
+                "chemistry": chem_clean if is_laptop else "N/A",
+                "design_capacity_mwh": int(des_cap),
+                "design_mwh": f"{int(des_cap):,} mWh" if des_cap > 0 else "N/A",
+                "full_charge_capacity_mwh": int(full_cap),
+                "full_mwh": f"{int(full_cap):,} mWh" if full_cap > 0 else "N/A",
+                "remaining_capacity_mwh": int(rem_cap),
+                "remaining_mwh": f"{int(rem_cap):,} mWh" if rem_cap > 0 else "N/A",
+                "wear_pct": wear,
+                "health_pct": health_pct,
+                "health_text": health_text,
+                "cycle_count": cycle_count if cycle_count > 0 else "N/A",
+                "cycle_text": f"{cycle_count} chu kỳ" if cycle_count > 0 else ("Không áp dụng" if not is_laptop else "N/A"),
+                "voltage_mv": volt_mv,
+                "voltage_v": f"{volt_mv / 1000.0:.2f} V" if volt_mv > 0 else "N/A",
+                "discharge_rate_mw": dis_rate,
+                "discharge_rate": f"{dis_rate:,} mW" if dis_rate > 0 else "N/A",
+                "charge_rate_mw": chg_rate,
+                "charge_rate": f"{chg_rate:,} mW" if chg_rate > 0 else "N/A",
+                "time_remaining_min": time_remaining_min,
+                "time_remaining": fmt_time(time_remaining_min),
+                "level_pct": level_pct,
+                "is_ac": is_ac,
+                "is_charging": is_charging,
+                "status_text": status_text,
+                "power_source": "Nguồn AC (Adapter sạc)" if is_ac else "Nguồn Pin (Battery)",
+                "last_updated": time.strftime("%H:%M:%S")
+            }
+            with _BATTERY_FETCH_LOCK:
+                _BATTERY_CACHE = data
+                _LAST_BATTERY_FETCH = time.time()
+            return data
+    except Exception as _bat_ex:
+        import traceback
+        print(f"[BATTERY] _fetch_deep_battery_worker error: {_bat_ex}\n{traceback.format_exc()}")
+    finally:
+        _BATTERY_IS_FETCHING = False
+    return None
+
+
+def get_comprehensive_battery_info(quick=False, force_refresh=False):
+    """
+    Returns complete, realistic laptop battery specifications and live status.
+    Uses ultra-fast ctypes GetSystemPowerStatus for frequent ticks, and caches deep WMI/ACPI metadata.
+    """
+    global _BATTERY_CACHE, _LAST_BATTERY_FETCH, _BATTERY_IS_FETCHING
+    now = time.time()
+
+    if force_refresh or _BATTERY_CACHE is None:
+        data = _fetch_deep_battery_worker()
+        if data:
+            return data
+
+    p_status = get_system_power_status()
+
+    if _BATTERY_CACHE is not None:
+        data = dict(_BATTERY_CACHE)
+        if p_status:
+            data["level_pct"] = p_status["level_pct"]
+            data["is_ac"] = p_status["is_ac"]
+            data["is_charging"] = p_status["is_charging"]
+            data["status_text"] = p_status["status_text"]
+            data["power_source"] = "Nguồn AC (Adapter sạc)" if p_status["is_ac"] else "Nguồn Pin (Battery)"
+            full_cap = data.get("full_charge_capacity_mwh", 0)
+            if full_cap > 0:
+                rem = int(full_cap * (p_status["level_pct"] / 100.0))
+                data["remaining_capacity_mwh"] = rem
+                data["remaining_mwh"] = f"{rem:,} mWh"
+                # Recalculate time remaining using cached rates + new level
+                dis_rate = data.get("discharge_rate_mw", 0)
+                chg_rate = data.get("charge_rate_mw", 0)
+                time_remaining_min = None
+                if not p_status["is_charging"] and dis_rate > 0 and rem > 0:
+                    time_remaining_min = int(rem * 60 / dis_rate)
+                elif p_status["is_charging"] and chg_rate > 0 and full_cap > rem:
+                    time_remaining_min = int((full_cap - rem) * 60 / chg_rate)
+                data["time_remaining_min"] = time_remaining_min
+                def _fmt(mins):
+                    if not mins or mins <= 0: return "N/A"
+                    h, m = divmod(mins, 60)
+                    return f"{h}h {m:02d}m" if h > 0 else f"{m} phút"
+                data["time_remaining"] = _fmt(time_remaining_min)
+        data["last_updated"] = time.strftime("%H:%M:%S")
+
+        # Background refresh every 30s in quick mode, 45s otherwise
+        refresh_interval = 30 if quick else 45
+        if now - _LAST_BATTERY_FETCH > refresh_interval:
+            with _BATTERY_FETCH_LOCK:
+                if not _BATTERY_IS_FETCHING:
+                    _BATTERY_IS_FETCHING = True
+                    threading.Thread(target=_fetch_deep_battery_worker, daemon=True).start()
+
+        return data
+
+    if p_status:
+        return {
+            "is_laptop": p_status["has_battery"],
+            "has_battery": p_status["has_battery"],
+            "name": "Standard Battery" if p_status["has_battery"] else "N/A",
+            "manufacturer": "N/A",
+            "serial_number": "N/A",
+            "chemistry": "Li-ion" if p_status["has_battery"] else "N/A",
+            "design_capacity_mwh": 0,
+            "design_mwh": "N/A",
+            "full_charge_capacity_mwh": 0,
+            "full_mwh": "N/A",
+            "remaining_capacity_mwh": 0,
+            "remaining_mwh": "N/A",
+            "wear_pct": 0.0,
+            "health_text": "✓ Hoạt động tốt" if p_status["has_battery"] else "PC Desktop",
+            "cycle_count": "N/A",
+            "cycle_text": "N/A",
+            "voltage_mv": 0,
+            "voltage_v": "N/A",
+            "level_pct": p_status["level_pct"],
+            "is_ac": p_status["is_ac"],
+            "is_charging": p_status["is_charging"],
+            "status_text": p_status["status_text"],
+            "power_source": "Nguồn AC" if p_status["is_ac"] else "Nguồn Pin",
+            "last_updated": time.strftime("%H:%M:%S")
+        }
+
+    return {
+        "is_laptop": False,
+        "has_battery": False,
+        "name": "N/A",
+        "manufacturer": "N/A",
+        "serial_number": "N/A",
+        "chemistry": "N/A",
+        "design_capacity_mwh": 0,
+        "design_mwh": "N/A",
+        "full_charge_capacity_mwh": 0,
+        "full_mwh": "N/A",
+        "remaining_capacity_mwh": 0,
+        "remaining_mwh": "N/A",
+        "wear_pct": 0.0,
+        "health_text": "PC Desktop",
+        "cycle_count": "N/A",
+        "cycle_text": "N/A",
+        "voltage_mv": 0,
+        "voltage_v": "N/A",
+        "level_pct": 100,
+        "is_ac": True,
+        "is_charging": False,
+        "status_text": "Không có pin (Desktop PC)",
+        "power_source": "Nguồn AC",
+        "last_updated": time.strftime("%H:%M:%S")
+    }
+
+
 def get_device_manager_issues():
     """
     Scans for genuine missing, failed, or warning drivers using Windows PnP API.
@@ -732,59 +1016,12 @@ def get_detailed_hardware_info():
             date_clean = f"{b_date[:4]}-{b_date[4:6]}-{b_date[6:8]}"
         bios_info["release_date"] = date_clean or "N/A"
 
-    # 3. Battery Details & Health (real-time Win32 power status + CIM metadata)
-    p_status = get_system_power_status()
-    bat_list = run_ps_cmd('Get-CimInstance Win32_Battery | Select-Object Name, DeviceID, EstimatedChargeRemaining, BatteryStatus, DesignCapacity, FullChargeCapacity')
-    battery_info = {
-        "is_laptop": False,
-        "name": "N/A",
-        "level_pct": 100,
-        "wear_pct": 0.0,
-        "design_mwh": "N/A",
-        "full_mwh": "N/A",
-        "status_text": "Không có pin (Desktop PC)",
-        "health_text": "PC Desktop"
-    }
-
-    if p_status and p_status["has_battery"]:
-        battery_info["is_laptop"] = True
+    # 3. Battery Details & Health — uses comprehensive WMI/ACPI + ctypes (root/wmi BatteryStaticData)
+    # Win32_Battery on many HP/Dell laptops returns null DesignCapacity; use get_comprehensive_battery_info instead.
+    battery_info = get_comprehensive_battery_info(force_refresh=True)
+    if battery_info.get("is_laptop"):
         system_info["is_laptop"] = True
         system_info["chassis_type"] = "Notebook"
-        battery_info["level_pct"] = p_status["level_pct"]
-        battery_info["status_text"] = p_status["status_text"]
-
-    if bat_list:
-        bt = bat_list[0]
-        battery_info["is_laptop"] = True
-        system_info["is_laptop"] = True
-        system_info["chassis_type"] = "Notebook"
-        battery_info["name"] = bt.get("Name", bt.get("DeviceID", "Standard Battery")).strip()
-        if not (p_status and p_status["has_battery"]):
-            battery_info["level_pct"] = bt.get("EstimatedChargeRemaining", 100)
-            bat_status = bt.get("BatteryStatus", 1)
-            if bat_status in [2, 6, 7, 8, 9]:
-                battery_info["status_text"] = "Đang sạc (AC Powered)"
-            elif bat_status == 3:
-                battery_info["status_text"] = "Đầy 100% (Đang cắm sạc)"
-            else:
-                battery_info["status_text"] = "Đang dùng Pin (Battery Powered)"
-
-        design_cap = float(bt.get("DesignCapacity", 0) or 0)
-        full_cap = float(bt.get("FullChargeCapacity", 0) or 0)
-
-        if design_cap > 0 and full_cap > 0:
-            battery_info["design_mwh"] = f"{int(design_cap)} mWh"
-            battery_info["full_mwh"] = f"{int(full_cap)} mWh"
-            wear = round(max(0.0, 100.0 - (full_cap / design_cap * 100.0)), 1)
-            battery_info["wear_pct"] = wear
-            if wear < 20:
-                battery_info["health_text"] = "✓ Pin tốt"
-            elif wear < 40:
-                battery_info["health_text"] = "⚠️ Chai nhẹ"
-            else:
-                battery_info["health_text"] = "❌ Chai nặng (Nên thay)"
-        else:
-            battery_info["health_text"] = "✓ Hoạt động tốt"
 
     # 4. RAM Modules
     ram_list = run_ps_cmd('Get-CimInstance Win32_PhysicalMemory | Select-Object DeviceLocator, Capacity, Speed, Manufacturer, PartNumber')
@@ -1002,11 +1239,19 @@ def export_specs(format_type="xlsx", specs_data=None, output_dir=None):
     bat = specs_data.get("battery", {})
     if bat.get("is_laptop"):
         rows.append((sec, "Tên Pin (Device Name)", bat.get("name", "Standard Battery")))
+        rows.append((sec, "Nhà Sản Xuất Pin", bat.get("manufacturer", "N/A")))
+        rows.append((sec, "Số Serial Pin", bat.get("serial_number", "N/A")))
+        rows.append((sec, "Loại Hóa Học", bat.get("chemistry", "N/A")))
         rows.append((sec, "Mức Pin Hiện Tại", f"{bat.get('level_pct', 0)}%"))
-        rows.append((sec, "Độ Chai Pin (Wear Level)", f"{bat.get('wear_pct', 0)}% ({bat.get('health_text', '')})"))
+        rows.append((sec, "Tình Trạng Sức Khỏe", bat.get("health_text", "N/A")))
+        rows.append((sec, "Độ Chai Pin (Wear Level)", f"{bat.get('wear_pct', 0)}%"))
         rows.append((sec, "Dung Lượng Thiết Kế", bat.get("design_mwh", "N/A")))
         rows.append((sec, "Dung Lượng Sạc Đầy Thực Tế", bat.get("full_mwh", "N/A")))
+        rows.append((sec, "Dung Lượng Còn Lại Hiện Tại", bat.get("remaining_mwh", "N/A")))
+        rows.append((sec, "Số Chu Kỳ Sạc", bat.get("cycle_text", "N/A")))
+        rows.append((sec, "Điện Áp Hiện Tại", bat.get("voltage_v", "N/A")))
         rows.append((sec, "Trạng Thái Nguồn Điện", bat.get("status_text", "N/A")))
+        rows.append((sec, "Nguồn Điện", bat.get("power_source", "N/A")))
     else:
         rows.append((sec, "Tình Trạng Pin", "Không có pin (Máy tính bàn - Desktop PC)"))
 

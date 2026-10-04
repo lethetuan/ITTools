@@ -63,7 +63,6 @@ class AppController {
     try {
       switch (tabId) {
         case "tab-computer-info":
-          if (typeof this.startRealtimeMonitoring === 'function') this.startRealtimeMonitoring();
           if (typeof this.loadComputerInfo === 'function') this.loadComputerInfo();
           break;
 
