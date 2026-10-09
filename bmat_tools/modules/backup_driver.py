@@ -65,21 +65,93 @@ class BackupDriver:
         self.progress.start()
         self.tree.delete(*self.tree.get_children())
         self.all_drivers = []
-        result = subprocess.run(
-            ['powershell', '-Command',
-             'Get-WindowsDriver -Online | Select-Object ProviderName, '
-             'Driver, ClassDescription, Version, Date '
-             '| ConvertTo-Csv -NoTypeInformation'],
-            capture_output=True, text=True, timeout=60
-        )
-        if result.returncode == 0:
-            lines = result.stdout.strip().splitlines()
-            for i, line in enumerate(lines[1:]):
-                parts = [p.strip('"') for p in line.split(',')]
-                if len(parts) >= 4:
-                    self.all_drivers.append(parts[:5])
-                    tag = 'odd' if i % 2 else 'even'
-                    self.tree.insert('', 'end', values=parts[:5], tags=(tag,))
+        loaded = False
+
+        # 1. Fast native pnputil enumeration (<0.1s)
+        try:
+            res = subprocess.run(
+                ['pnputil', '/enum-drivers'],
+                capture_output=True, text=True, timeout=12, encoding='utf-8', errors='ignore'
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                current = {}
+                for raw_line in res.stdout.splitlines():
+                    line = raw_line.strip()
+                    if not line:
+                        if current.get("driver"):
+                            self.all_drivers.append([
+                                current.get("provider", "Unknown"),
+                                current.get("driver", "-"),
+                                current.get("class", "-"),
+                                current.get("version", "-"),
+                                current.get("date", "-")
+                            ])
+                            current = {}
+                        continue
+                    if ":" in line:
+                        k, v = [x.strip() for x in line.split(":", 1)]
+                        if k == "Published Name":
+                            if current.get("driver"):
+                                self.all_drivers.append([
+                                    current.get("provider", "Unknown"),
+                                    current.get("driver", "-"),
+                                    current.get("class", "-"),
+                                    current.get("version", "-"),
+                                    current.get("date", "-")
+                                ])
+                                current = {}
+                            current["driver"] = v
+                        elif k == "Provider Name":
+                            current["provider"] = v
+                        elif k == "Class Name":
+                            current["class"] = v
+                        elif k == "Driver Version":
+                            parts = v.split(" ", 1)
+                            if len(parts) == 2:
+                                current["date"] = parts[0]
+                                current["version"] = parts[1]
+                            else:
+                                current["version"] = v
+                                current["date"] = "-"
+
+                if current.get("driver"):
+                    self.all_drivers.append([
+                        current.get("provider", "Unknown"),
+                        current.get("driver", "-"),
+                        current.get("class", "-"),
+                        current.get("version", "-"),
+                        current.get("date", "-")
+                    ])
+
+                if self.all_drivers:
+                    loaded = True
+                    for i, item in enumerate(self.all_drivers):
+                        tag = 'odd' if i % 2 else 'even'
+                        self.tree.insert('', 'end', values=item, tags=(tag,))
+        except Exception:
+            pass
+
+        # 2. Fallback to PowerShell if needed
+        if not loaded:
+            try:
+                result = subprocess.run(
+                    ['powershell', '-Command',
+                     'Get-WindowsDriver -Online | Select-Object ProviderName, '
+                     'Driver, ClassDescription, Version, Date '
+                     '| ConvertTo-Csv -NoTypeInformation'],
+                    capture_output=True, text=True, timeout=30
+                )
+                if result.returncode == 0:
+                    lines = result.stdout.strip().splitlines()
+                    for i, line in enumerate(lines[1:]):
+                        parts = [p.strip('"') for p in line.split(',')]
+                        if len(parts) >= 4:
+                            self.all_drivers.append(parts[:5])
+                            tag = 'odd' if i % 2 else 'even'
+                            self.tree.insert('', 'end', values=parts[:5], tags=(tag,))
+            except Exception:
+                pass
+
         self.progress.stop()
         self.status_var.set(f'{len(self.all_drivers)} drivers found')
 
@@ -87,21 +159,39 @@ class BackupDriver:
         dest = filedialog.askdirectory(title='Select Backup Folder')
         if not dest:
             return
+        os.makedirs(dest, exist_ok=True)
         self.progress.start()
         self.status_var.set('Backing up all drivers...')
 
         def do_backup():
-            result = subprocess.run(
-                ['dism', '/Online', '/Export-Driver', f'/Destination:{dest}'],
-                capture_output=True, text=True
-            )
-            self.progress.stop()
-            if result.returncode == 0:
-                messagebox.showinfo('Backup', f'✅ All drivers backed up to:\n{dest}')
-                self.status_var.set('Backup complete!')
-            else:
-                messagebox.showerror('Error', result.stderr or result.stdout)
-                self.status_var.set('Backup failed!')
+            try:
+                # 1. Try DISM first
+                result = subprocess.run(
+                    ['dism', '/Online', '/Export-Driver', f'/Destination:{dest}'],
+                    capture_output=True, text=True, timeout=300
+                )
+                items = os.listdir(dest) if os.path.exists(dest) else []
+
+                # 2. Fallback to pnputil if DISM produced 0 files or failed
+                if not items or result.returncode != 0:
+                    self.status_var.set('DISM failed, trying Pnputil fallback...')
+                    result = subprocess.run(
+                        ['pnputil', '/export-driver', '*', dest],
+                        capture_output=True, text=True, timeout=300
+                    )
+                    items = os.listdir(dest) if os.path.exists(dest) else []
+
+                self.progress.stop()
+                if items:
+                    messagebox.showinfo('Backup', f'✅ Successfully backed up {len(items)} driver(s) to:\n{dest}')
+                    self.status_var.set(f'Backup complete ({len(items)} drivers)!')
+                else:
+                    messagebox.showerror('Error', result.stderr or result.stdout or 'Backup failed')
+                    self.status_var.set('Backup failed!')
+            except Exception as e:
+                self.progress.stop()
+                messagebox.showerror('Error', str(e))
+                self.status_var.set('Backup error!')
 
         threading.Thread(target=do_backup, daemon=True).start()
 
@@ -113,30 +203,59 @@ class BackupDriver:
         dest = filedialog.askdirectory(title='Select Backup Folder')
         if not dest:
             return
-        for iid in sel:
-            vals = self.tree.item(iid, 'values')
-            driver = vals[1] if len(vals) > 1 else ''
-            if driver:
-                result = subprocess.run(
-                    ['pnputil', '/export-driver', driver, dest],
-                    capture_output=True, text=True
-                )
-        messagebox.showinfo('Backup', f'✅ Selected drivers backed up!')
+        os.makedirs(dest, exist_ok=True)
+        self.progress.start()
+        self.status_var.set('Backing up selected drivers...')
+
+        def do_selected():
+            count = 0
+            for iid in sel:
+                vals = self.tree.item(iid, 'values')
+                driver = vals[1] if len(vals) > 1 else ''
+                if driver:
+                    res = subprocess.run(
+                        ['pnputil', '/export-driver', driver, dest],
+                        capture_output=True, text=True, timeout=60
+                    )
+                    if res.returncode == 0:
+                        count += 1
+            self.progress.stop()
+            messagebox.showinfo('Backup', f'✅ {count} selected driver(s) backed up to:\n{dest}')
+            self.status_var.set(f'{count} driver(s) backed up!')
+
+        threading.Thread(target=do_selected, daemon=True).start()
 
     def restore_drivers(self):
         folder = filedialog.askdirectory(title='Select Driver Backup Folder')
         if not folder:
             return
         if messagebox.askyesno('Restore', f'Restore drivers from:\n{folder}?'):
+            self.progress.start()
+            self.status_var.set('Restoring drivers...')
+
             def do_restore():
-                result = subprocess.run(
-                    ['pnputil', '/add-driver',
-                     os.path.join(folder, '*.inf'),
-                     '/subdirs', '/install'],
-                    capture_output=True, text=True, shell=True
-                )
-                if result.returncode == 0:
-                    messagebox.showinfo('Restore', '✅ Drivers restored!')
-                else:
-                    messagebox.showerror('Error', result.stderr)
+                try:
+                    result = subprocess.run(
+                        ['pnputil', '/add-driver',
+                         os.path.join(folder, '*.inf'),
+                         '/subdirs', '/install'],
+                        capture_output=True, text=True, shell=True, timeout=600
+                    )
+                    self.progress.stop()
+                    # 0 = Success, 3010 = Reboot required
+                    if result.returncode in [0, 3010]:
+                        msg = '✅ Drivers restored successfully!'
+                        if result.returncode == 3010:
+                            msg += '\n(System restart may be required)'
+                        messagebox.showinfo('Restore', msg)
+                        self.status_var.set('Restore complete!')
+                    else:
+                        messagebox.showerror('Error', result.stderr or result.stdout)
+                        self.status_var.set('Restore failed!')
+                except Exception as e:
+                    self.progress.stop()
+                    messagebox.showerror('Error', str(e))
+                    self.status_var.set('Restore error!')
+
             threading.Thread(target=do_restore, daemon=True).start()
+

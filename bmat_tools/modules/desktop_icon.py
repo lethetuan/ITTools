@@ -157,8 +157,10 @@ def get_desktop_icon_settings():
 
     REG_DESKTOP = r'Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel'
     REG_ADVANCED = r'Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+    REG_SEARCH = r'Software\Microsoft\Windows\CurrentVersion\Search'
+    REG_FEEDS = r'Software\Microsoft\Windows\CurrentVersion\Feeds'
 
-    def read_reg(key_path, val_name, default=0):
+    def read_reg(key_path, val_name, default=None):
         try:
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_READ)
             val, _ = winreg.QueryValueEx(key, val_name)
@@ -178,10 +180,27 @@ def get_desktop_icon_settings():
         cpanel_val = read_reg(REG_DESKTOP, '{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}', 0)
     recycle_val = read_reg(REG_DESKTOP, '{645FF040-5081-101B-9F08-00AA002F954E}', 0)
 
-    # Taskbar settings
-    taskbar_left_val = read_reg(REG_ADVANCED, 'TaskbarAl', 1)  # 0 = Left, 1 = Center
-    search_val = read_reg(REG_ADVANCED, 'SearchboxTaskbarMode', 1)  # 0 = Hide, 1 = Icon, 2 = Box
-    weather_val = read_reg(REG_ADVANCED, 'TaskbarDa', 1)  # 0 = Off/Hide, 1 = Show
+    # Taskbar alignment (0 = Left, 1 = Center)
+    taskbar_left_val = read_reg(REG_ADVANCED, 'TaskbarAl', 1)
+
+    # Search Icon/Box on Taskbar:
+    # Primary registry key on Windows 10 & 11 is HKCU\Software\Microsoft\Windows\CurrentVersion\Search
+    search_val = read_reg(REG_SEARCH, 'SearchboxTaskbarMode', None)
+    if search_val is None:
+        search_val = read_reg(REG_ADVANCED, 'SearchboxTaskbarMode', 1)
+
+    # Weather / Widgets:
+    # Win 11: TaskbarDa in Explorer\Advanced (0 = Off, 1 = On)
+    # Win 10: ShellFeedsTaskbarViewMode in Feeds (0 = On, 2 = Off)
+    weather_da = read_reg(REG_ADVANCED, 'TaskbarDa', None)
+    if weather_da is not None:
+        weather_off = (weather_da == 0)
+    else:
+        feeds_val = read_reg(REG_FEEDS, 'ShellFeedsTaskbarViewMode', None)
+        if feeds_val is not None:
+            weather_off = (feeds_val == 2)
+        else:
+            weather_off = False
 
     return {
         "computer": computer_val == 0,
@@ -190,8 +209,8 @@ def get_desktop_icon_settings():
         "control_panel": cpanel_val == 0,
         "recycle_bin": recycle_val == 0,
         "taskbar_left": taskbar_left_val == 0,
-        "search_icon": search_val > 0,
-        "weather_off": weather_val == 0
+        "search_icon": (search_val is not None and search_val > 0),
+        "weather_off": weather_off
     }
 
 
@@ -200,18 +219,22 @@ def apply_desktop_icon_settings(settings):
     import winreg
     import subprocess
     import ctypes
+    import time
 
     REG_DESKTOP = r'Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel'
     REG_DESKTOP_CLASSIC = r'Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\ClassicStartMenu'
     REG_ADVANCED = r'Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+    REG_SEARCH = r'Software\Microsoft\Windows\CurrentVersion\Search'
+    REG_FEEDS = r'Software\Microsoft\Windows\CurrentVersion\Feeds'
 
     def write_reg(key_path, val_name, val):
         try:
             key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
             winreg.SetValueEx(key, val_name, 0, winreg.REG_DWORD, val)
             winreg.CloseKey(key)
+            return True
         except Exception:
-            pass
+            return False
 
     # 1. Desktop icons (0 = Show, 1 = Hide)
     computer_hide = 0 if settings.get("computer", True) else 1
@@ -234,19 +257,78 @@ def apply_desktop_icon_settings(settings):
     write_reg(REG_ADVANCED, 'TaskbarAl', taskbar_al)
 
     # 3. Search Icon (0 = Hidden, 1 = Show Icon)
-    search_mode = 1 if settings.get("search_icon", True) else 0
+    # Write to BOTH Search and Explorer\Advanced for 100% compatibility across Win 10 and Win 11
+    search_enabled = settings.get("search_icon", True)
+    search_mode = 1 if search_enabled else 0
+    write_reg(REG_SEARCH, 'SearchboxTaskbarMode', search_mode)
     write_reg(REG_ADVANCED, 'SearchboxTaskbarMode', search_mode)
 
-    # 4. Weather / Widgets (0 = Off/Hide, 1 = Show)
-    weather_val = 0 if settings.get("weather_off", False) else 1
-    write_reg(REG_ADVANCED, 'TaskbarDa', weather_val)
-
-    # Refresh Desktop & Explorer
+    # 4. Weather / Widgets:
+    current_weather_da = None
     try:
-        ctypes.windll.user32.SystemParametersInfoW(0x0073, 0, None, 3)
-        subprocess.run("taskkill /f /im explorer.exe & start explorer.exe", shell=True, capture_output=True)
+        k_check = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_ADVANCED, 0, winreg.KEY_READ)
+        current_weather_da, _ = winreg.QueryValueEx(k_check, 'TaskbarDa')
+        winreg.CloseKey(k_check)
     except Exception:
         pass
 
-    return {"success": True, "message": "Đã áp dụng cài đặt Icon Màn Hình & Taskbar thành công!"}
+    current_weather_off = (current_weather_da == 0) if current_weather_da is not None else False
+    weather_off = settings.get("weather_off", False)
+    weather_changed = (weather_off != current_weather_off)
+
+    weather_notice = ""
+    weather_da_ok = True
+
+    if weather_changed:
+        if weather_off:
+            # User wants Weather OFF
+            # Win 11: TaskbarDa = 0 (Hide Widgets)
+            weather_da_ok = write_reg(REG_ADVANCED, 'TaskbarDa', 0)
+            # Win 10: ShellFeedsTaskbarViewMode = 2 (Turn off Feeds)
+            write_reg(REG_FEEDS, 'ShellFeedsTaskbarViewMode', 2)
+            write_reg(REG_FEEDS, 'ShellFeedsTaskbarContentUpdateMode', 2)
+            write_reg(REG_FEEDS, 'HeadlinesOnHover', 0)
+        else:
+            # User wants Weather ON
+            # Win 11: TaskbarDa = 1 (Show Widgets)
+            weather_da_ok = write_reg(REG_ADVANCED, 'TaskbarDa', 1)
+            # Win 10: ShellFeedsTaskbarViewMode = 0 (Show icon and text)
+            write_reg(REG_FEEDS, 'ShellFeedsTaskbarViewMode', 0)
+
+        # Handle Win 11 UCPD (User Choice Protection Driver) restriction if writing TaskbarDa failed
+        if not weather_da_ok:
+            try:
+                # Disable UCPD service and scheduled watchdog task so it unprotects upon next reboot
+                subprocess.run("sc.exe config UCPD start= disabled", shell=True, capture_output=True)
+                subprocess.run(r'schtasks /change /Disable /TN "\Microsoft\Windows\AppxDeploymentClient\UCPD velocity"', shell=True, capture_output=True)
+                # Open Taskbar settings so user can toggle Widgets switch in 1 click
+                subprocess.Popen("start ms-settings:taskbar", shell=True)
+                weather_notice = "\n\n⚠️ Lưu ý: Trên bản Windows 11 24H2 có cơ chế bảo vệ UCPD. Hệ thống đã mở Cài đặt Taskbar (Taskbar Settings) để bạn gạt tắt/bật Widget ngay lập tức."
+            except Exception:
+                pass
+
+    # 5. Refresh Desktop & Taskbar Shell cleanly
+    try:
+        # Notify Desktop Icon font/refresh
+        ctypes.windll.user32.SystemParametersInfoW(0x0073, 0, None, 3)
+
+        # Broadcast WM_SETTINGCHANGE for Taskbar TraySettings
+        HWND_BROADCAST = 0xFFFF
+        WM_SETTINGCHANGE = 0x001A
+        SMTO_ABORTIFHUNG = 2
+        result = ctypes.c_ulong()
+        ctypes.windll.user32.SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, 'TraySettings', SMTO_ABORTIFHUNG, 2000, ctypes.byref(result))
+        ctypes.windll.shell32.SHChangeNotify(0x08000000, 0, None, None)
+
+        # Restart Explorer cleanly to apply Taskbar and Desktop changes
+        subprocess.run(['taskkill', '/f', '/im', 'explorer.exe'], capture_output=True)
+        time.sleep(1)
+        subprocess.Popen(['explorer.exe'])
+    except Exception:
+        pass
+
+    return {
+        "success": True,
+        "message": f"✅ Đã áp dụng cài đặt Desktop Icon & Taskbar thành công!{weather_notice}"
+    }
 

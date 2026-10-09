@@ -703,6 +703,43 @@ Object.assign(AppController.prototype, {
     }
   },
 
+  applyPortPreset(type) {
+    const portDefs = [
+      { id: 'ipscan-chk-port-80', port: 80 },
+      { id: 'ipscan-chk-port-443', port: 443 },
+      { id: 'ipscan-chk-port-3389', port: 3389 },
+      { id: 'ipscan-chk-port-445', port: 445 },
+      { id: 'ipscan-chk-port-135', port: 135 },
+      { id: 'ipscan-chk-port-1433', port: 1433 },
+      { id: 'ipscan-chk-port-389', port: 389 },
+      { id: 'ipscan-chk-port-53', port: 53 },
+      { id: 'ipscan-chk-port-5985', port: 5985 },
+      { id: 'ipscan-chk-port-22', port: 22 },
+      { id: 'ipscan-chk-port-88', port: 88 },
+      { id: 'ipscan-chk-port-21', port: 21 },
+    ];
+
+    let targetPorts = [];
+    if (type === 'web') {
+      targetPorts = [80, 443];
+    } else if (type === 'client') {
+      targetPorts = [3389, 445, 135];
+    } else if (type === 'server') {
+      targetPorts = [445, 3389, 135, 53, 88, 389, 1433, 5985];
+    } else if (type === 'db') {
+      targetPorts = [1433, 22, 5985];
+    } else if (type === 'all') {
+      targetPorts = portDefs.map(p => p.port);
+    } else if (type === 'none') {
+      targetPorts = [];
+    }
+
+    portDefs.forEach(p => {
+      const el = document.getElementById(p.id);
+      if (el) el.checked = targetPorts.includes(p.port);
+    });
+  },
+
   async startIpScanner() {
     const subEl = document.getElementById("ipscan-input-subnet");
     const startEl = document.getElementById("ipscan-input-start");
@@ -712,8 +749,6 @@ Object.assign(AppController.prototype, {
     const chkPing = document.getElementById("ipscan-chk-ping");
     const chkHost = document.getElementById("ipscan-chk-hostname");
     const chkMac = document.getElementById("ipscan-chk-mac");
-    const chkHttp = document.getElementById("ipscan-chk-http");
-    const chkHttps = document.getElementById("ipscan-chk-https");
 
     const btnStart = document.getElementById("ipscan-btn-start");
     const btnExport = document.getElementById("ipscan-btn-export");
@@ -730,18 +765,50 @@ Object.assign(AppController.prototype, {
     const check_ping = chkPing ? chkPing.checked : true;
     const check_hostname = chkHost ? chkHost.checked : true;
     const check_mac = chkMac ? chkMac.checked : true;
-    const check_http_port = chkHttp ? chkHttp.checked : false;
-    const check_https_port = chkHttps ? chkHttps.checked : false;
+
+    // Collect port list to scan
+    const portDefs = [
+      { id: 'ipscan-chk-port-80', port: 80 },
+      { id: 'ipscan-chk-port-443', port: 443 },
+      { id: 'ipscan-chk-port-3389', port: 3389 },
+      { id: 'ipscan-chk-port-445', port: 445 },
+      { id: 'ipscan-chk-port-135', port: 135 },
+      { id: 'ipscan-chk-port-1433', port: 1433 },
+      { id: 'ipscan-chk-port-389', port: 389 },
+      { id: 'ipscan-chk-port-53', port: 53 },
+      { id: 'ipscan-chk-port-5985', port: 5985 },
+      { id: 'ipscan-chk-port-22', port: 22 },
+      { id: 'ipscan-chk-port-88', port: 88 },
+      { id: 'ipscan-chk-port-21', port: 21 },
+    ];
+    const ports_to_check = [];
+    portDefs.forEach(p => {
+      const el = document.getElementById(p.id);
+      if (el && el.checked) ports_to_check.push(p.port);
+    });
+
+    const customPortsEl = document.getElementById('ipscan-input-custom-ports');
+    if (customPortsEl && customPortsEl.value) {
+      customPortsEl.value.replace(/,/g, ' ').split(/\s+/).forEach(val => {
+        const num = parseInt(val.trim());
+        if (num > 0 && num <= 65535 && !ports_to_check.includes(num)) {
+          ports_to_check.push(num);
+        }
+      });
+    }
+
+    const check_http_port = ports_to_check.includes(80);
+    const check_https_port = ports_to_check.includes(443);
 
     if (btnStart) btnStart.disabled = true;
     if (spinner) spinner.style.display = "inline-block";
-    if (statusText) statusText.innerText = `Đang quét dải IP (${max_threads} luồng)... Vui lòng chờ...`;
+    if (statusText) statusText.innerText = `Đang quét dải IP (${max_threads} luồng, ${ports_to_check.length} cổng dịch vụ)... Vui lòng chờ...`;
     if (bodyEl) {
       bodyEl.innerHTML = `
         <tr>
           <td colspan="8" class="text-center py-4 text-muted">
             <span class="spinner-border spinner-border-sm text-primary"></span>
-            Đang tiến hành quét dải IP LAN...
+            Đang tiến hành quét thiết bị và cổng dịch vụ trong mạng LAN...
           </td>
         </tr>
       `;
@@ -750,7 +817,7 @@ Object.assign(AppController.prototype, {
     if (window.pywebview && window.pywebview.api) {
       try {
         const res = await window.pywebview.api.scan_ip_range(
-          subnet_str, ip_start, ip_end, check_ping, check_hostname, check_mac, check_http_port, check_https_port, max_threads
+          subnet_str, ip_start, ip_end, check_ping, check_hostname, check_mac, check_http_port, check_https_port, max_threads, ports_to_check
         );
 
         if (res && res.success) {
@@ -777,23 +844,21 @@ Object.assign(AppController.prototype, {
     } else {
       setTimeout(() => {
         const mockData = [
-          { ip: "192.168.1.1", hostname: "Router-Gateway.home", mac: this.generateRandomMac(":"), vendor: "TP-Link", latency_ms: "<1ms", http: true, https: true },
-          { ip: "192.168.1.100", hostname: "PC-DESKTOP-LTT", mac: this.generateRandomMac(":"), vendor: "Realtek", latency_ms: "<1ms", http: false, https: false },
-          { ip: "192.168.1.105", hostname: "iPhone-Guest", mac: this.generateRandomMac(":"), vendor: "Apple", latency_ms: "12ms", http: false, https: false }
+          { ip: "192.168.1.1", hostname: "Router-Gateway.home", mac: this.generateRandomMac(":"), vendor: "TP-Link", device_type: "Router", latency_ms: "<1ms", open_ports: [80, 443, 53] },
+          { ip: "192.168.1.100", hostname: "PC-DESKTOP-LTT", mac: this.generateRandomMac(":"), vendor: "Realtek", device_type: "PC", latency_ms: "<1ms", open_ports: [445, 135, 3389, 5985] },
+          { ip: "192.168.1.200", hostname: "WIN-SERVER-2025", mac: this.generateRandomMac(":"), vendor: "Dell", device_type: "Server", latency_ms: "<1ms", open_ports: [53, 88, 135, 389, 445, 1433, 3389, 5985] },
+          { ip: "192.168.1.105", hostname: "iPhone-Guest", mac: this.generateRandomMac(":"), vendor: "Apple", device_type: "iPhone", latency_ms: "12ms", open_ports: [] }
         ];
         this.lastScanResults = mockData;
-        if (badgeCount) badgeCount.innerText = "3 Online";
-        if (statusText) statusText.innerText = "Hoàn tất quét LAN (MOCK)! Tìm thấy 3 thiết bị online.";
+        if (badgeCount) badgeCount.innerText = "4 Online";
+        if (statusText) statusText.innerText = "Hoàn tất quét LAN (MOCK)! Tìm thấy 4 thiết bị online.";
         if (btnExport) btnExport.disabled = false;
         this.renderIpScanResults(mockData);
         if (btnStart) btnStart.disabled = false;
         if (spinner) spinner.style.display = "none";
-      }, 1000);
+      }, 800);
     }
   },
-
-
-
 
   renderIpScanResults(results) {
     const bodyEl = document.getElementById("ipscan-results-body");
@@ -818,6 +883,24 @@ Object.assign(AppController.prototype, {
       'Unknown': '❓'
     };
 
+    const portBadgesMap = {
+      80: { label: '🌐 80', bg: '#dcfce7', color: '#166534', title: 'HTTP Web Server' },
+      443: { label: '🔒 443', bg: '#e0e7ff', color: '#3730a3', title: 'HTTPS Web Server' },
+      3389: { label: '🖥️ 3389', bg: '#dbeafe', color: '#1e40af', title: 'Remote Desktop (RDP)' },
+      445: { label: '📁 445', bg: '#ffedd5', color: '#9a3412', title: 'SMB File & Printer Sharing' },
+      139: { label: '📁 139', bg: '#fef3c7', color: '#854d0e', title: 'NetBIOS' },
+      135: { label: '⚙️ 135', bg: '#f1f5f9', color: '#334155', title: 'RPC / WMI Hệ Thống' },
+      1433: { label: '🗄️ 1433', bg: '#fae8ff', color: '#86198f', title: 'MSSQL Database' },
+      389: { label: '🏢 389', bg: '#ccfbf1', color: '#115e59', title: 'Active Directory LDAP' },
+      636: { label: '🏢 636', bg: '#ccfbf1', color: '#115e59', title: 'LDAPS Secure' },
+      53: { label: '🔀 53', bg: '#cffafe', color: '#155e75', title: 'DNS Server' },
+      88: { label: '🛡️ 88', bg: '#fef9c3', color: '#713f12', title: 'Kerberos AD' },
+      5985: { label: '⚡ 5985', bg: '#ffe4e6', color: '#9f1239', title: 'WinRM HTTP (PowerShell)' },
+      5986: { label: '⚡ 5986', bg: '#ffe4e6', color: '#9f1239', title: 'WinRM HTTPS' },
+      22: { label: '🔑 22', bg: '#e2e8f0', color: '#1e293b', title: 'SSH Admin' },
+      21: { label: '🗂️ 21', bg: '#f1f5f9', color: '#475569', title: 'FTP Server' }
+    };
+
     const copyStyle = `cursor:pointer; user-select:none; transition: background 0.15s;`;
     const copyCellStyle = `padding: 8px; ${copyStyle}`;
 
@@ -829,26 +912,36 @@ Object.assign(AppController.prototype, {
       const deviceIcon = deviceIcons[deviceType] || '❓';
       const isRandomMac = vendor === 'Randomized MAC';
 
-      // Vendor badge: special case for randomized/privacy MACs
+      // Vendor badge
       let vendorBadge;
       if (isRandomMac) {
         vendorBadge = `<span class="badge" style="background:#fef3c7; color:#92400e; font-size:11px; font-weight:600;" title="Thiết bị dùng MAC ngẫu nhiên để bảo vệ quyền riêng tư (Android/iOS)">🔀 MAC Ngẫu Nhiên</span><span class="badge" style="background:#fef9ee; color:#b45309; font-size:10px; margin-left:3px;">📱 Điện thoại/Laptop</span>`;
       } else if (vendor !== 'Unknown') {
         vendorBadge = `<span class="badge" style="background:#dbeafe; color:#1d4ed8; font-weight:600; font-size:11px; margin-right:4px;" title="Nhà sản xuất">${vendor}</span><span class="badge" style="background:#f0fdf4; color:#16a34a; font-size:11px;" title="Loại thiết bị">${deviceIcon} ${deviceType}</span>`;
       } else {
-        // Unknown - show MAC prefix hint if available
         const macPrefix = item.mac && item.mac.length >= 8 ? item.mac.substring(0, 8).toUpperCase() : '';
         vendorBadge = `<span class="badge" style="background:#f1f5f9; color:#64748b; font-size:11px;" title="Không tìm thấy nhà sản xuất trong cơ sở dữ liệu OUI${macPrefix ? ' — OUI: ' + macPrefix : ''}">❓ Chưa xác định${macPrefix ? `<span style='color:#94a3b8; font-size:10px; display:block;'>${macPrefix}</span>` : ''}</span>`;
       }
 
-      let webPorts = '';
-      if (item.http) webPorts += `<span class="badge" style="background:#dcfce7; color:#166534; margin-right:3px; font-size:10px;">🌐 80</span>`;
-      if (item.https) webPorts += `<span class="badge" style="background:#e0e7ff; color:#3730a3; font-size:10px;">🔒 443</span>`;
-      if (!webPorts) webPorts = `<span style="color:#cbd5e1; font-size:11px;">-</span>`;
+      // Open Ports Badges
+      let openPortsList = item.open_ports || [];
+      if (openPortsList.length === 0) {
+        if (item.http) openPortsList.push(80);
+        if (item.https) openPortsList.push(443);
+      }
+
+      let openPortsBadges = '';
+      if (openPortsList.length > 0) {
+        openPortsBadges = openPortsList.map(p => {
+          const badgeDef = portBadgesMap[p] || { label: `Port ${p}`, bg: '#f1f5f9', color: '#475569', title: `Cổng ${p}` };
+          return `<span class="badge" style="background:${badgeDef.bg}; color:${badgeDef.color}; margin-right:3px; margin-bottom:2px; font-size:10.5px; font-weight:600; display:inline-block;" title="${badgeDef.title}">${badgeDef.label}</span>`;
+        }).join('');
+      } else {
+        openPortsBadges = `<span style="color:#cbd5e1; font-size:11px;">-</span>`;
+      }
 
       const esc = (s) => String(s || '').replace(/'/g, "\\'");
 
-      // Hostname display: distinguish between "no DNS record" vs actual resolution
       const hostnameDisplay = (item.hostname && item.hostname !== '' && item.hostname !== '-')
         ? `${item.hostname}<span style="font-size:10px; color:#94a3b8; display:block; margin-top:2px;">📋 Click để chép</span>`
         : `<span style="color:#94a3b8; font-weight:400; font-style:italic; font-size:11px;">Không tìm được tên</span>`;
@@ -876,10 +969,24 @@ Object.assign(AppController.prototype, {
           <td style="${copyCellStyle}" onclick="app.copyToClipboard('${esc(vendor)} ${esc(deviceType)}','Vendor')" title="Click để chép thông tin nhà sản xuất">
             ${vendorBadge}
           </td>
-          <td style="padding:8px; text-align:center;">${webPorts}</td>
+          <td style="padding:8px; text-align:left;">
+            <div style="display:flex; flex-wrap:wrap; align-items:center; gap:2px;">
+              ${openPortsBadges}
+            </div>
+          </td>
           <td style="padding:8px; text-align:right; white-space:nowrap;">
-            <button class="btn btn-slate-light btn-sm" onclick="app.copyToClipboard('${esc(item.ip)}','IP')" title="Copy IP" style="padding:2px 6px; font-size:11px; margin-bottom:2px;">📋 IP</button>
-            ${item.mac && item.mac !== '' && item.mac !== '-' ? `<br><button class="btn btn-slate-light btn-sm" onclick="app.copyToClipboard('${esc(item.mac)}','MAC')" title="Copy MAC" style="padding:2px 6px; font-size:11px;">📋 MAC</button>` : ''}
+            <div style="display:flex; flex-direction:column; align-items:flex-end; gap:3px;">
+              <div style="display:flex; gap:4px;">
+                <button class="btn btn-primary-gradient btn-sm" onclick="app.openHostPortScanModal('${esc(item.ip)}')" title="Quét chi tiết tất cả các cổng của máy ${esc(item.ip)}" style="padding:2px 7px; font-size:11px; font-weight:700;">⚡ Quét Port</button>
+                <button class="btn btn-slate-light btn-sm" onclick="app.copyToClipboard('${esc(item.ip)}','IP')" title="Copy IP" style="padding:2px 6px; font-size:11px;">📋 IP</button>
+              </div>
+              <div style="display:flex; gap:3px; flex-wrap:wrap; justify-content:flex-end;">
+                ${openPortsList.includes(3389) ? `<button class="btn btn-sm" style="background:#dbeafe; color:#1e40af; border:1px solid #bfdbfe; padding:2px 6px; font-size:10.5px; font-weight:600;" onclick="app.connectRdp('${esc(item.ip)}')" title="Kết nối Remote Desktop (mstsc /v:${esc(item.ip)})">🖥️ RDP</button>` : ''}
+                ${openPortsList.includes(445) ? `<button class="btn btn-sm" style="background:#ffedd5; color:#9a3412; border:1px solid #fed7aa; padding:2px 6px; font-size:10.5px; font-weight:600;" onclick="app.openSmbShare('${esc(item.ip)}')" title="Mở chia sẻ mạng (\\\\${esc(item.ip)})">📁 Share</button>` : ''}
+                ${openPortsList.includes(80) || openPortsList.includes(443) ? `<button class="btn btn-sm" style="background:#dcfce7; color:#166534; border:1px solid #bbf7d0; padding:2px 6px; font-size:10.5px; font-weight:600;" onclick="app.openWebBrowser('${openPortsList.includes(443) ? 'https' : 'http'}://${esc(item.ip)}')" title="Mở trình duyệt Web">🌐 Web</button>` : ''}
+                ${openPortsList.includes(5985) ? `<button class="btn btn-sm" style="background:#ffe4e6; color:#9f1239; border:1px solid #fecdd3; padding:2px 6px; font-size:10.5px; font-weight:600;" onclick="app.openWinRmSession('${esc(item.ip)}')" title="Mở PowerShell Remoting">⚡ WinRM</button>` : ''}
+              </div>
+            </div>
           </td>
         </tr>
       `;
@@ -893,12 +1000,13 @@ Object.assign(AppController.prototype, {
       return;
     }
 
-    let csvContent = "data:text/csv;charset=utf-8,Index,IP Address,Hostname,MAC Address,Vendor,Device Type,Latency,HTTP (80),HTTPS (443)\n";
+    let csvContent = "data:text/csv;charset=utf-8,Index,IP Address,Hostname,MAC Address,Vendor,Device Type,Latency,Open Ports,HTTP (80),HTTPS (443),RDP (3389),SMB (445)\n";
     this.lastScanResults.forEach((row, i) => {
       const vendor = row.vendor || row.brand || '';
       const deviceType = row.device_type || '';
       const latency = row.latency_ms || row.ping || '';
-      csvContent += `"${i + 1}","${row.ip || ''}","${row.hostname || ''}","${row.mac || ''}","${vendor}","${deviceType}","${latency}","${row.http ? 'YES' : 'NO'}","${row.https ? 'YES' : 'NO'}"\n`;
+      const openPorts = (row.open_ports || []).join('; ');
+      csvContent += `"${i + 1}","${row.ip || ''}","${row.hostname || ''}","${row.mac || ''}","${vendor}","${deviceType}","${latency}","${openPorts}","${row.http ? 'YES' : 'NO'}","${row.https ? 'YES' : 'NO'}","${row.rdp ? 'YES' : 'NO'}","${row.smb ? 'YES' : 'NO'}"\n`;
     });
 
     const encodedUri = encodeURI(csvContent);
@@ -912,5 +1020,229 @@ Object.assign(AppController.prototype, {
 
   exportIpScanResultsCsv() {
     return this.exportIpScanCsv();
+  },
+
+  // ── HOST PORT SCANNER MODAL CONTROLLERS ─────────────────────────────────
+  openHostPortScanModal(ip = '') {
+    const modal = document.getElementById('host-port-scan-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    const ipInput = document.getElementById('hostport-input-ip');
+    if (ipInput) {
+      if (ip) ipInput.value = ip;
+      else if (!ipInput.value) ipInput.value = '127.0.0.1';
+    }
+    if (ip) {
+      this.runHostPortScan();
+    }
+  },
+
+  closeHostPortScanModal() {
+    const modal = document.getElementById('host-port-scan-modal');
+    if (modal) modal.style.display = 'none';
+  },
+
+  onHostPortProfileChange() {
+    const select = document.getElementById('hostport-select-profile');
+    const customRow = document.getElementById('hostport-custom-row');
+    if (select && customRow) {
+      customRow.style.display = (select.value === 'custom') ? 'block' : 'none';
+    }
+  },
+
+  async runHostPortScan() {
+    const ipInput = document.getElementById('hostport-input-ip');
+    const target = ipInput ? ipInput.value.trim() : '127.0.0.1';
+    if (!target) {
+      alert("Vui lòng nhập IP hoặc Hostname mục tiêu cần quét!");
+      return;
+    }
+
+    const select = document.getElementById('hostport-select-profile');
+    const profile = select ? select.value : 'all_windows';
+
+    let ports = null;
+    if (profile === 'win_client') {
+      ports = [135, 139, 445, 3389, 80, 443];
+    } else if (profile === 'win_server') {
+      ports = [53, 88, 135, 139, 389, 445, 636, 1433, 3268, 3389, 5985, 5986];
+    } else if (profile === 'db_web') {
+      ports = [80, 443, 8080, 8443, 1433, 3306, 5432, 22, 21];
+    } else if (profile === 'custom') {
+      const customInput = document.getElementById('hostport-input-custom-ports');
+      if (customInput && customInput.value) {
+        ports = customInput.value.replace(/,/g, ' ').split(/\s+/).map(p => parseInt(p)).filter(p => !isNaN(p) && p > 0);
+      }
+    }
+
+    const btnScan = document.getElementById('hostport-btn-scan');
+    const statusText = document.getElementById('hostport-status-text');
+    const badgeOpen = document.getElementById('hostport-badge-open');
+    const badgeTotal = document.getElementById('hostport-badge-total');
+    const btnExport = document.getElementById('hostport-btn-export');
+    const bodyEl = document.getElementById('hostport-results-body');
+
+    if (btnScan) btnScan.disabled = true;
+    if (statusText) statusText.innerText = `Đang quét cổng dịch vụ trên ${target}... Vui lòng chờ...`;
+    if (bodyEl) {
+      bodyEl.innerHTML = `
+        <tr>
+          <td colspan="6" class="text-center py-4 text-muted">
+            <span class="spinner-border spinner-border-sm text-primary"></span>
+            Đang quét các cổng dịch vụ trên máy đích (${target})...
+          </td>
+        </tr>
+      `;
+    }
+
+    if (window.pywebview && window.pywebview.api) {
+      try {
+        const res = await window.pywebview.api.scan_single_host_ports(target, ports);
+        if (res && res.success) {
+          this.lastHostPortResults = res.results || [];
+          this.lastHostPortTarget = target;
+          if (badgeOpen) badgeOpen.innerText = `${res.open_count} Cổng Mở`;
+          if (badgeTotal) badgeTotal.innerText = `${res.total} Tổng Quét`;
+          if (statusText) statusText.innerText = `Hoàn tất! Tìm thấy ${res.open_count} cổng MỞ trên ${target}.`;
+          if (btnExport) btnExport.disabled = (res.results.length === 0);
+          this.renderHostPortScanResults(res.results || [], target);
+        } else {
+          if (statusText) statusText.innerText = `Lỗi: ${res ? res.message : 'Không quét được'}`;
+          if (bodyEl) bodyEl.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-danger">Lỗi: ${res ? res.message : 'Thất bại'}</td></tr>`;
+        }
+      } catch (e) {
+        if (statusText) statusText.innerText = `Lỗi kết nối: ${e.message}`;
+        if (bodyEl) bodyEl.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-danger">Lỗi: ${e.message}</td></tr>`;
+      } finally {
+        if (btnScan) btnScan.disabled = false;
+      }
+    } else {
+      setTimeout(() => {
+        const mockPorts = [
+          { port: 80, name: "HTTP", desc: "Web Server / Router Web Admin", category: "Web", status: "OPEN", is_open: true, latency_ms: "2ms" },
+          { port: 443, name: "HTTPS", desc: "Secure Web / SSL Server", category: "Web", status: "OPEN", is_open: true, latency_ms: "2ms" },
+          { port: 3389, name: "RDP", desc: "Remote Desktop Protocol (Điều khiển từ xa)", category: "Windows Client/Server", status: "OPEN", is_open: true, latency_ms: "3ms" },
+          { port: 445, name: "SMB", desc: "Server Message Block (Chia sẻ File & Máy in)", category: "Windows File Sharing", status: "OPEN", is_open: true, latency_ms: "1ms" },
+          { port: 135, name: "RPC", desc: "RPC Endpoint Mapper & WMI (Quản trị hệ thống)", category: "Windows System", status: "OPEN", is_open: true, latency_ms: "1ms" },
+          { port: 1433, name: "MSSQL", desc: "Microsoft SQL Server Database Engine", category: "Database", status: "CLOSED", is_open: false, latency_ms: "4ms" },
+          { port: 5985, name: "WinRM HTTP", desc: "Windows Remote Management (PowerShell Remoting)", category: "Remote Admin", status: "OPEN", is_open: true, latency_ms: "2ms" }
+        ];
+        this.lastHostPortResults = mockPorts;
+        this.lastHostPortTarget = target;
+        if (badgeOpen) badgeOpen.innerText = "6 Cổng Mở";
+        if (badgeTotal) badgeTotal.innerText = "7 Tổng Quét";
+        if (statusText) statusText.innerText = `Hoàn tất (MOCK)! Tìm thấy 6 cổng MỞ trên ${target}.`;
+        if (btnExport) btnExport.disabled = false;
+        this.renderHostPortScanResults(mockPorts, target);
+        if (btnScan) btnScan.disabled = false;
+      }, 500);
+    }
+  },
+
+  renderHostPortScanResults(results, target) {
+    const bodyEl = document.getElementById('hostport-results-body');
+    if (!bodyEl) return;
+    if (!results || results.length === 0) {
+      bodyEl.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-muted">Không có dữ liệu cổng nào.</td></tr>`;
+      return;
+    }
+
+    const esc = (s) => String(s || '').replace(/'/g, "\\'");
+    bodyEl.innerHTML = results.map(row => {
+      const isOpen = row.is_open;
+      const statusBadge = isOpen
+        ? `<span class="badge" style="background:#dcfce7; color:#166534; font-weight:700; font-size:11px; padding:3px 8px;">🟢 MỞ (OPEN)</span>`
+        : `<span class="badge" style="background:#f1f5f9; color:#94a3b8; font-size:11px; padding:3px 8px;">🔴 ĐÓNG</span>`;
+
+      let actionBtn = '-';
+      if (isOpen) {
+        if (row.port === 3389) {
+          actionBtn = `<button class="btn btn-sm" style="background:#dbeafe; color:#1e40af; border:1px solid #bfdbfe; padding:2px 8px; font-size:11px; font-weight:600;" onclick="app.connectRdp('${esc(target)}')">🖥️ Kết Nối RDP</button>`;
+        } else if (row.port === 445 || row.port === 139) {
+          actionBtn = `<button class="btn btn-sm" style="background:#ffedd5; color:#9a3412; border:1px solid #fed7aa; padding:2px 8px; font-size:11px; font-weight:600;" onclick="app.openSmbShare('${esc(target)}')">📁 Mở Share \\\\</button>`;
+        } else if (row.port === 80 || row.port === 8080) {
+          actionBtn = `<button class="btn btn-sm" style="background:#dcfce7; color:#166534; border:1px solid #bbf7d0; padding:2px 8px; font-size:11px; font-weight:600;" onclick="app.openWebBrowser('http://${esc(target)}:${row.port}')">🌐 Mở Web</button>`;
+        } else if (row.port === 443 || row.port === 8443) {
+          actionBtn = `<button class="btn btn-sm" style="background:#e0e7ff; color:#3730a3; border:1px solid #c7d2fe; padding:2px 8px; font-size:11px; font-weight:600;" onclick="app.openWebBrowser('https://${esc(target)}:${row.port}')">🔒 Mở HTTPS</button>`;
+        } else if (row.port === 5985 || row.port === 5986) {
+          actionBtn = `<button class="btn btn-sm" style="background:#ffe4e6; color:#9f1239; border:1px solid #fecdd3; padding:2px 8px; font-size:11px; font-weight:600;" onclick="app.openWinRmSession('${esc(target)}')">⚡ WinRM PS</button>`;
+        } else {
+          actionBtn = `<button class="btn btn-slate-light btn-sm" style="padding:2px 8px; font-size:11px;" onclick="app.copyToClipboard('${esc(target)}:${row.port}','Port')">📋 Chép</button>`;
+        }
+      }
+
+      return `
+        <tr style="background:${isOpen ? 'rgba(34, 197, 94, 0.04)' : ''}; transition:background 0.15s;">
+          <td style="text-align:center; font-family:monospace; font-weight:700; color:${isOpen ? '#166534' : '#64748b'}; padding:8px;">${row.port}</td>
+          <td style="font-weight:600; color:#1e293b; padding:8px;">${row.name || ''}</td>
+          <td style="color:#475569; font-size:12px; padding:8px;">${row.desc || ''}</td>
+          <td style="padding:8px;"><span class="badge" style="background:#f1f5f9; color:#475569; font-size:10.5px;">${row.category || ''}</span></td>
+          <td style="text-align:center; padding:8px;">${statusBadge}</td>
+          <td style="text-align:right; padding:8px;">${actionBtn}</td>
+        </tr>
+      `;
+    }).join('');
+  },
+
+  exportHostPortScanCsv() {
+    if (!this.lastHostPortResults || this.lastHostPortResults.length === 0) {
+      alert("Không có kết quả quét cổng để xuất CSV!");
+      return;
+    }
+    const target = this.lastHostPortTarget || 'host';
+    let csvContent = "data:text/csv;charset=utf-8,Port,Service Name,Description,Category,Status,Latency\n";
+    this.lastHostPortResults.forEach(r => {
+      csvContent += `"${r.port}","${r.name || ''}","${r.desc || ''}","${r.category || ''}","${r.status || ''}","${r.latency_ms || ''}"\n`;
+    });
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `port_scan_${target.replace(/[^a-zA-Z0-9_.-]/g, '_')}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  },
+
+  async connectRdp(ip) {
+    if (!ip) return;
+    this.addLog("info", `Đang mở kết nối Remote Desktop đến ${ip}...`);
+    if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.open_rdp_connection === 'function') {
+      const res = await window.pywebview.api.open_rdp_connection(ip);
+      this.addLog(res.success ? "success" : "error", res.message);
+    } else {
+      alert(`[MOCK] Mở mstsc.exe /v:${ip}`);
+    }
+  },
+
+  async openSmbShare(ip) {
+    if (!ip) return;
+    this.addLog("info", `Đang mở chia sẻ mạng (SMB) \\\\${ip}...`);
+    if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.open_smb_share === 'function') {
+      const res = await window.pywebview.api.open_smb_share(ip);
+      this.addLog(res.success ? "success" : "error", res.message);
+    } else {
+      alert(`[MOCK] Mở explorer.exe \\\\${ip}`);
+    }
+  },
+
+  async openWinRmSession(ip) {
+    if (!ip) return;
+    this.addLog("info", `Đang mở phiên PowerShell Remoting (WinRM) đến ${ip}...`);
+    if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.open_winrm_session === 'function') {
+      const res = await window.pywebview.api.open_winrm_session(ip);
+      this.addLog(res.success ? "success" : "error", res.message);
+    } else {
+      alert(`[MOCK] Enter-PSSession -ComputerName ${ip}`);
+    }
+  },
+
+  openWebBrowser(url) {
+    if (!url) return;
+    if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.open_external_url === 'function') {
+      window.pywebview.api.open_external_url(url);
+    } else {
+      window.open(url, '_blank');
+    }
   }
 });
+

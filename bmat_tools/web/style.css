@@ -3015,6 +3015,53 @@ body.dark-mode .badge-status-info {
   border: 1px solid rgba(56, 189, 248, 0.35) !important;
 }
 
+/* ── AUTO SHUTDOWN & POWER EVENT LOGS MODULE ──────────────────────────────── */
+.live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981;
+  animation: liveDotPulse 2s infinite ease-in-out;
+}
+
+@keyframes liveDotPulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { transform: scale(1.1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+body.dark-mode #shutdown-log-modal .ui-card {
+  background: #1e293b !important;
+  color: #f8fafc !important;
+}
+
+body.dark-mode #modal-log-expert-box {
+  background: rgba(30, 58, 138, 0.3) !important;
+  border-color: #3b82f6 !important;
+}
+
+body.dark-mode #modal-log-expert-note {
+  color: #bfdbfe !important;
+}
+
+body.dark-mode #subtab-shutdown-logs-content .ui-card {
+  background: #1e293b;
+  color: #f8fafc;
+  border-color: #334155;
+}
+
+body.dark-mode #subtab-shutdown-logs-content thead {
+  background: #0f172a !important;
+}
+
+
 
 
 

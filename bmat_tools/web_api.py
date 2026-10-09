@@ -14,6 +14,7 @@ import re
 import socket
 import datetime
 import time
+import queue
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from constants import APP_NAME, APP_VERSION, APP_AUTHOR, APP_PHONE, APP_WEBSITE, APP_TELEGRAM, AUTOSTART_KEY_NAME
@@ -1596,6 +1597,16 @@ class Api:
             self.log("ERROR", f"Lỗi lưu cài đặt Desktop Icon: {e}")
             return {"success": False, "message": str(e)}
 
+    def open_taskbar_settings(self):
+        """Opens Windows native Taskbar Settings page (ms-settings:taskbar)."""
+        try:
+            subprocess.Popen("start ms-settings:taskbar", shell=True)
+            self.log("SUCCESS", "Đã mở Cài đặt Taskbar của Windows!")
+            return {"success": True, "message": "Đã mở Cài đặt Taskbar của Windows thành công!"}
+        except Exception as e:
+            self.log("ERROR", f"Lỗi mở Cài đặt Taskbar: {e}")
+            return {"success": False, "message": str(e)}
+
     # ── STARTUP MANAGER MODULE ───────────────────────────────────────────
     def get_startup_entries(self):
         """Returns all startup apps from HKCU, HKLM, RunOnce, and Startup Folders."""
@@ -2695,6 +2706,45 @@ $s.Save()
         except Exception as e:
             return {"success": False, "message": str(e)}
 
+    def get_shutdown_event_logs(self, max_events=10, event_ids="1074,6008,41"):
+        """Get Windows Event Logs for Shutdown/Reboot/Crash (Event ID 1074, 6008, 41)"""
+        try:
+            import modules.auto_shutdown as sd
+            res = sd.get_shutdown_event_logs(max_events, event_ids)
+            if res.get("success"):
+                logs_count = len(res.get("logs", []))
+                self.log("INFO", f"Đã nạp {logs_count} bản ghi lịch sử tắt máy / sập nguồn hệ thống.")
+            else:
+                self.log("ERROR", f"Lỗi nạp nhật ký tắt máy: {res.get('message')}")
+            return res
+        except Exception as e:
+            self.log("ERROR", f"Lỗi ngoại lệ khi đọc nhật ký nguồn: {e}")
+            return {"success": False, "message": str(e), "logs": [], "stats": {}}
+
+    def export_shutdown_event_logs(self, max_events=100, event_ids="1074,6008,41", format_type="excel"):
+        """Exports shutdown and power event logs to a beautifully formatted Excel (.xlsx) or CSV file on Desktop."""
+        try:
+            import modules.auto_shutdown as sd
+            res = sd.export_shutdown_event_logs(max_events=max_events, event_ids=event_ids, format_type=format_type)
+            if res.get("success"):
+                self.log("SUCCESS", res.get("message"))
+            else:
+                self.log("ERROR", res.get("message"))
+            return res
+        except Exception as e:
+            self.log("ERROR", f"Lỗi xuất file lịch sử tắt máy: {e}")
+            return {"success": False, "message": str(e)}
+
+    def open_exported_file(self, file_path):
+        """Opens an exported report file with its default system application (Excel/WPS)."""
+        try:
+            if file_path and os.path.exists(file_path):
+                os.startfile(file_path)
+                return {"success": True, "message": f"Đã mở file: {file_path}"}
+            return {"success": False, "message": f"File không tồn tại: {file_path}"}
+        except Exception as e:
+            return {"success": False, "message": f"Lỗi khi mở file: {str(e)}"}
+
     def _get_temp_hosts_path(self):
         import tempfile
         temp_dir = os.path.join(tempfile.gettempdir(), "IT_Tools_Hosts_Temp")
@@ -3160,7 +3210,7 @@ $s.Save()
 
     # ── OTHER SYSTEM TWEAKS (12 TOOL TOGGLES MATCHING IMAGE 2) ─────────────
     def get_system_tweaks_status(self):
-        """Returns real-time status of all 12 system tweaks matching Image 2."""
+        """Returns real-time status of all system tweaks accurately reflecting the current Windows configuration."""
         import winreg
 
         status = {
@@ -3178,134 +3228,320 @@ $s.Save()
             "autorun": True
         }
 
-        # 1. Task Manager
-        try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System', 0, winreg.KEY_READ)
-            val, _ = winreg.QueryValueEx(key, 'DisableTaskMgr')
-            status["taskmgr"] = (val == 0)
-            winreg.CloseKey(key)
-        except Exception:
-            status["taskmgr"] = True
+        # 1. Task Manager (Check both HKCU and HKLM)
+        taskmgr_disabled = False
+        for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            try:
+                k = winreg.OpenKey(root, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System', 0, winreg.KEY_READ)
+                val, _ = winreg.QueryValueEx(k, 'DisableTaskMgr')
+                if val == 1:
+                    taskmgr_disabled = True
+                winreg.CloseKey(k)
+            except Exception:
+                pass
+        status["taskmgr"] = not taskmgr_disabled
 
-        # 2. Registry Editor
-        try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System', 0, winreg.KEY_READ)
-            val, _ = winreg.QueryValueEx(key, 'DisableRegistryTools')
-            status["registry"] = (val == 0)
-            winreg.CloseKey(key)
-        except Exception:
-            status["registry"] = True
+        # 2. Registry Editor (Check both HKCU and HKLM)
+        registry_disabled = False
+        for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            try:
+                k = winreg.OpenKey(root, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System', 0, winreg.KEY_READ)
+                val, _ = winreg.QueryValueEx(k, 'DisableRegistryTools')
+                if val in (1, 2):
+                    registry_disabled = True
+                winreg.CloseKey(k)
+            except Exception:
+                pass
+        status["registry"] = not registry_disabled
 
-        # 3. Run Command
-        try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer', 0, winreg.KEY_READ)
-            val, _ = winreg.QueryValueEx(key, 'NoRun')
-            status["run"] = (val == 0)
-            winreg.CloseKey(key)
-        except Exception:
-            status["run"] = True
+        # 3. Run Command (Win + R) - Check both HKCU and HKLM
+        run_disabled = False
+        for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            try:
+                k = winreg.OpenKey(root, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer', 0, winreg.KEY_READ)
+                val, _ = winreg.QueryValueEx(k, 'NoRun')
+                if val == 1:
+                    run_disabled = True
+                winreg.CloseKey(k)
+            except Exception:
+                pass
+        status["run"] = not run_disabled
 
-        # 4. Low Disk Space Checks
-        try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer', 0, winreg.KEY_READ)
-            val, _ = winreg.QueryValueEx(key, 'NoLowDiskSpaceChecks')
-            status["lowdisk"] = (val == 0)
-            winreg.CloseKey(key)
-        except Exception:
-            status["lowdisk"] = True
+        # 4. Low Disk Space Checks (Check both HKCU and HKLM)
+        lowdisk_disabled = False
+        for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            try:
+                k = winreg.OpenKey(root, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer', 0, winreg.KEY_READ)
+                val, _ = winreg.QueryValueEx(k, 'NoLowDiskSpaceChecks')
+                if val == 1:
+                    lowdisk_disabled = True
+                winreg.CloseKey(k)
+            except Exception:
+                pass
+        status["lowdisk"] = not lowdisk_disabled
 
-        # 5. Command Prompt
-        try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'SOFTWARE\Policies\Microsoft\Windows\System', 0, winreg.KEY_READ)
-            val, _ = winreg.QueryValueEx(key, 'DisableCMD')
-            status["cmd"] = (val == 0)
-            winreg.CloseKey(key)
-        except Exception:
-            status["cmd"] = True
+        # 5. Command Prompt (Check both HKCU and HKLM in Policies\System and Policies\Microsoft\Windows\System)
+        cmd_disabled = False
+        for p in (r'SOFTWARE\Policies\Microsoft\Windows\System', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'):
+            for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                try:
+                    k = winreg.OpenKey(root, p, 0, winreg.KEY_READ)
+                    val, _ = winreg.QueryValueEx(k, 'DisableCMD')
+                    if val in (1, 2):
+                        cmd_disabled = True
+                    winreg.CloseKey(k)
+                except Exception:
+                    pass
+        status["cmd"] = not cmd_disabled
 
-        # 6. Camera
+        # 6. Webcam / Camera (Check Group Policy, Device Consent, and User Consent)
+        camera_blocked = False
         try:
-            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam', 0, winreg.KEY_READ)
-            val, _ = winreg.QueryValueEx(key, 'Value')
-            status["camera"] = (str(val).lower() == 'allow')
-            winreg.CloseKey(key)
+            k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Policies\Microsoft\Camera', 0, winreg.KEY_READ)
+            val, _ = winreg.QueryValueEx(k, 'AllowCamera')
+            if val == 0:
+                camera_blocked = True
+            winreg.CloseKey(k)
         except Exception:
-            status["camera"] = True
+            pass
 
-        # 10. Shortcut Arrow
         try:
-            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons', 0, winreg.KEY_READ)
-            val, _ = winreg.QueryValueEx(key, '29')
-            status["shortcut_arrow"] = False
-            winreg.CloseKey(key)
+            k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', 0, winreg.KEY_READ)
+            val, _ = winreg.QueryValueEx(k, 'LetAppsAccessCamera')
+            if val == 2:  # 2 = Force Deny
+                camera_blocked = True
+            winreg.CloseKey(k)
         except Exception:
-            status["shortcut_arrow"] = True
+            pass
+
+        # Check CapabilityAccessManager in HKCU (user consent) and HKLM (device consent)
+        for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            for sub in ('', r'\NonPackaged'):
+                try:
+                    k = winreg.OpenKey(root, r'SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam' + sub, 0, winreg.KEY_READ)
+                    val, _ = winreg.QueryValueEx(k, 'Value')
+                    if str(val).strip().lower() == 'deny':
+                        camera_blocked = True
+                    winreg.CloseKey(k)
+                except Exception:
+                    pass
+        status["camera"] = not camera_blocked
+
+        # 10. Shortcut Arrow (Check HKLM and HKCU Shell Icons)
+        arrow_removed = False
+        for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+            try:
+                k = winreg.OpenKey(root, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons', 0, winreg.KEY_READ)
+                val, _ = winreg.QueryValueEx(k, '29')
+                if str(val).strip():
+                    arrow_removed = True
+                winreg.CloseKey(k)
+            except Exception:
+                pass
+        status["shortcut_arrow"] = not arrow_removed
 
         # 11. Shortcut Prefix "Shortcut to"
+        prefix_disabled = False
         try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer', 0, winreg.KEY_READ)
-            val, _ = winreg.QueryValueEx(key, 'link')
-            status["shortcut_prefix"] = (val != b'\x00\x00\x00\x00')
-            winreg.CloseKey(key)
+            k = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer', 0, winreg.KEY_READ)
+            val, _ = winreg.QueryValueEx(k, 'link')
+            if val == b'\x00\x00\x00\x00':
+                prefix_disabled = True
+            winreg.CloseKey(k)
         except Exception:
-            status["shortcut_prefix"] = True
+            pass
+        status["shortcut_prefix"] = not prefix_disabled
 
-        # 12. Autorun
-        try:
-            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer', 0, winreg.KEY_READ)
-            val, _ = winreg.QueryValueEx(key, 'NoDriveTypeAutoRun')
-            status["autorun"] = (val != 0xFF)
-            winreg.CloseKey(key)
-        except Exception:
-            status["autorun"] = True
+        # 12. Autorun (Check HKLM and HKCU)
+        autorun_disabled = False
+        for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+            try:
+                k = winreg.OpenKey(root, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer', 0, winreg.KEY_READ)
+                val, _ = winreg.QueryValueEx(k, 'NoDriveTypeAutoRun')
+                if val == 0xFF:
+                    autorun_disabled = True
+                winreg.CloseKey(k)
+            except Exception:
+                pass
+        status["autorun"] = not autorun_disabled
 
         return {"success": True, "data": status}
 
     def toggle_system_tweak(self, tweak_key, enable):
         import winreg
         try:
-            val = 0 if enable else 1  # 0 = enabled feature, 1 = disabled
+            restart_explorer_needed = False
 
             if tweak_key == "taskmgr":
-                key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System')
-                winreg.SetValueEx(key, 'DisableTaskMgr', 0, winreg.REG_DWORD, val)
-                winreg.CloseKey(key)
-
-            elif tweak_key == "cmd":
-                key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'SOFTWARE\Policies\Microsoft\Windows\System')
-                winreg.SetValueEx(key, 'DisableCMD', 0, winreg.REG_DWORD, val)
-                winreg.CloseKey(key)
+                for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                    try:
+                        k = winreg.CreateKey(root, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System')
+                        if enable:
+                            try:
+                                winreg.DeleteValue(k, 'DisableTaskMgr')
+                            except Exception:
+                                winreg.SetValueEx(k, 'DisableTaskMgr', 0, winreg.REG_DWORD, 0)
+                        else:
+                            winreg.SetValueEx(k, 'DisableTaskMgr', 0, winreg.REG_DWORD, 1)
+                        winreg.CloseKey(k)
+                    except Exception:
+                        pass
 
             elif tweak_key == "registry":
-                key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System')
-                winreg.SetValueEx(key, 'DisableRegistryTools', 0, winreg.REG_DWORD, val)
-                winreg.CloseKey(key)
+                for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                    try:
+                        k = winreg.CreateKey(root, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System')
+                        if enable:
+                            try:
+                                winreg.DeleteValue(k, 'DisableRegistryTools')
+                            except Exception:
+                                winreg.SetValueEx(k, 'DisableRegistryTools', 0, winreg.REG_DWORD, 0)
+                        else:
+                            winreg.SetValueEx(k, 'DisableRegistryTools', 0, winreg.REG_DWORD, 1)
+                        winreg.CloseKey(k)
+                    except Exception:
+                        pass
 
             elif tweak_key == "run":
-                key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer')
-                winreg.SetValueEx(key, 'NoRun', 0, winreg.REG_DWORD, val)
-                winreg.CloseKey(key)
+                for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                    try:
+                        k = winreg.CreateKey(root, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer')
+                        if enable:
+                            try:
+                                winreg.DeleteValue(k, 'NoRun')
+                            except Exception:
+                                winreg.SetValueEx(k, 'NoRun', 0, winreg.REG_DWORD, 0)
+                        else:
+                            winreg.SetValueEx(k, 'NoRun', 0, winreg.REG_DWORD, 1)
+                        winreg.CloseKey(k)
+                    except Exception:
+                        pass
+                restart_explorer_needed = True
+
+            elif tweak_key == "cmd":
+                for p in (r'SOFTWARE\Policies\Microsoft\Windows\System', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'):
+                    for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                        try:
+                            k = winreg.CreateKey(root, p)
+                            if enable:
+                                try:
+                                    winreg.DeleteValue(k, 'DisableCMD')
+                                except Exception:
+                                    winreg.SetValueEx(k, 'DisableCMD', 0, winreg.REG_DWORD, 0)
+                            else:
+                                winreg.SetValueEx(k, 'DisableCMD', 0, winreg.REG_DWORD, 1)
+                            winreg.CloseKey(k)
+                        except Exception:
+                            pass
 
             elif tweak_key == "lowdisk":
-                key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer')
-                winreg.SetValueEx(key, 'NoLowDiskSpaceChecks', 0, winreg.REG_DWORD, val)
-                winreg.CloseKey(key)
+                for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                    try:
+                        k = winreg.CreateKey(root, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer')
+                        if enable:
+                            try:
+                                winreg.DeleteValue(k, 'NoLowDiskSpaceChecks')
+                            except Exception:
+                                winreg.SetValueEx(k, 'NoLowDiskSpaceChecks', 0, winreg.REG_DWORD, 0)
+                        else:
+                            winreg.SetValueEx(k, 'NoLowDiskSpaceChecks', 0, winreg.REG_DWORD, 1)
+                        winreg.CloseKey(k)
+                    except Exception:
+                        pass
+                restart_explorer_needed = True
 
             elif tweak_key == "camera":
                 cam_val = 'Allow' if enable else 'Deny'
-                key = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam')
-                winreg.SetValueEx(key, 'Value', 0, winreg.REG_SZ, cam_val)
-                winreg.CloseKey(key)
+                # 1. Update CapabilityAccessManager ConsentStore for HKCU and HKLM
+                for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                    for sub in ('', r'\NonPackaged'):
+                        try:
+                            k = winreg.CreateKey(root, r'SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam' + sub)
+                            winreg.SetValueEx(k, 'Value', 0, winreg.REG_SZ, cam_val)
+                            winreg.CloseKey(k)
+                        except Exception:
+                            pass
+
+                # 2. Update Group Policy Camera settings
+                try:
+                    k = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Policies\Microsoft\Camera')
+                    if enable:
+                        try:
+                            winreg.DeleteValue(k, 'AllowCamera')
+                        except Exception:
+                            winreg.SetValueEx(k, 'AllowCamera', 0, winreg.REG_DWORD, 1)
+                    else:
+                        winreg.SetValueEx(k, 'AllowCamera', 0, winreg.REG_DWORD, 0)
+                    winreg.CloseKey(k)
+                except Exception:
+                    pass
+
+                try:
+                    k = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Policies\Microsoft\Windows\AppPrivacy')
+                    if enable:
+                        try:
+                            winreg.DeleteValue(k, 'LetAppsAccessCamera')
+                        except Exception:
+                            winreg.SetValueEx(k, 'LetAppsAccessCamera', 0, winreg.REG_DWORD, 1)
+                    else:
+                        winreg.SetValueEx(k, 'LetAppsAccessCamera', 0, winreg.REG_DWORD, 2)
+                    winreg.CloseKey(k)
+                except Exception:
+                    pass
+
+            elif tweak_key == "shortcut_arrow":
+                for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+                    try:
+                        k = winreg.CreateKey(root, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons')
+                        if enable:
+                            try:
+                                winreg.DeleteValue(k, '29')
+                            except Exception:
+                                pass
+                        else:
+                            winreg.SetValueEx(k, '29', 0, winreg.REG_SZ, '%windir%\\System32\\shell32.dll,-50')
+                        winreg.CloseKey(k)
+                    except Exception:
+                        pass
+                restart_explorer_needed = True
+
+            elif tweak_key == "shortcut_prefix":
+                try:
+                    k = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer')
+                    if enable:
+                        try:
+                            winreg.DeleteValue(k, 'link')
+                        except Exception:
+                            winreg.SetValueEx(k, 'link', 0, winreg.REG_BINARY, b'\x1e\x00\x00\x00')
+                    else:
+                        winreg.SetValueEx(k, 'link', 0, winreg.REG_BINARY, b'\x00\x00\x00\x00')
+                    winreg.CloseKey(k)
+                except Exception:
+                    pass
+                restart_explorer_needed = True
+
+            elif tweak_key == "autorun":
+                drive_val = 0x91 if enable else 0xFF
+                for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+                    try:
+                        k = winreg.CreateKey(root, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer')
+                        winreg.SetValueEx(k, 'NoDriveTypeAutoRun', 0, winreg.REG_DWORD, drive_val)
+                        winreg.CloseKey(k)
+                    except Exception:
+                        pass
 
             elif tweak_key == "fix_hidden":
-                key1 = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced')
-                winreg.SetValueEx(key1, 'Hidden', 0, winreg.REG_DWORD, 1)
-                winreg.SetValueEx(key1, 'ShowSuperHidden', 0, winreg.REG_DWORD, 1)
-                winreg.CloseKey(key1)
-                key2 = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced\Folder\Hidden\SHOWALL')
-                winreg.SetValueEx(key2, 'CheckedValue', 0, winreg.REG_DWORD, 1)
-                winreg.CloseKey(key2)
-                subprocess.run("taskkill /f /im explorer.exe & start explorer.exe", shell=True, capture_output=True)
+                try:
+                    key1 = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced')
+                    winreg.SetValueEx(key1, 'Hidden', 0, winreg.REG_DWORD, 1)
+                    winreg.SetValueEx(key1, 'ShowSuperHidden', 0, winreg.REG_DWORD, 1)
+                    winreg.CloseKey(key1)
+                    key2 = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced\Folder\Hidden\SHOWALL')
+                    winreg.SetValueEx(key2, 'CheckedValue', 0, winreg.REG_DWORD, 1)
+                    winreg.CloseKey(key2)
+                except Exception:
+                    pass
+                restart_explorer_needed = True
 
             elif tweak_key == "repair_taskbar":
                 return self.repair_taskbar()
@@ -3313,35 +3549,17 @@ $s.Save()
             elif tweak_key == "unblock_files":
                 return self.unblock_files_quick()
 
-            elif tweak_key == "shortcut_arrow":
-                key = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons')
-                if enable:
-                    try:
-                        winreg.DeleteValue(key, '29')
-                    except Exception:
-                        pass
-                else:
-                    winreg.SetValueEx(key, '29', 0, winreg.REG_SZ, '%windir%\\System32\\shell32.dll,-50')
-                winreg.CloseKey(key)
-                subprocess.run("taskkill /f /im explorer.exe & start explorer.exe", shell=True, capture_output=True)
+            # Restart explorer if required to apply the policy immediately
+            if restart_explorer_needed:
+                self.restart_explorer_process()
 
-            elif tweak_key == "shortcut_prefix":
-                key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer')
-                link_val = b'\x1e\x00\x00\x00' if enable else b'\x00\x00\x00\x00'
-                winreg.SetValueEx(key, 'link', 0, winreg.REG_BINARY, link_val)
-                winreg.CloseKey(key)
-
-            elif tweak_key == "autorun":
-                key = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer')
-                winreg.SetValueEx(key, 'NoDriveTypeAutoRun', 0, winreg.REG_DWORD, 0x91 if enable else 0xFF)
-                winreg.CloseKey(key)
-
-            status_str = "Kích hoạt (Enable)" if enable else "Tắt (Disable)"
-            self.log("SUCCESS", f"Đã thực hiện {status_str} tính năng: {tweak_key}")
+            status_str = "Kích hoạt (Bật)" if enable else "Vô hiệu hóa (Tắt)"
+            self.log("SUCCESS", f"Đã {status_str} tính năng: {tweak_key}")
             return {"success": True, "message": f"Đã {status_str} tính năng thành công!"}
         except Exception as e:
             self.log("ERROR", f"Lỗi thực hiện tweak {tweak_key}: {e}")
             return {"success": False, "message": str(e)}
+
 
     def repair_taskbar(self):
         """Repairs and unfreezes Windows Taskbar and Start Menu without removing any pinned items."""
@@ -4811,7 +5029,7 @@ $res | ConvertTo-Json -Depth 3 -Compress
             self.log("ERROR", f"Lỗi lấy dải mạng mặc định: {e}")
             return {"local_ip": "192.168.1.100", "subnet": "192.168.1.0/24", "start_ip": "192.168.1.1", "end_ip": "192.168.1.254"}
 
-    def scan_ip_range(self, subnet_str="", ip_start="", ip_end="", check_ping=True, check_hostname=True, check_mac=True, check_http_port=True, check_https_port=True, max_threads=50):
+    def scan_ip_range(self, subnet_str="", ip_start="", ip_end="", check_ping=True, check_hostname=True, check_mac=True, check_http_port=True, check_https_port=True, max_threads=50, ports_to_check=None):
         try:
             import modules.ip_scanner as ip_scanner
             self.log("INFO", f"Đang bắt đầu quét dải IP LAN (Threads: {max_threads})...")
@@ -4824,13 +5042,77 @@ $res | ConvertTo-Json -Depth 3 -Compress
                 check_mac=check_mac,
                 check_http_port=check_http_port,
                 check_https_port=check_https_port,
-                max_threads=max_threads
+                max_threads=max_threads,
+                ports_to_check=ports_to_check
             )
             self.log("SUCCESS", f"Hoàn tất quét LAN! Tìm thấy {len(res)} thiết bị online.")
             return {"success": True, "results": res, "total": len(res)}
         except Exception as e:
             self.log("ERROR", f"Lỗi quét IP Scanner: {e}")
             return {"success": False, "message": str(e), "results": []}
+
+    def scan_single_host_ports(self, target_host="", ports=None):
+        try:
+            import modules.ip_scanner as ip_scanner
+            target = target_host.strip() if target_host else "127.0.0.1"
+            self.log("INFO", f"Đang quét chi tiết các cổng dịch vụ cho máy: {target}...")
+            res = ip_scanner.scan_single_host_ports(target, ports=ports, timeout=0.45)
+            open_count = len([x for x in res if x.get("is_open")])
+            self.log("SUCCESS", f"Đã quét xong {len(res)} cổng trên {target} ({open_count} cổng MỞ).")
+            return {"success": True, "target": target, "results": res, "open_count": open_count, "total": len(res)}
+        except Exception as e:
+            self.log("ERROR", f"Lỗi quét port host {target_host}: {e}")
+            return {"success": False, "message": str(e), "results": []}
+
+    def get_port_definitions(self):
+        try:
+            import modules.ip_scanner as ip_scanner
+            return {"success": True, "data": ip_scanner.WINDOWS_PORTS_DEF}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def open_rdp_connection(self, ip=""):
+        try:
+            target = ip.strip()
+            if not target:
+                return {"success": False, "message": "Địa chỉ IP không hợp lệ!"}
+            self.log("INFO", f"Đang mở Remote Desktop (mstsc) kết nối đến {target}...")
+            subprocess.Popen(['mstsc.exe', f'/v:{target}'])
+            return {"success": True, "message": f"Đã mở kết nối Remote Desktop đến {target}"}
+        except Exception as e:
+            self.log("ERROR", f"Lỗi mở RDP đến {ip}: {e}")
+            return {"success": False, "message": str(e)}
+
+    def open_smb_share(self, ip=""):
+        try:
+            target = ip.strip()
+            if not target:
+                return {"success": False, "message": "Địa chỉ IP không hợp lệ!"}
+            unc_path = f"\\\\{target}"
+            self.log("INFO", f"Đang mở thư mục chia sẻ mạng (SMB): {unc_path}...")
+            os.startfile(unc_path)
+            return {"success": True, "message": f"Đã mở chia sẻ mạng {unc_path}"}
+        except Exception as e:
+            try:
+                subprocess.Popen(['explorer.exe', f"\\\\{target}"])
+                return {"success": True, "message": f"Đã gửi lệnh mở {target}"}
+            except Exception as ex2:
+                self.log("ERROR", f"Lỗi mở SMB đến {ip}: {ex2}")
+                return {"success": False, "message": str(ex2)}
+
+    def open_winrm_session(self, ip=""):
+        try:
+            target = ip.strip()
+            if not target:
+                return {"success": False, "message": "Địa chỉ IP không hợp lệ!"}
+            self.log("INFO", f"Đang mở PowerShell Remoting (WinRM) đến {target}...")
+            cmd = f'Write-Host "Dang ket noi PowerShell Remoting den {target} (WinRM)..." -ForegroundColor Cyan; Enter-PSSession -ComputerName "{target}"'
+            subprocess.Popen(['powershell.exe', '-NoExit', '-Command', cmd])
+            return {"success": True, "message": f"Đã mở cửa sổ PowerShell Remoting đến {target}"}
+        except Exception as e:
+            self.log("ERROR", f"Lỗi mở WinRM đến {ip}: {e}")
+            return {"success": False, "message": str(e)}
+
 
     # ── CLASSIC CONTEXT MENU (WIN10 / WIN11 RIGHT-CLICK MENU) ──────────────
     def get_classic_menu_status(self):
@@ -4905,10 +5187,60 @@ $res | ConvertTo-Json -Depth 3 -Compress
 
     # ── SYSTEM DRIVER BACKUP & RESTORE ────────────────────────────────────
     def get_installed_drivers(self):
-        """Fetches all installed OEM drivers via PowerShell Get-WindowsDriver."""
+        """Fetches all installed OEM drivers using pnputil (instant <0.1s) with PowerShell fallback."""
+        # 1. Ultra-fast retrieval via native pnputil /enum-drivers
+        try:
+            res = subprocess.run(
+                ['pnputil', '/enum-drivers'],
+                capture_output=True, text=True, timeout=12, encoding='utf-8', errors='ignore'
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                drivers = []
+                current = {}
+                for raw_line in res.stdout.splitlines():
+                    line = raw_line.strip()
+                    if not line:
+                        if current.get("driver"):
+                            drivers.append(current)
+                            current = {}
+                        continue
+                    if ":" in line:
+                        key, val = line.split(":", 1)
+                        key = key.strip()
+                        val = val.strip()
+                        if key == "Published Name":
+                            if current.get("driver"):
+                                drivers.append(current)
+                                current = {}
+                            current["driver"] = val
+                        elif key == "Provider Name":
+                            current["provider"] = val or "Unknown"
+                        elif key == "Class Name":
+                            current["class"] = val or "-"
+                        elif key == "Driver Version":
+                            parts = val.split(" ", 1)
+                            if len(parts) == 2:
+                                current["date"] = parts[0]
+                                current["version"] = parts[1]
+                            else:
+                                current["version"] = val
+                                current["date"] = "-"
+                        elif key == "Signer Name":
+                            current["signer"] = val
+
+                if current.get("driver"):
+                    drivers.append(current)
+
+                if drivers:
+                    self._cached_driver_count = len(drivers)
+                    return {"success": True, "drivers": drivers, "total": len(drivers)}
+        except Exception as ex:
+            self.log("WARN", f"pnputil /enum-drivers không thành công, thử PowerShell: {ex}")
+
+        # 2. Fallback: PowerShell Get-WindowsDriver
         try:
             cmd = ['powershell', '-Command', 'Get-WindowsDriver -Online | Select-Object ProviderName, Driver, ClassDescription, Version, Date | ConvertTo-Json']
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=60, encoding='utf-8', errors='ignore')
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=30, encoding='utf-8', errors='ignore')
             if res.returncode == 0 and res.stdout.strip():
                 data = json.loads(res.stdout)
                 if isinstance(data, dict):
@@ -4932,6 +5264,7 @@ $res | ConvertTo-Json -Depth 3 -Compress
                         "version": d.get("Version") or "-",
                         "date": clean_date
                     })
+                self._cached_driver_count = len(cleaned)
                 return {"success": True, "drivers": cleaned, "total": len(cleaned)}
             return {"success": True, "drivers": [], "total": 0}
         except Exception as e:
@@ -4948,9 +5281,11 @@ $res | ConvertTo-Json -Depth 3 -Compress
             root.attributes('-topmost', True)
             kwargs = {'title': title}
             if initial_dir and os.path.exists(initial_dir):
-                kwargs['initialdir'] = initial_dir
+                kwargs['initialdir'] = os.path.normpath(initial_dir)
             folder = filedialog.askdirectory(**kwargs)
             root.destroy()
+            if folder:
+                folder = os.path.normpath(folder)
             return {"success": True, "folder": folder}
         except Exception as e:
             return {"success": False, "message": str(e)}
@@ -4959,7 +5294,7 @@ $res | ConvertTo-Json -Depth 3 -Compress
         """Retrieves last driver backup directory or finds existing backup folder on disk."""
         # 1. In-memory cache
         if getattr(self, '_last_driver_backup_path', None) and os.path.exists(self._last_driver_backup_path):
-            return self._last_driver_backup_path
+            return os.path.normpath(self._last_driver_backup_path)
 
         # 2. Persistent JSON config
         try:
@@ -4970,8 +5305,8 @@ $res | ConvertTo-Json -Depth 3 -Compress
                     cfg = json.load(f)
                     p = cfg.get('last_backup_dir')
                     if p and os.path.exists(p):
-                        self._last_driver_backup_path = p
-                        return p
+                        self._last_driver_backup_path = os.path.normpath(p)
+                        return self._last_driver_backup_path
         except Exception:
             pass
 
@@ -4992,8 +5327,8 @@ $res | ConvertTo-Json -Depth 3 -Compress
             if os.path.exists(c):
                 try:
                     if os.listdir(c):
-                        self._last_driver_backup_path = c
-                        return c
+                        self._last_driver_backup_path = os.path.normpath(c)
+                        return self._last_driver_backup_path
                 except Exception:
                     pass
 
@@ -5003,17 +5338,20 @@ $res | ConvertTo-Json -Depth 3 -Compress
             if os.path.exists(drive):
                 def_p = os.path.join(drive, 'Backup Driver')
                 os.makedirs(def_p, exist_ok=True)
-                return def_p
+                self._last_driver_backup_path = os.path.normpath(def_p)
+                return self._last_driver_backup_path
 
         user_profile = os.environ.get('USERPROFILE', 'C:\\')
         def_c = os.path.join(user_profile, 'Desktop', 'Backup Driver')
         os.makedirs(def_c, exist_ok=True)
-        return def_c
+        self._last_driver_backup_path = os.path.normpath(def_c)
+        return self._last_driver_backup_path
 
     def _save_last_driver_backup_dir(self, path):
         """Saves last driver backup directory into persistent cache."""
         if not path:
             return
+        path = os.path.normpath(path.strip())
         self._last_driver_backup_path = path
         try:
             appdata = os.environ.get('APPDATA', '')
@@ -5038,7 +5376,8 @@ $res | ConvertTo-Json -Depth 3 -Compress
         })
 
     def start_backup_drivers_async(self, target_dir=""):
-        """Starts asynchronous background driver backup with real-time progress tracking."""
+        """Starts asynchronous background driver backup with real-time streaming progress,
+        watchdog anti-hang protection, and automatic fallback."""
         if not target_dir:
             initial_folder = self._get_last_driver_backup_dir()
             res_dlg = self.select_folder_dialog("Chọn thư mục lưu trữ Backup Driver", initial_folder)
@@ -5048,53 +5387,170 @@ $res | ConvertTo-Json -Depth 3 -Compress
 
         self._save_last_driver_backup_dir(target_dir)
 
-        os.makedirs(target_dir, exist_ok=True)
-        
-        drivers_res = self.get_installed_drivers()
-        total_count = drivers_res.get("total", 30) or 30
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+        except Exception as e:
+            return {"success": False, "message": f"Không thể tạo thư mục lưu trữ: {e}"}
+
+        # Estimate total drivers without blocking the UI thread
+        est_total = getattr(self, "_cached_driver_count", 0) or 30
 
         self._driver_progress = {
             "active": True,
             "mode": "backup",
             "status": "running",
             "current": 0,
-            "total": total_count,
+            "total": est_total,
             "percentage": 0,
-            "message": f"Đang chuẩn bị xuất {total_count} driver ra {target_dir}...",
+            "message": f"Đang chuẩn bị xuất driver ra {target_dir}...",
             "path": target_dir
         }
 
         def worker():
             try:
-                self.log("INFO", f"Đang tiến hành xuất toàn bộ Driver hệ thống ra: {target_dir}...")
-                proc = subprocess.Popen(
-                    f'dism /Online /Export-Driver /Destination:"{target_dir}"',
-                    shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='ignore'
-                )
+                self.log("INFO", f"Bắt đầu xuất toàn bộ Driver hệ thống ra: {target_dir}...")
 
-                while proc.poll() is None:
-                    try:
-                        curr_files = len(os.listdir(target_dir)) if os.path.exists(target_dir) else 0
-                        pct = min(99, int((curr_files / max(1, total_count)) * 100))
-                        self._driver_progress["current"] = curr_files
+                # Helper to stream stdout line-by-line via Queue to prevent OS pipe deadlock
+                def stream_cmd_lines(cmd_list, on_line_callback, watchdog_sec=120):
+                    proc = subprocess.Popen(
+                        cmd_list,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        encoding='utf-8',
+                        errors='ignore',
+                        bufsize=1
+                    )
+
+                    q = queue.Queue()
+                    def reader():
+                        try:
+                            for line in iter(proc.stdout.readline, ''):
+                                q.put(line)
+                        finally:
+                            try:
+                                proc.stdout.close()
+                            except Exception:
+                                pass
+                            q.put(None)
+
+                    t = threading.Thread(target=reader, daemon=True)
+                    t.start()
+
+                    last_act = time.time()
+                    while True:
+                        try:
+                            line = q.get(timeout=0.4)
+                            if line is None:
+                                break
+                            last_act = time.time()
+                            on_line_callback(line)
+                        except queue.Empty:
+                            if proc.poll() is not None:
+                                while True:
+                                    try:
+                                        rem = q.get_nowait()
+                                        if rem is None:
+                                            break
+                                        on_line_callback(rem)
+                                    except queue.Empty:
+                                        break
+                                break
+                            if time.time() - last_act > watchdog_sec:
+                                self.log("WARN", f"Lệnh {cmd_list[0]} không phản hồi quá {watchdog_sec}s, đang dừng để bảo vệ...")
+                                try:
+                                    proc.kill()
+                                except Exception:
+                                    pass
+                                break
+                    proc.wait()
+                    return proc.returncode
+
+                # ── METHOD 1: DISM /Online /Export-Driver ─────────────────────
+                patt_dism = re.compile(r'Exporting\s+(\d+)\s+of\s+(\d+)\s*-\s*([^:]+):\s*(.*)', re.IGNORECASE)
+                dism_exported = 0
+                dism_total = est_total
+
+                def on_dism_line(line):
+                    nonlocal dism_exported, dism_total
+                    l_str = line.strip()
+                    if not l_str:
+                        return
+                    m = patt_dism.search(l_str)
+                    if m:
+                        curr_idx, tot_idx, drv_name, status = m.groups()
+                        dism_exported = int(curr_idx)
+                        dism_total = int(tot_idx)
+                        pct = min(99, int((dism_exported / max(1, dism_total)) * 100))
+                        self._driver_progress["current"] = dism_exported
+                        self._driver_progress["total"] = dism_total
                         self._driver_progress["percentage"] = pct
-                        self._driver_progress["message"] = f"Đã xuất {curr_files}/{total_count} thư mục driver vào {target_dir}..."
-                    except Exception:
-                        pass
-                    import time
-                    time.sleep(0.3)
+                        self._driver_progress["message"] = f"Đang xuất {dism_exported}/{dism_total}: {drv_name.strip()}..."
+                    elif "successfully exported" in l_str.lower():
+                        dism_exported += 1
+                        pct = min(99, int((dism_exported / max(1, dism_total)) * 100))
+                        self._driver_progress["current"] = dism_exported
+                        self._driver_progress["percentage"] = pct
 
-                proc.wait()
-                final_count = len(os.listdir(target_dir)) if os.path.exists(target_dir) else total_count
-                self._driver_progress["current"] = final_count
-                self._driver_progress["total"] = final_count
-                self._driver_progress["percentage"] = 100
-                self._driver_progress["status"] = "completed"
-                self._driver_progress["message"] = f"Hoàn tất sao lưu toàn bộ {final_count} driver vào {target_dir}!"
-                self.log("SUCCESS", f"Hoàn tất sao lưu driver ({final_count} mục) ra {target_dir}")
+                cmd_dism = ['dism', '/Online', '/Export-Driver', f'/Destination:{target_dir}']
+                rc_dism = stream_cmd_lines(cmd_dism, on_dism_line, watchdog_sec=120)
+
+                # Count exported folders
+                exported_items = [d for d in os.listdir(target_dir) if os.path.isdir(os.path.join(target_dir, d))] if os.path.exists(target_dir) else []
+                total_dirs = len(exported_items)
+
+                # ── METHOD 2: Fallback to PNPUTIL if DISM failed or exported 0 drivers ────────
+                if total_dirs == 0 or rc_dism != 0:
+                    self.log("WARN", f"DISM xuất {total_dirs} driver (mã: {rc_dism}). Kích hoạt cơ chế dự phòng Pnputil...")
+                    self._driver_progress["message"] = "Đang chuyển sang chế độ dự phòng Pnputil để hoàn tất sao lưu..."
+
+                    patt_pnp_pkg = re.compile(r'Exporting driver package:\s*([^\s(]+)', re.IGNORECASE)
+                    patt_pnp_ok = re.compile(r'Driver package exported successfully', re.IGNORECASE)
+                    pnp_cur_drv = ""
+                    pnp_count = 0
+                    pnp_total = max(est_total, 30)
+
+                    def on_pnp_line(line):
+                        nonlocal pnp_cur_drv, pnp_count
+                        l_str = line.strip()
+                        if not l_str:
+                            return
+                        m_pkg = patt_pnp_pkg.search(l_str)
+                        if m_pkg:
+                            pnp_cur_drv = m_pkg.group(1).strip()
+                            self._driver_progress["message"] = f"Đang xuất (Pnputil): {pnp_cur_drv}..."
+                        if patt_pnp_ok.search(l_str):
+                            pnp_count += 1
+                            pct = min(99, int((pnp_count / max(1, pnp_total)) * 100))
+                            self._driver_progress["current"] = pnp_count
+                            self._driver_progress["percentage"] = pct
+                            self._driver_progress["message"] = f"Đã xuất (Pnputil) {pnp_count}/{pnp_total}: {pnp_cur_drv}..."
+
+                    cmd_pnp = ['pnputil', '/export-driver', '*', target_dir]
+                    stream_cmd_lines(cmd_pnp, on_pnp_line, watchdog_sec=180)
+
+                    exported_items = [d for d in os.listdir(target_dir) if os.path.isdir(os.path.join(target_dir, d))] if os.path.exists(target_dir) else []
+                    total_dirs = len(exported_items)
+
+                final_count = total_dirs or dism_exported
+                if final_count > 0:
+                    self._driver_progress["current"] = final_count
+                    self._driver_progress["total"] = final_count
+                    self._driver_progress["percentage"] = 100
+                    self._driver_progress["status"] = "completed"
+                    self._driver_progress["message"] = f"Hoàn tất sao lưu toàn bộ {final_count} driver vào:\n{target_dir}"
+                    self.log("SUCCESS", f"Hoàn tất sao lưu driver ({final_count} mục) ra {target_dir}")
+                else:
+                    self._driver_progress["status"] = "error"
+                    self._driver_progress["message"] = (
+                        "Không thể sao lưu driver! Vui lòng đảm bảo phần mềm đang chạy dưới quyền "
+                        "Quản trị viên (Run as administrator) và ổ đĩa còn trống dung lượng."
+                    )
+                    self.log("ERROR", "Sao lưu driver thất bại (0 driver được xuất).")
+
             except Exception as ex:
                 self._driver_progress["status"] = "error"
-                self._driver_progress["message"] = f"Lỗi sao lưu Driver: {ex}"
+                self._driver_progress["message"] = f"Lỗi trong quá trình sao lưu: {ex}"
                 self.log("ERROR", f"Lỗi sao lưu Driver async: {ex}")
 
         threading.Thread(target=worker, daemon=True).start()
@@ -5118,7 +5574,13 @@ $res | ConvertTo-Json -Depth 3 -Compress
                 if f.lower().endswith('.inf'):
                     inf_files.append(os.path.join(root_path, f))
 
-        total_inf_count = len(inf_files) or 1
+        if not inf_files:
+            return {
+                "success": False,
+                "message": f"Không tìm thấy file .inf driver nào trong:\n{src_dir}\nVui lòng chọn đúng thư mục chứa các driver đã sao lưu!"
+            }
+
+        total_inf_count = len(inf_files)
 
         self._driver_progress = {
             "active": True,
@@ -5136,26 +5598,73 @@ $res | ConvertTo-Json -Depth 3 -Compress
                 self.log("INFO", f"Đang tiến hành nạp & cài đặt {total_inf_count} Driver từ: {src_dir}...")
                 proc = subprocess.Popen(
                     f'pnputil /add-driver "{src_dir}\\*.inf" /subdirs /install',
-                    shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='ignore'
+                    shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='ignore', bufsize=1
                 )
 
-                count = 0
-                for line in proc.stdout:
-                    line_str = line.strip()
-                    if line_str and ("Adding driver" in line_str or "Driver package" in line_str or ".inf" in line_str.lower()):
-                        if ".inf" in line_str.lower():
-                            count += 1
-                        pct = min(99, int((count / max(1, total_inf_count)) * 100))
-                        self._driver_progress["current"] = min(count, total_inf_count)
-                        self._driver_progress["percentage"] = pct
-                        self._driver_progress["message"] = f"Đang nạp & cài đặt: {line_str[:70]}..."
+                q = queue.Queue()
+                def reader():
+                    try:
+                        for line in iter(proc.stdout.readline, ''):
+                            q.put(line)
+                    finally:
+                        try:
+                            proc.stdout.close()
+                        except Exception:
+                            pass
+                        q.put(None)
 
-                proc.wait()
+                threading.Thread(target=reader, daemon=True).start()
+
+                count = 0
+                last_act = time.time()
+                while True:
+                    try:
+                        line = q.get(timeout=0.4)
+                        if line is None:
+                            break
+                        last_act = time.time()
+                        line_str = line.strip()
+                        if line_str and ("Adding driver" in line_str or "Driver package" in line_str or ".inf" in line_str.lower()):
+                            if ".inf" in line_str.lower():
+                                count += 1
+                            pct = min(99, int((count / max(1, total_inf_count)) * 100))
+                            self._driver_progress["current"] = min(count, total_inf_count)
+                            self._driver_progress["percentage"] = pct
+                            self._driver_progress["message"] = f"Đang nạp & cài đặt ({count}/{total_inf_count}): {line_str[:65]}..."
+                    except queue.Empty:
+                        if proc.poll() is not None:
+                            while True:
+                                try:
+                                    rem = q.get_nowait()
+                                    if rem is None:
+                                        break
+                                    if ".inf" in rem.lower():
+                                        count += 1
+                                except queue.Empty:
+                                    break
+                            break
+                        if time.time() - last_act > 180:
+                            self.log("WARN", "Tiến trình nạp driver không phản hồi quá 180s, dừng tiến trình...")
+                            try:
+                                proc.kill()
+                            except Exception:
+                                pass
+                            break
+
+                rc = proc.wait()
                 self._driver_progress["current"] = total_inf_count
+                self._driver_progress["total"] = total_inf_count
                 self._driver_progress["percentage"] = 100
                 self._driver_progress["status"] = "completed"
-                self._driver_progress["message"] = f"Hoàn tất nạp & cài đặt thành công tất cả driver từ {src_dir}!"
-                self.log("SUCCESS", f"Đã phục hồi xong driver từ {src_dir}")
+
+                if rc == 3010:
+                    msg = f"Đã phục hồi xong toàn bộ driver từ {src_dir}! (Khởi động lại máy để áp dụng đầy đủ)"
+                else:
+                    msg = f"Hoàn tất nạp & cài đặt thành công tất cả driver từ {src_dir}!"
+
+                self._driver_progress["message"] = msg
+                self.log("SUCCESS", f"Đã phục hồi xong driver từ {src_dir} (mã: {rc})")
+
             except Exception as ex:
                 self._driver_progress["status"] = "error"
                 self._driver_progress["message"] = f"Lỗi phục hồi Driver: {ex}"
@@ -5170,15 +5679,30 @@ $res | ConvertTo-Json -Depth 3 -Compress
     def restore_drivers(self, src_dir=""):
         return self.start_restore_drivers_async(src_dir)
 
+
+    def get_last_driver_backup_path(self):
+        """Returns the last saved or detected driver backup directory."""
+        path = self._get_last_driver_backup_dir()
+        return {"success": True, "path": path}
+
     def open_folder_explorer(self, folder_path=""):
         try:
             path = folder_path.strip() if folder_path else ""
             if not path or not os.path.exists(path):
                 path = self._get_last_driver_backup_dir()
+            path = os.path.normpath(path)
             os.makedirs(path, exist_ok=True)
-            subprocess.run(f'explorer.exe "{path}"', shell=True)
+            self._save_last_driver_backup_dir(path)
+            self.log("INFO", f"Đang mở thư mục lưu trữ: {path}")
+
+            try:
+                os.startfile(path)
+            except Exception:
+                subprocess.Popen(['explorer.exe', path])
+
             return {"success": True, "path": path}
         except Exception as e:
+            self.log("ERROR", f"Lỗi mở thư mục: {e}")
             return {"success": False, "message": str(e)}
 
     def open_driver_backup_folder(self, folder_path=""):

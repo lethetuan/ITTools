@@ -525,15 +525,125 @@ def get_mac_from_arp(ip):
     return ''
 
 
-def check_http(ip, port=80, timeout=1):
+WINDOWS_PORTS_DEF = {
+    80: {"name": "HTTP", "desc": "Web Server / Router Web Admin", "category": "Web"},
+    443: {"name": "HTTPS", "desc": "Secure Web / SSL Server", "category": "Web"},
+    3389: {"name": "RDP", "desc": "Remote Desktop Protocol (Điều khiển từ xa)", "category": "Windows Client/Server"},
+    445: {"name": "SMB", "desc": "Server Message Block (Chia sẻ File & Máy in)", "category": "Windows File Sharing"},
+    139: {"name": "NetBIOS", "desc": "NetBIOS Session Service", "category": "Windows File Sharing"},
+    135: {"name": "RPC", "desc": "RPC Endpoint Mapper & WMI (Quản trị hệ thống)", "category": "Windows System"},
+    1433: {"name": "MSSQL", "desc": "Microsoft SQL Server Database Engine", "category": "Database"},
+    389: {"name": "LDAP", "desc": "Active Directory Domain Services (LDAP)", "category": "Active Directory"},
+    636: {"name": "LDAPS", "desc": "Active Directory Secure LDAP (SSL)", "category": "Active Directory"},
+    53: {"name": "DNS", "desc": "Domain Name System Server", "category": "Network Infrastructure"},
+    88: {"name": "Kerberos", "desc": "Active Directory Kerberos Authentication", "category": "Active Directory"},
+    5985: {"name": "WinRM HTTP", "desc": "Windows Remote Management (PowerShell Remoting)", "category": "Remote Admin"},
+    5986: {"name": "WinRM HTTPS", "desc": "Windows Remote Management Secure (SSL)", "category": "Remote Admin"},
+    22: {"name": "SSH", "desc": "OpenSSH Server / Thiết bị mạng / Linux", "category": "Remote Admin"},
+    21: {"name": "FTP", "desc": "File Transfer Protocol (IIS FTP)", "category": "File Sharing"},
+    3268: {"name": "Global Catalog", "desc": "Active Directory Global Catalog", "category": "Active Directory"},
+    8080: {"name": "HTTP-Alt", "desc": "Alternate Web / Proxy / Tomcat", "category": "Web"},
+    8443: {"name": "HTTPS-Alt", "desc": "Alternate HTTPS Web Admin", "category": "Web"},
+    3306: {"name": "MySQL", "desc": "MySQL / MariaDB Database", "category": "Database"},
+    5432: {"name": "PostgreSQL", "desc": "PostgreSQL Database Server", "category": "Database"}
+}
+
+
+def check_port(ip, port=80, timeout=0.35):
+    """Fast TCP socket connect test. Returns True if port is open."""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(timeout)
-        s.connect((ip, port))
+        code = s.connect_ex((ip, int(port)))
         s.close()
-        return True
+        return code == 0
     except Exception:
         return False
+
+
+def check_http(ip, port=80, timeout=1):
+    """Backward compatibility alias for check_port."""
+    return check_port(ip, port, timeout)
+
+
+def check_host_ports(ip, ports, timeout=0.35):
+    """Checks multiple TCP ports on a host concurrently."""
+    if not ports:
+        return []
+    
+    unique_ports = sorted(list({int(p) for p in ports if str(p).isdigit()}))
+    open_ports = []
+    lock = threading.Lock()
+    threads = []
+
+    def test_single(p):
+        if check_port(ip, p, timeout):
+            with lock:
+                open_ports.append(p)
+
+    for p in unique_ports:
+        t = threading.Thread(target=test_single, args=(p,), daemon=True)
+        threads.append(t)
+        t.start()
+
+    for t in threads:
+        t.join(timeout=timeout + 0.25)
+
+    return sorted(open_ports)
+
+
+def scan_single_host_ports(target_host, ports=None, timeout=0.45):
+    """Scans specific or standard Windows/Server ports for a single host."""
+    target = target_host.strip()
+    if not target:
+        return []
+
+    if not ports:
+        ports = list(WINDOWS_PORTS_DEF.keys())
+    else:
+        # Convert list of ints or string of ints
+        parsed_ports = []
+        for p in ports:
+            if isinstance(p, int):
+                parsed_ports.append(p)
+            elif isinstance(p, str) and p.strip().isdigit():
+                parsed_ports.append(int(p.strip()))
+        ports = sorted(list(set(parsed_ports))) if parsed_ports else list(WINDOWS_PORTS_DEF.keys())
+
+    results = []
+    lock = threading.Lock()
+    threads = []
+
+    def worker(p):
+        info = WINDOWS_PORTS_DEF.get(p, {
+            "name": f"Port {p}",
+            "desc": "Tùy chỉnh (Custom Port)",
+            "category": "Custom"
+        })
+        t_start = time.time()
+        is_open = check_port(target, p, timeout)
+        duration_ms = round((time.time() - t_start) * 1000, 1)
+
+        with lock:
+            results.append({
+                "port": p,
+                "name": info["name"],
+                "desc": info["desc"],
+                "category": info["category"],
+                "status": "OPEN" if is_open else "CLOSED",
+                "is_open": is_open,
+                "latency_ms": f"{duration_ms}ms"
+            })
+
+    for p in ports:
+        t = threading.Thread(target=worker, args=(p,), daemon=True)
+        threads.append(t)
+        t.start()
+
+    for t in threads:
+        t.join(timeout=timeout + 0.3)
+
+    return sorted(results, key=lambda x: x["port"])
 
 
 def ping_host(ip, timeout=400):
@@ -704,8 +814,8 @@ def get_all_arp_macs():
     return arp_map
 
 
-def scan_lan_network(subnet_str="", ip_start="", ip_end="", check_ping=True, check_hostname=True, check_mac=True, check_http_port=True, check_https_port=True, max_threads=50):
-    """Scans LAN network IP range with multi-threaded sweeps."""
+def scan_lan_network(subnet_str="", ip_start="", ip_end="", check_ping=True, check_hostname=True, check_mac=True, check_http_port=True, check_https_port=True, max_threads=50, ports_to_check=None):
+    """Scans LAN network IP range with multi-threaded sweeps and Windows/Server port checks."""
     ip_list = []
     if subnet_str and '/' in subnet_str:
         try:
@@ -726,6 +836,27 @@ def scan_lan_network(subnet_str="", ip_start="", ip_end="", check_ping=True, che
         default_range = get_local_subnet_range()
         network = ipaddress.IPv4Network(default_range["subnet"], strict=False)
         ip_list = [str(ip) for ip in list(network.hosts())[:254]]
+
+    # Parse and combine ports to scan
+    ports_list = []
+    if ports_to_check:
+        if isinstance(ports_to_check, (list, tuple)):
+            for p in ports_to_check:
+                if isinstance(p, int):
+                    ports_list.append(p)
+                elif isinstance(p, str) and p.strip().isdigit():
+                    ports_list.append(int(p.strip()))
+        elif isinstance(ports_to_check, str):
+            for part in ports_to_check.replace(',', ' ').split():
+                if part.isdigit():
+                    ports_list.append(int(part))
+
+    if check_http_port and 80 not in ports_list:
+        ports_list.append(80)
+    if check_https_port and 443 not in ports_list:
+        ports_list.append(443)
+
+    ports_list = sorted(list(set(ports_list)))
 
     arp_map = get_all_arp_macs() if check_mac else {}
     results = []
@@ -749,8 +880,10 @@ def scan_lan_network(subnet_str="", ip_start="", ip_end="", check_ping=True, che
             else:
                 hostname = ''
 
-            http_open = check_http(ip, 80, timeout=1) if check_http_port else False
-            https_open = check_http(ip, 443, timeout=1) if check_https_port else False
+            # Multi-port scanning for Windows & Server roles
+            open_ports = check_host_ports(ip, ports_list, timeout=0.35) if ports_list else []
+            http_open = (80 in open_ports)
+            https_open = (443 in open_ports)
 
             # Determine final vendor display
             # If vendor unknown but we have MAC → show MAC OUI hint
@@ -765,8 +898,17 @@ def scan_lan_network(subnet_str="", ip_start="", ip_end="", check_ping=True, che
                 "brand": display_vendor,   # backward compat
                 "latency_ms": ping_time or "<1ms",
                 "ping": ping_time or "<1ms",
+                "open_ports": open_ports,
                 "http": http_open,
                 "https": https_open,
+                "rdp": (3389 in open_ports),
+                "smb": (445 in open_ports),
+                "sql": (1433 in open_ports),
+                "winrm": (5985 in open_ports or 5986 in open_ports),
+                "ldap": (389 in open_ports),
+                "rpc": (135 in open_ports),
+                "dns": (53 in open_ports),
+                "ssh": (22 in open_ports),
                 "status": "Online"
             })
 

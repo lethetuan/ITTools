@@ -750,8 +750,22 @@ Object.assign(AppController.prototype, {
       const res = await window.pywebview.api.save_desktop_icon_settings(settings);
       this.addLog(res.success ? "success" : "error", res.message);
       alert(res.message);
+      // Reload actual settings from registry to keep UI state 100% synchronized
+      setTimeout(() => {
+        this.loadDesktopIconSettings();
+      }, 500);
     } else {
       alert("[MOCK] Đã áp dụng cài đặt Desktop Icon & Taskbar!");
+    }
+  },
+
+  async openTaskbarSettings() {
+    this.addLog("info", "Đang mở Cài đặt Taskbar của Windows...");
+    if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.open_taskbar_settings === 'function') {
+      const res = await window.pywebview.api.open_taskbar_settings();
+      this.addLog(res.success ? "success" : "error", res.message);
+    } else {
+      window.open("ms-settings:taskbar");
     }
   },
 

@@ -113,7 +113,10 @@ Object.assign(AppController.prototype, {
       try {
         const res = await window.pywebview.api.start_backup_drivers_async();
         if (!res || !res.success) {
-          if (res && res.message) this.addLog("warning", res.message);
+          if (res && res.message) {
+            this.addLog("warning", res.message);
+            if (!res.message.includes("hủy")) alert(res.message);
+          }
           return;
         }
         this.addLog("info", res.message);
@@ -140,10 +143,19 @@ Object.assign(AppController.prototype, {
       try {
         const res = await window.pywebview.api.start_restore_drivers_async();
         if (!res || !res.success) {
-          if (res && res.message) this.addLog("warning", res.message);
+          if (res && res.message) {
+            this.addLog("warning", res.message);
+            if (!res.message.includes("hủy")) alert(res.message);
+          }
           return;
         }
         this.addLog("info", res.message);
+        if (res.path) {
+          this.lastBackupDriverPath = res.path;
+          try {
+            localStorage.setItem("last_driver_backup_path", res.path);
+          } catch (e) {}
+        }
         this.showDriverProgressDrawer("restore");
         this.startDriverProgressPolling();
       } catch (err) {
@@ -270,15 +282,25 @@ Object.assign(AppController.prototype, {
 
     if (window.pywebview && window.pywebview.api) {
       try {
-        const res = await window.pywebview.api.open_driver_backup_folder(folderToOpen);
+        if (!folderToOpen && typeof window.pywebview.api.get_last_driver_backup_path === "function") {
+          const lastRes = await window.pywebview.api.get_last_driver_backup_path();
+          if (lastRes && lastRes.path) folderToOpen = lastRes.path;
+        }
+
+        const res = await window.pywebview.api.open_driver_backup_folder(folderToOpen || "");
         if (res && res.path) {
           this.lastBackupDriverPath = res.path;
           try {
             localStorage.setItem("last_driver_backup_path", res.path);
           } catch (e) {}
+          this.addLog("info", `Đã mở thư mục sao lưu Driver: ${res.path}`);
+        } else if (res && !res.success && res.message) {
+          this.addLog("error", `Không thể mở thư mục sao lưu: ${res.message}`);
+          alert(`Không thể mở thư mục sao lưu: ${res.message}`);
         }
       } catch (err) {
         console.error("Lỗi mở thư mục Driver:", err);
+        this.addLog("error", `Lỗi mở thư mục Driver: ${err.message}`);
       }
     }
   }

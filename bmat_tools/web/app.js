@@ -125,6 +125,9 @@ class AppController {
 
         case "tab-auto-shutdown":
           if (typeof this.loadScheduledShutdownTasks === 'function') await this.loadScheduledShutdownTasks();
+          if (this.shutdownSubtab === 'logs' && typeof this.loadShutdownLogs === 'function') {
+            await this.loadShutdownLogs(false);
+          }
           break;
 
         case "tab-hosts":
