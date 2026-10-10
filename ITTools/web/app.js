@@ -245,6 +245,39 @@ class AppController {
           if (iconEl) iconEl.innerText = icon;
           if (titleEl) titleEl.innerText = label;
 
+          const tabDescs = {
+            "tab-computer-info": "Xem cấu hình chi tiết phần cứng, CPU, RAM, GPU, bo mạch chủ và hệ điều hành.",
+            "tab-test-computer": "Bộ công cụ chẩn đoán bàn phím, màn hình, chuột, âm thanh và camera.",
+            "tab-auto-win": "Cài đặt Windows tự động, cập nhật hệ thống và tối ưu Windows Update.",
+            "tab-startup": "Quản lý phần mềm khởi động cùng Windows và tối ưu thời gian boot.",
+            "tab-uninstall": "Gỡ bỏ phần mềm triệt để, xóa rác và ứng dụng chạy ngầm.",
+            "tab-bitlocker": "Quản lý mã hóa BitLocker, EFS và bảo mật dữ liệu ổ đĩa.",
+            "tab-printer-fix": "Quản trị kết nối mạng LAN, phân tích mã lỗi và chia sẻ máy in Windows.",
+            "tab-ip-manager": "Cấu hình IP tĩnh/động, Subnet, DNS và card mạng hệ thống.",
+            "tab-ip-scanner": "Quét dải mạng LAN phát hiện IP, thiết bị và cổng đang mở.",
+            "tab-firewall": "Quản lý tường lửa Windows Defender, mở port và kiểm soát luồng mạng.",
+            "tab-server-tools": "Tiện ích máy chủ, quản lý dịch vụ và chia sẻ tài nguyên mạng.",
+            "tab-zoom-screen": "Phóng to màn hình, vẽ chú thích và trình chiếu bài giảng.",
+            "tab-auto-shutdown": "Lên lịch tự động tắt máy, khởi động lại và hẹn giờ thông minh.",
+            "tab-hosts": "Chỉnh sửa file Hosts hệ thống, điều hướng tên miền và chặn website.",
+            "tab-sendto": "Tùy biến menu SendTo chuột phải trên Windows Explorer.",
+            "tab-classic-menu": "Kích hoạt Start Menu cổ điển và giao diện Windows tiện lợi.",
+            "tab-desktop-icon": "Hiển thị hoặc ẩn các biểu tượng mặc định trên Desktop Windows.",
+            "tab-datetime": "Đồng bộ thời gian chuẩn NTP và cấu hình định dạng ngày giờ.",
+            "tab-boot-manager": "Quản lý danh sách khởi động BCD, WinPE và phân vùng Boot.",
+            "tab-services": "Quản lý dịch vụ Windows Services, khởi động, dừng và tối ưu hóa.",
+            "tab-folder-size": "Phân tích dung lượng thư mục, tìm file nặng giải phóng ổ đĩa.",
+            "tab-currency": "Chuyển đổi tỷ giá ngoại tệ trực tuyến theo thời gian thực.",
+            "tab-other-tweaks": "Các tinh chỉnh nâng cao giúp tăng tốc và tối ưu hệ thống.",
+            "tab-office": "Cài đặt, quản lý và tối ưu bộ công cụ Microsoft Office.",
+            "tab-activation": "Kiểm tra bản quyền, kích hoạt và gỡ bỏ công cụ kích hoạt cũ.",
+            "tab-backup-driver": "Sao lưu và phục hồi toàn bộ Driver phần cứng máy tính.",
+            "tab-browser-backup": "Sao lưu dữ liệu trình duyệt, bookmark, mật khẩu và lịch sử.",
+            "tab-free-software": "Kho ứng dụng miễn phí chọn lọc, cài đặt nhanh không quảng cáo."
+          };
+          const descEl = document.querySelector(".header-subtitle");
+          if (descEl && tabDescs[tabId]) descEl.innerText = tabDescs[tabId];
+
           // Automatically load and reflect accurate real-time PC state
           this.refreshTabData(tabId);
         } catch (err) {

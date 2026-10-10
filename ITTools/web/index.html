@@ -97,30 +97,31 @@
       </nav>
 
       <div class="sidebar-footer"
-        style="padding: 10px 12px; background: #f8fafc; border-top: 1px solid #e2e8f0; font-size: 11px; display: flex; flex-direction: column; gap: 5px;">
-        <div style="font-weight: 700; color: #0284c7; font-size: 12px; display: flex; align-items: center; gap: 5px;">
-          <span>🛠️</span> <span>IT Tool LTT 2026</span>
+        style="padding: 10px 12px; background: #F8FAFC; border: 1px solid #EDF2F7; border-radius: 14px; font-size: 11px; display: flex; flex-direction: column; gap: 5px;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <div style="width: 24px; height: 24px; border-radius: 50%; background: #0F172A; display: flex; align-items: center; justify-content: center; font-size: 12px; color: white;">👤</div>
+            <strong style="color: #0F172A; font-size: 12px;">Lê Thế Tuấn</strong>
+          </div>
+          <span style="background: #FEF3C7; color: #D97706; padding: 2px 7px; border-radius: 6px; font-size: 9.5px; font-weight: 800; letter-spacing: 0.3px;">VIP 2026</span>
         </div>
-        <div style="color: #334155; display: flex; align-items: center; gap: 5px;">
-          <span>👤</span> <span>Tác giả: <strong>Lê Thế Tuấn</strong></span>
-        </div>
-        <div style="color: #334155; display: flex; align-items: center; gap: 5px;">
-          <span>📞</span> <span>SĐT / Zalo: <strong style="color: #0284c7;">0352 194 195</strong></span>
+        <div style="color: #FF5B35; font-weight: 700; font-size: 11.5px; display: flex; align-items: center; gap: 5px; margin-top: 1px;">
+          <span>⚡</span> <span>Hotline / Zalo: <strong>0352 194 195</strong></span>
         </div>
         <div
-          style="color: #334155; display: flex; align-items: center; justify-content: space-between; font-size: 11px; padding: 2px 0;">
+          style="color: #475569; display: flex; align-items: center; justify-content: space-between; font-size: 11px; padding: 2px 0;">
           <span style="display: flex; align-items: center; gap: 4px;">🚀 <span>Khởi động cùng Win:</span></span>
           <span class="autostart-badge off" id="sidebar-autostart-badge" style="cursor: pointer;"
             onclick="document.getElementById('header-autostart-checkbox').click()">TẮT</span>
         </div>
         <div style="display: flex; gap: 6px; margin-top: 4px;">
           <button class="btn btn-xs btn-sky-outline" onclick="app.openWebsite()"
-            style="flex: 1; padding: 4px 6px; font-size: 10px; font-weight: 600;"
+            style="flex: 1; padding: 5px 8px; font-size: 10.5px; font-weight: 600;"
             title="Website: https://lethetuanpc.blogspot.com">
             🌐 Website
           </button>
           <button class="btn btn-xs btn-sky-outline" onclick="app.openTelegram()"
-            style="flex: 1; padding: 4px 6px; font-size: 10px; font-weight: 600;"
+            style="flex: 1; padding: 5px 8px; font-size: 10.5px; font-weight: 600;"
             title="Telegram: https://t.me/lethetuanpc">
             ✈️ Telegram
           </button>
@@ -135,10 +136,18 @@
       <header class="top-header">
         <div class="header-title-box">
           <span class="header-icon" id="current-tab-icon">🖨️</span>
-          <h2 class="header-title" id="current-tab-title">Fix Máy In - Share LAN</h2>
+          <div>
+            <h2 class="header-title" id="current-tab-title">Fix Máy In - Share LAN</h2>
+            <span class="header-subtitle" style="font-size: 11px; color: #64748B; font-weight: 500; display: block; line-height: 1.2;">Quản trị kết nối mạng LAN, phân tích mã lỗi và chia sẻ máy in Windows.</span>
+          </div>
         </div>
 
         <div class="header-status-group">
+          <!-- CTA Button styled like '✨ Tìm Kiếm Cơ Hội AI' in reference design -->
+          <button class="btn btn-dark-pill" onclick="app.openWebsite()" title="Trang chủ & Hướng dẫn sử dụng" style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+            <span>✨</span> <span>Hỗ Trợ Online</span>
+          </button>
+
           <div class="status-pill cyan-pill">
             <span class="pill-dot">⚡</span>
             <span>Đa Nhiệm: Sẵn Sàng</span>
@@ -166,7 +175,7 @@
             title="Ẩn / Hiện Bảng Nhật Ký Hệ Thống">
             <span>📋 Nhật Ký:</span>
             <span class="badge" id="header-log-count"
-              style="margin-left: 2px; padding: 1px 7px; font-size: 10.5px; background: #0284c7; color: white; border-radius: 10px;">0</span>
+              style="margin-left: 2px; padding: 1px 7px; font-size: 10.5px; background: #FF5B35; color: white; border-radius: 10px;">0</span>
           </button>
 
           <div class="control-pills">
@@ -205,6 +214,70 @@
 
           <!-- ── SUBTAB 1: FIX MÁY IN MẠNG LAN ────────────────────────────── -->
           <div class="subtab-content active" id="subtab-printer-lan">
+
+            <!-- 5 KPI Summary Stat Cards (Exact match to SaaS Reference Design) -->
+            <div class="kpi-row">
+              <div class="kpi-card">
+                <div class="kpi-head">
+                  <span class="kpi-title">Tổng Máy In Hệ Thống</span>
+                  <div class="kpi-icon-box kpi-icon-blue">🖨️</div>
+                </div>
+                <div class="kpi-body">
+                  <span class="kpi-value" id="kpi-total-printers">--</span>
+                  <span class="kpi-trend up">↑ Sẵn Sàng</span>
+                </div>
+                <div class="kpi-meta">Máy in cục bộ & qua mạng</div>
+              </div>
+
+              <div class="kpi-card">
+                <div class="kpi-head">
+                  <span class="kpi-title">Cổng Đang Kết Nối</span>
+                  <div class="kpi-icon-box kpi-icon-green">⚡</div>
+                </div>
+                <div class="kpi-body">
+                  <span class="kpi-value" id="kpi-active-ports">--</span>
+                  <span class="kpi-trend up">↑ Hoạt Động</span>
+                </div>
+                <div class="kpi-meta">USB / WSD / TCP-IP</div>
+              </div>
+
+              <div class="kpi-card">
+                <div class="kpi-head">
+                  <span class="kpi-title">Mã Lỗi Hỗ Trợ Fix</span>
+                  <div class="kpi-icon-box kpi-icon-orange">🛠️</div>
+                </div>
+                <div class="kpi-body">
+                  <span class="kpi-value">18</span>
+                  <span class="kpi-trend up">100% OK</span>
+                </div>
+                <div class="kpi-meta">0x7c, 0x11b, 0x709, 0x3e3</div>
+              </div>
+
+              <div class="kpi-card">
+                <div class="kpi-head">
+                  <span class="kpi-title">Chia Sẻ Mạng LAN</span>
+                  <div class="kpi-icon-box kpi-icon-purple">🌐</div>
+                </div>
+                <div class="kpi-body">
+                  <span class="kpi-value" style="font-size: 16px;">SMB / LAN</span>
+                  <span class="kpi-trend up">Chuẩn Hóa</span>
+                </div>
+                <div class="kpi-meta">Tự động cấu hình bảo mật</div>
+              </div>
+
+              <div class="kpi-card">
+                <div class="kpi-head">
+                  <span class="kpi-title">Dịch Vụ Spooler</span>
+                  <div class="kpi-icon-box kpi-icon-rose">🎯</div>
+                </div>
+                <div class="kpi-body">
+                  <span class="kpi-value" style="font-size: 16px;">Running</span>
+                  <span class="kpi-trend up">Tự Động</span>
+                </div>
+                <div class="kpi-meta">Tiến trình in ấn Windows</div>
+              </div>
+            </div>
+
             <div class="grid-layout-2col">
 
               <!-- Left Card: Printer List & Controls -->

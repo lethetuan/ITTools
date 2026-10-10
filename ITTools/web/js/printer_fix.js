@@ -43,6 +43,16 @@ Object.assign(AppController.prototype, {
     });
 
     this.addLog("success", `Đã quét thấy ${printers.length} máy in.`);
+
+    try {
+      const kpiTotal = document.getElementById("kpi-total-printers");
+      if (kpiTotal) kpiTotal.innerText = printers.length;
+      const kpiPorts = document.getElementById("kpi-active-ports");
+      if (kpiPorts) {
+        const uniquePorts = new Set(printers.map(p => p.port).filter(Boolean));
+        kpiPorts.innerText = uniquePorts.size;
+      }
+    } catch (_) {}
   },
 
   toggleSelectAllPrinters(chk) {
