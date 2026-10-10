@@ -444,7 +444,7 @@ def get_clean_spooler_files():
         search_dirs.append(os.path.join(meipass, "assets", "spooler_clean"))
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     search_dirs.append(os.path.join(base_dir, "assets", "spooler_clean"))
-    search_dirs.append(os.path.join(os.getcwd(), "bmat_tools", "assets", "spooler_clean"))
+    search_dirs.append(os.path.join(os.getcwd(), "ITTools", "assets", "spooler_clean"))
     search_dirs.append(os.path.join(os.getcwd(), "assets", "spooler_clean"))
     if getattr(sys, 'frozen', False):
         exe_dir = os.path.dirname(os.path.abspath(sys.executable))

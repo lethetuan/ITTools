@@ -1380,7 +1380,7 @@ class LiveZoomApp:
                 ('hIconSm', wintypes.HICON)
             ]
 
-        cls_name = "BMAT_LiveZoomHost"
+        cls_name = "ITTools_LiveZoomHost"
         wcls = WNDCLASSEXW()
         wcls.cbSize = ctypes.sizeof(WNDCLASSEXW)
         wcls.lpfnWndProc = self._proc_cb

@@ -27,9 +27,9 @@ def patch_silent_subprocess():
     """
     if sys.platform != 'win32':
         return
-    if getattr(subprocess, '_bmat_silent_patched', False):
+    if getattr(subprocess, '_ittools_silent_patched', False):
         return
-    subprocess._bmat_silent_patched = True
+    subprocess._ittools_silent_patched = True
 
     os.environ.setdefault("PYTHONUTF8", "1")
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
@@ -3052,7 +3052,7 @@ $s.Save()
     # ── OFFICE INSTALLER VIA WINGET & OFFICIAL CDN ─────────────────────────
     def install_office_version(self, version_code, arch="x64", lang="vi-vn"):
         """Triggers completely detached background silent installation of Microsoft Office via official ODT."""
-        work_dir = r"C:\ProgramData\BMAT_Tools\OfficeSetup"
+        work_dir = r"C:\ProgramData\ITTools\OfficeSetup"
         state_file = os.path.join(work_dir, "office_install_state.json")
         ps1_script = get_resource_path("modules", "install_office_silent.ps1")
 
@@ -3095,7 +3095,7 @@ $s.Save()
                 "version_code": version_code,
                 "output_log": [
                     f"Bắt đầu khởi tạo tiến trình cài đặt ẩn {vname} ({arch}, {lang})...",
-                    "TIẾN TRÌNH CHẠY NGẦM ĐỘC LẬP: Dù bạn có tắt ứng dụng BMAT Tools, Office vẫn tự động tải & hoàn tất trong nền Windows."
+                    "TIẾN TRÌNH CHẠY NGẦM ĐỘC LẬP: Dù bạn có tắt ứng dụng ITTools, Office vẫn tự động tải & hoàn tất trong nền Windows."
                 ],
                 "started_at": int(time.time()),
                 "updated_at": int(time.time())
@@ -3143,7 +3143,7 @@ $s.Save()
 
     def get_office_install_progress(self):
         """Returns current Office installation progress state from the background daemon state file."""
-        state_file = r"C:\ProgramData\BMAT_Tools\OfficeSetup\office_install_state.json"
+        state_file = r"C:\ProgramData\ITTools\OfficeSetup\office_install_state.json"
         data = self._office_install_progress
         if os.path.exists(state_file):
             try:
@@ -3186,7 +3186,7 @@ $s.Save()
 
     def cancel_office_install(self):
         """Cancels active Office installation process and terminates background runners."""
-        state_file = r"C:\ProgramData\BMAT_Tools\OfficeSetup\office_install_state.json"
+        state_file = r"C:\ProgramData\ITTools\OfficeSetup\office_install_state.json"
         try:
             subprocess.run('taskkill /f /im "setup.exe"', shell=True, capture_output=True)
             subprocess.run('powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like \'*install_office_silent.ps1*\' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"', shell=True, capture_output=True)
@@ -4449,7 +4449,7 @@ Write-Output "OK:$pinnedCount"
     def _get_winget_session_paths(self):
         """Returns paths for queue, status, and cancel files used by winget_runner.ps1."""
         tmp = os.environ.get("TEMP", os.environ.get("TMP", os.path.expanduser("~")))
-        base = os.path.join(tmp, "bmat_winget")
+        base = os.path.join(tmp, "ittools_winget")
         os.makedirs(base, exist_ok=True)
         return {
             "queue":  os.path.join(base, "queue.json"),

@@ -11,7 +11,7 @@ from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_sub
 
 block_cipher = None
 
-base_dir = os.path.abspath(os.path.join(SPECPATH, "bmat_tools"))
+base_dir = os.path.abspath(os.path.join(SPECPATH, "ITTools"))
 
 # Collect all dynamic/static data files and native C/C++/.NET binaries
 datas_webview, binaries_webview, hiddenimports_webview = collect_all("webview")

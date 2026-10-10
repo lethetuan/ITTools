@@ -1,7 +1,7 @@
 # test_python_launch.ps1
 # Giả lập chính xác cách Python subprocess.Popen với shell=True + STARTUPINFO sẽ chạy
 
-$tmpDir = "$env:TEMP\bmat_winget"
+$tmpDir = "$env:TEMP\ittools_winget"
 New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
 
 # Tao queue test
@@ -13,7 +13,7 @@ $sf = "$tmpDir\s_pytest.json"
 if (Test-Path $sf) { Remove-Item $sf -Force }
 
 # Chay qua cmd.exe (shell=True se goi cmd.exe /c ...)
-$ps1 = "d:\AllinOne\bmat_tools\modules\winget_runner.ps1"
+$ps1 = "d:\AllinOne\ITTools\modules\winget_runner.ps1"
 $cmdLine = "cmd.exe /c powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ps1`" -QueueFile `"$qf`" -StatusFile `"$sf`""
 
 $pinfo = New-Object System.Diagnostics.ProcessStartInfo

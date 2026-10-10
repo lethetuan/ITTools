@@ -1,7 +1,7 @@
 # test_detach.ps1 - Kiem tra chay detached process
 
 # Tao queue file
-$tmpDir = "$env:TEMP\bmat_winget"
+$tmpDir = "$env:TEMP\ittools_winget"
 New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
 
 $q = '{"package_ids":["7zip.7zip"],"catalog_map":{"7zip.7zip":"7-Zip"}}'
@@ -18,7 +18,7 @@ if (Test-Path $sf) { Remove-Item $sf -Force }
 # Chay giong het Python: DETACHED_PROCESS | CREATE_NO_WINDOW
 $pinfo = New-Object System.Diagnostics.ProcessStartInfo
 $pinfo.FileName  = "powershell.exe"
-$pinfo.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"d:\AllinOne\bmat_tools\modules\winget_runner.ps1`" -QueueFile `"$qf`" -StatusFile `"$sf`""
+$pinfo.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"d:\AllinOne\ITTools\modules\winget_runner.ps1`" -QueueFile `"$qf`" -StatusFile `"$sf`""
 $pinfo.UseShellExecute  = $false   # Quan trong: FALSE = detached (giong Python Popen)
 $pinfo.CreateNoWindow   = $true
 $pinfo.RedirectStandardOutput = $false

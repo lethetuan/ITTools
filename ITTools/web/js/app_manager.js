@@ -2012,7 +2012,7 @@ Object.assign(AppController.prototype, {
     };
     const vname = versionNames[version] || version;
 
-    if (!confirm(`Bạn có chắc chắn muốn cài đặt ẩn ${vname} (${arch}, ${lang}) từ Microsoft CDN?\n\nTIẾN TRÌNH CHẠY NGẦM ĐỘC LẬP: Sau khi bấm bắt đầu, dù bạn có tắt ứng dụng BMAT Tools thì Office vẫn tự động tải & hoàn tất trong nền Windows.`)) {
+    if (!confirm(`Bạn có chắc chắn muốn cài đặt ẩn ${vname} (${arch}, ${lang}) từ Microsoft CDN?\n\nTIẾN TRÌNH CHẠY NGẦM ĐỘC LẬP: Sau khi bấm bắt đầu, dù bạn có tắt ứng dụng ITTools thì Office vẫn tự động tải & hoàn tất trong nền Windows.`)) {
       return;
     }
 

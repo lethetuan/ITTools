@@ -1,6 +1,6 @@
 # diag.ps1 - Kiem tra trang thai cai dat
-$sf = "$env:TEMP\bmat_winget\status.json"
-$qf = "$env:TEMP\bmat_winget\queue.json"
+$sf = "$env:TEMP\ittools_winget\status.json"
+$qf = "$env:TEMP\ittools_winget\queue.json"
 
 Write-Host "=== STATUS.JSON ==="
 if (Test-Path $sf) {

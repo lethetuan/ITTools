@@ -913,7 +913,7 @@ def export_shutdown_event_logs(max_events=100, event_ids="1074,6008,41", save_pa
             ws.merge_cells("A2:L2")
             sub_cell = ws["A2"]
             now_str = datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S')
-            sub_cell.value = f"🖥️ Máy tính: {comp_name}  |  ⏰ Thời gian xuất: {now_str}  |  📊 Tổng sự kiện: {len(logs)}  |  🛠️ IT Tool LTT - Biti's BMAT (Lê Thế Tuấn - 0352 194 195)"
+            sub_cell.value = f"🖥️ Máy tính: {comp_name}  |  ⏰ Thời gian xuất: {now_str}  |  📊 Tổng sự kiện: {len(logs)}  |  🛠️ IT Tool LTT - ITTools (Lê Thế Tuấn - 0352 194 195)"
             sub_cell.font = Font(name="Segoe UI", size=9.5, italic=True, color="475569")
             sub_cell.fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
             sub_cell.alignment = Alignment(horizontal="center", vertical="center")

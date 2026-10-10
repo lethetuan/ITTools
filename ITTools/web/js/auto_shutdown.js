@@ -926,7 +926,7 @@ Object.assign(AppController.prototype, {
           </tr>
           <tr>
             <td colspan="12" style="background-color: #f1f5f9; color: #475569; font-size: 11.5px; text-align: center; font-style: italic; padding: 8px;">
-              🖥️ Máy tính: ${comp} &nbsp;|&nbsp; ⏰ Thời gian xuất: ${now} &nbsp;|&nbsp; 📊 Tổng sự kiện: ${total} &nbsp;|&nbsp; 🛠️ IT Tool LTT - Biti's BMAT (Lê Thế Tuấn - 0352 194 195)
+              🖥️ Máy tính: ${comp} &nbsp;|&nbsp; ⏰ Thời gian xuất: ${now} &nbsp;|&nbsp; 📊 Tổng sự kiện: ${total} &nbsp;|&nbsp; 🛠️ IT Tool LTT - ITTools (Lê Thế Tuấn - 0352 194 195)
             </td>
           </tr>
           <tr><td colspan="12" style="height: 10px;"></td></tr>

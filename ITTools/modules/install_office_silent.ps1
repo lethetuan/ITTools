@@ -1,8 +1,8 @@
-﻿param(
+param(
     [string]$VersionCode = "office365",
     [string]$Arch = "x64",
     [string]$Lang = "vi-vn",
-    [string]$WorkDir = "C:\ProgramData\BMAT_Tools\OfficeSetup"
+    [string]$WorkDir = "C:\ProgramData\ITTools\OfficeSetup"
 )
 
 # Ensure WorkDir exists
@@ -189,7 +189,7 @@ try {
 
 # 3. Execute setup.exe /configure configuration.xml
 Set-State -Active $true -Status "installing" -Percentage 40.0 -Message "Đang khởi chạy dịch vụ Microsoft Click-to-Run cài đặt ngầm..." -LogLine "Thực thi: setup.exe /configure configuration.xml"
-Set-State -Active $true -Status "installing" -Percentage 42.0 -Message "Đang tải và cài đặt ngầm từ Microsoft CDN (Bạn có thể đóng BMAT Tools bất cứ lúc nào)..." -LogLine "TIẾN TRÌNH CÀI ĐẶT ẨN ĐÃ KÍCH HOẠT: Dù tắt BMAT Tools thì Office vẫn tự động tải & hoàn tất trong nền Windows."
+Set-State -Active $true -Status "installing" -Percentage 42.0 -Message "Đang tải và cài đặt ngầm từ Microsoft CDN (Bạn có thể đóng ITTools bất cứ lúc nào)..." -LogLine "TIẾN TRÌNH CÀI ĐẶT ẨN ĐÃ KÍCH HOẠT: Dù tắt ITTools thì Office vẫn tự động tải & hoàn tất trong nền Windows."
 
 $launchTime = Get-Date
 

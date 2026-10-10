@@ -1,4 +1,4 @@
-# BMAT-Tools Requirements
+# ITTools Requirements
 # Install all dependencies with: pip install -r requirements.txt
 
 # Core GUI framework (PyWebView - renders HTML/JS UI in a native window)

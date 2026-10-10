@@ -1,6 +1,6 @@
 import tkinter as tk
 import time
-from bmat_tools.modules.zoom_screen_gui import capture_screen_gdi, copy_image_to_clipboard
+from ITTools.modules.zoom_screen_gui import capture_screen_gdi, copy_image_to_clipboard
 
 root = tk.Tk()
 root.overrideredirect(True)

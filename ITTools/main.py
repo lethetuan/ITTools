@@ -20,9 +20,9 @@ def patch_silent_subprocess():
     """
     if sys.platform != 'win32':
         return
-    if getattr(subprocess, '_bmat_silent_patched', False):
+    if getattr(subprocess, '_ittools_silent_patched', False):
         return
-    subprocess._bmat_silent_patched = True
+    subprocess._ittools_silent_patched = True
 
     os.environ.setdefault("PYTHONUTF8", "1")
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")

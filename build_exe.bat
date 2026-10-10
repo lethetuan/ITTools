@@ -6,5 +6,5 @@ echo   Tac gia: Le The Tuan | Zalo: 0352 194 195
 echo ============================================================
 echo.
 
-cd /d "%~dp0bmat_tools"
+cd /d "%~dp0ITTools"
 call build.bat

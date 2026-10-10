@@ -3,7 +3,7 @@ title IT Tool LTT - Le The Tuan
 chcp 65001 >nul
 set PYTHONUTF8=1
 set PYTHONIOENCODING=utf-8
-cd /d "%~dp0bmat_tools"
+cd /d "%~dp0ITTools"
 echo Starting IT Tool LTT...
 echo Author: Le The Tuan - Phone/Zalo: 0352 194 195
 echo Website: https://lethetuanpc.blogspot.com
