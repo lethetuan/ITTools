@@ -655,51 +655,303 @@ Object.assign(AppController.prototype, {
     }
   },
 
-  async loadIpScannerDefaults() {
+  parseSmartRangeClient(rawText) {
+    const text = (rawText || "").trim();
+    if (!text) {
+      return { count: 0, desc: "Chưa nhập dải IP", isValid: false, subnet: "", start: "", end: "" };
+    }
+
+    // 1. Comma list
+    if (text.includes(",")) {
+      const parts = text.split(",").map(p => p.trim()).filter(p => /^(\d{1,3}\.){3}\d{1,3}$/.test(p));
+      if (parts.length > 0) {
+        return {
+          count: parts.length,
+          desc: `${parts.length} địa chỉ riêng lẻ (${parts.slice(0, 3).join(", ")}${parts.length > 3 ? "..." : ""})`,
+          isValid: true,
+          subnet: "",
+          start: parts[0],
+          end: parts[parts.length - 1]
+        };
+      }
+    }
+
+    // 2. Wildcard (e.g. 10.90.39.x or 10.90.39.*)
+    const wildMatch = text.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3})\.[xX\*]$/);
+    if (wildMatch) {
+      const base = wildMatch[1];
+      return {
+        count: 254,
+        desc: `${base}.1 ➔ ${base}.254`,
+        isValid: true,
+        subnet: `${base}.0/24`,
+        start: `${base}.1`,
+        end: `${base}.254`
+      };
+    }
+
+    // 3. CIDR (e.g. 10.90.39.0/24, 192.168.1.0/24)
+    if (text.includes("/")) {
+      const parts = text.split("/");
+      const baseIp = parts[0].trim();
+      const mask = parseInt(parts[1]);
+      if (!isNaN(mask) && mask >= 16 && mask <= 32) {
+        const ipParts = baseIp.split(".");
+        if (ipParts.length === 4) {
+          const prefix = `${ipParts[0]}.${ipParts[1]}.${ipParts[2]}`;
+          if (mask === 24) {
+            return {
+              count: 254,
+              desc: `${prefix}.1 ➔ ${prefix}.254`,
+              isValid: true,
+              subnet: text,
+              start: `${prefix}.1`,
+              end: `${prefix}.254`
+            };
+          } else if (mask === 32) {
+            return {
+              count: 1,
+              desc: `${baseIp} (IP đơn lẻ)`,
+              isValid: true,
+              subnet: text,
+              start: baseIp,
+              end: baseIp
+            };
+          } else {
+            const hostCount = Math.max(1, Math.min(1024, Math.pow(2, 32 - mask) - 2));
+            return {
+              count: hostCount,
+              desc: `${hostCount} địa chỉ trong mạng ${text}`,
+              isValid: true,
+              subnet: text,
+              start: `${prefix}.1`,
+              end: `${prefix}.${Math.min(254, hostCount)}`
+            };
+          }
+        }
+      }
+    }
+
+    // 4. Short prefix (e.g. 10.90.39 or 10.90.39.)
+    const prefixMatch = text.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3})\.?$/);
+    if (prefixMatch) {
+      const base = prefixMatch[1];
+      return {
+        count: 254,
+        desc: `${base}.1 ➔ ${base}.254`,
+        isValid: true,
+        subnet: `${base}.0/24`,
+        start: `${base}.1`,
+        end: `${base}.254`
+      };
+    }
+
+    // 5. Hyphen range (e.g. 10.90.39.1-254 or 10.90.39.1 - 10.90.39.50)
+    if (text.includes("-")) {
+      const parts = text.split("-").map(p => p.trim());
+      if (parts.length === 2) {
+        const startStr = parts[0];
+        let endStr = parts[1];
+        if (/^\d{1,3}$/.test(endStr)) {
+          const p = startStr.split(".");
+          if (p.length === 4) {
+            endStr = `${p[0]}.${p[1]}.${p[2]}.${endStr}`;
+          }
+        }
+        const sNums = startStr.split(".").map(n => parseInt(n));
+        const eNums = endStr.split(".").map(n => parseInt(n));
+        if (sNums.length === 4 && eNums.length === 4 && sNums.every(n => !isNaN(n) && n >= 0 && n <= 255) && eNums.every(n => !isNaN(n) && n >= 0 && n <= 255)) {
+          const sInt = (sNums[0] << 24) | (sNums[1] << 16) | (sNums[2] << 8) | sNums[3];
+          const eInt = (eNums[0] << 24) | (eNums[1] << 16) | (eNums[2] << 8) | eNums[3];
+          const count = eInt - sInt + 1;
+          if (count > 0 && count <= 1024) {
+            return {
+              count: count,
+              desc: `${startStr} ➔ ${endStr}`,
+              isValid: true,
+              subnet: `${sNums[0]}.${sNums[1]}.${sNums[2]}.0/24`,
+              start: startStr,
+              end: endStr
+            };
+          }
+        }
+      }
+    }
+
+    // 6. Single IP (e.g. 10.90.39.100)
+    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(text)) {
+      const nums = text.split(".").map(n => parseInt(n));
+      if (nums.every(n => !isNaN(n) && n >= 0 && n <= 255)) {
+        return {
+          count: 1,
+          desc: `${text} (IP đơn lẻ)`,
+          isValid: true,
+          subnet: `${text}/32`,
+          start: text,
+          end: text
+        };
+      }
+    }
+
+    return { count: 0, desc: "Định dạng dải IP chưa hợp lệ", isValid: false, subnet: "", start: "", end: "" };
+  },
+
+  updateSmartIpPreview(parsed) {
+    const banner = document.getElementById("ipscan-scope-banner");
+    const textEl = document.getElementById("ipscan-scope-text");
+    if (!banner || !textEl) return;
+
+    if (parsed.isValid && parsed.count > 0) {
+      textEl.innerHTML = `Sẽ quét <strong style="color: #0284c7;">${parsed.count} địa chỉ</strong>: <span style="font-family: monospace; font-weight: 700; color: #0f172a;">${parsed.desc}</span>`;
+      banner.style.background = "#f0f9ff";
+      banner.style.borderColor = "#bae6fd";
+      banner.style.color = "#0369a1";
+    } else {
+      textEl.innerHTML = `⚠️ Nhập dải IP (VD: <code style="background:#e2e8f0; padding:1px 4px; border-radius:3px;">10.90.39.x</code> hoặc <code style="background:#e2e8f0; padding:1px 4px; border-radius:3px;">10.90.39.1-254</code>) hoặc bấm <strong>"🎯 Lấy IP Mạng Này"</strong>`;
+      banner.style.background = "#fffbeb";
+      banner.style.borderColor = "#fde68a";
+      banner.style.color = "#92400e";
+    }
+  },
+
+  onSmartIpInputChanged(val) {
+    const parsed = this.parseSmartRangeClient(val);
+    this.updateSmartIpPreview(parsed);
+
+    if (parsed.isValid) {
+      const subEl = document.getElementById("ipscan-input-subnet");
+      const startEl = document.getElementById("ipscan-input-start");
+      const endEl = document.getElementById("ipscan-input-end");
+      if (subEl && parsed.subnet) subEl.value = parsed.subnet;
+      if (startEl && parsed.start) startEl.value = parsed.start;
+      if (endEl && parsed.end) endEl.value = parsed.end;
+    }
+  },
+
+  onClassicIpInputChanged(field) {
     const subEl = document.getElementById("ipscan-input-subnet");
     const startEl = document.getElementById("ipscan-input-start");
     const endEl = document.getElementById("ipscan-input-end");
+    const smartEl = document.getElementById("ipscan-smart-input");
 
+    const startVal = startEl ? startEl.value.trim() : "";
+    const endVal = endEl ? endEl.value.trim() : "";
+    const subVal = subEl ? subEl.value.trim() : "";
+
+    if (smartEl) {
+      if (startVal && endVal) {
+        smartEl.value = `${startVal} - ${endVal}`;
+      } else if (subVal) {
+        smartEl.value = subVal;
+      }
+      const parsed = this.parseSmartRangeClient(smartEl.value);
+      this.updateSmartIpPreview(parsed);
+    }
+  },
+
+  toggleIpScanAdvancedMode() {
+    const box = document.getElementById("ipscan-advanced-range-box");
+    const btn = document.getElementById("btn-toggle-ip-advanced");
+    if (!box) return;
+
+    const isHidden = (box.style.display === "none" || !box.style.display);
+    box.style.display = isHidden ? "block" : "none";
+    if (btn) {
+      btn.innerHTML = isHidden ? "✖ Thu Gọn Phân Đoạn" : "⚙️ Chi Tiết Từ IP - Đến IP";
+      btn.className = isHidden ? "btn btn-xs btn-sky-outline" : "btn btn-xs btn-slate-light";
+    }
+  },
+
+  async loadIpScannerDefaults() {
+    const smartEl = document.getElementById("ipscan-smart-input");
+    const subEl = document.getElementById("ipscan-input-subnet");
+    const startEl = document.getElementById("ipscan-input-start");
+    const endEl = document.getElementById("ipscan-input-end");
+    const badgeEl = document.getElementById("ipscan-detected-lan-badge");
+    const btnLocalPreset = document.getElementById("btn-preset-local");
+
+    let d = null;
     if (window.pywebview && window.pywebview.api) {
       try {
-        const d = await window.pywebview.api.get_ip_scanner_default_range();
-        if (d) {
-          if (subEl && !subEl.value) subEl.value = d.subnet || "";
-          if (startEl && !startEl.value) startEl.value = d.start_ip || "";
-          if (endEl && !endEl.value) endEl.value = d.end_ip || "";
-        }
+        d = await window.pywebview.api.get_ip_scanner_default_range();
       } catch (err) {
         console.error("Lỗi lấy IP scan defaults:", err);
       }
-    } else {
-      if (subEl && !subEl.value) subEl.value = "192.168.1.0/24";
-      if (startEl && !startEl.value) startEl.value = "192.168.1.1";
-      if (endEl && !endEl.value) endEl.value = "192.168.1.254";
+    }
+
+    if (!d) {
+      d = {
+        local_ip: "192.168.1.100",
+        subnet: "192.168.1.0/24",
+        start_ip: "192.168.1.1",
+        end_ip: "192.168.1.254",
+        wildcard: "192.168.1.x",
+        label: "Mạng 192.168.1.x"
+      };
+    }
+
+    this.detectedLanInfo = d;
+
+    // Auto-fill smart input if empty or fresh
+    const defaultVal = d.wildcard || `${d.start_ip} - ${d.end_ip}`;
+    if (smartEl && (!smartEl.value || smartEl.value.trim() === "")) {
+      smartEl.value = defaultVal;
+    }
+    if (subEl && !subEl.value) subEl.value = d.subnet || "";
+    if (startEl && !startEl.value) startEl.value = d.start_ip || "";
+    if (endEl && !endEl.value) endEl.value = d.end_ip || "";
+
+    if (badgeEl) {
+      badgeEl.innerHTML = `Mạng máy: <strong>${d.local_ip}</strong> (${d.wildcard || d.subnet})`;
+      badgeEl.title = `IP máy hiện tại: ${d.local_ip}\nDải mạng tự động: ${d.subnet}`;
+    }
+    if (btnLocalPreset) {
+      btnLocalPreset.innerHTML = `🏠 Mạng Máy (${d.wildcard || 'LAN'})`;
+    }
+
+    if (smartEl) {
+      this.onSmartIpInputChanged(smartEl.value);
     }
   },
 
   applyIpScanPreset(preset) {
+    const smartEl = document.getElementById("ipscan-smart-input");
     const subEl = document.getElementById("ipscan-input-subnet");
     const startEl = document.getElementById("ipscan-input-start");
     const endEl = document.getElementById("ipscan-input-end");
 
     if (preset === 'local') {
-      if (subEl) subEl.value = "";
-      if (startEl) startEl.value = "";
-      if (endEl) endEl.value = "";
-      this.loadIpScannerDefaults();
+      if (this.detectedLanInfo) {
+        const d = this.detectedLanInfo;
+        const val = d.wildcard || `${d.start_ip} - ${d.end_ip}`;
+        if (smartEl) smartEl.value = val;
+        if (subEl) subEl.value = d.subnet || "";
+        if (startEl) startEl.value = d.start_ip || "";
+        if (endEl) endEl.value = d.end_ip || "";
+        this.onSmartIpInputChanged(val);
+        if (typeof this.showToast === 'function') {
+          this.showToast('info', `Đã chọn mạng LAN của máy: ${d.local_ip} (${d.wildcard})`);
+        }
+      } else {
+        if (smartEl) smartEl.value = "";
+        this.loadIpScannerDefaults();
+      }
     } else if (preset === '192.168.1') {
-      if (subEl) subEl.value = "192.168.1.0/24";
-      if (startEl) startEl.value = "192.168.1.1";
-      if (endEl) endEl.value = "192.168.1.254";
+      const val = "192.168.1.x";
+      if (smartEl) smartEl.value = val;
+      this.onSmartIpInputChanged(val);
     } else if (preset === '192.168.0') {
-      if (subEl) subEl.value = "192.168.0.0/24";
-      if (startEl) startEl.value = "192.168.0.1";
-      if (endEl) endEl.value = "192.168.0.254";
+      const val = "192.168.0.x";
+      if (smartEl) smartEl.value = val;
+      this.onSmartIpInputChanged(val);
     } else if (preset === '10.0.0') {
-      if (subEl) subEl.value = "10.0.0.0/24";
-      if (startEl) startEl.value = "10.0.0.1";
-      if (endEl) endEl.value = "10.0.0.254";
+      const val = "10.0.0.x";
+      if (smartEl) smartEl.value = val;
+      this.onSmartIpInputChanged(val);
+    } else if (preset === '172.16.1') {
+      const val = "172.16.1.x";
+      if (smartEl) smartEl.value = val;
+      this.onSmartIpInputChanged(val);
     }
   },
 
@@ -741,6 +993,7 @@ Object.assign(AppController.prototype, {
   },
 
   async startIpScanner() {
+    const smartEl = document.getElementById("ipscan-smart-input");
     const subEl = document.getElementById("ipscan-input-subnet");
     const startEl = document.getElementById("ipscan-input-start");
     const endEl = document.getElementById("ipscan-input-end");
@@ -757,11 +1010,17 @@ Object.assign(AppController.prototype, {
     const badgeCount = document.getElementById("ipscan-count-badge");
     const bodyEl = document.getElementById("ipscan-results-body");
 
-    const subnet_str = subEl ? subEl.value.trim() : "";
-    const ip_start = startEl ? startEl.value.trim() : "";
-    const ip_end = endEl ? endEl.value.trim() : "";
-    const max_threads = threadsEl ? parseInt(threadsEl.value) || 50 : 50;
+    const smartVal = smartEl ? smartEl.value.trim() : "";
+    let subnet_str = subEl ? subEl.value.trim() : "";
+    let ip_start = startEl ? startEl.value.trim() : "";
+    let ip_end = endEl ? endEl.value.trim() : "";
 
+    // Prioritize smart input value for the backend
+    if (smartVal) {
+      subnet_str = smartVal;
+    }
+
+    const max_threads = threadsEl ? parseInt(threadsEl.value) || 50 : 50;
     const check_ping = chkPing ? chkPing.checked : true;
     const check_hostname = chkHost ? chkHost.checked : true;
     const check_mac = chkMac ? chkMac.checked : true;
@@ -800,9 +1059,12 @@ Object.assign(AppController.prototype, {
     const check_http_port = ports_to_check.includes(80);
     const check_https_port = ports_to_check.includes(443);
 
+    const parsedScope = this.parseSmartRangeClient(smartVal || subnet_str || ip_start);
+    const targetLabel = parsedScope.isValid ? `${parsedScope.count} địa chỉ (${parsedScope.desc})` : (smartVal || 'dải mạng LAN');
+
     if (btnStart) btnStart.disabled = true;
     if (spinner) spinner.style.display = "inline-block";
-    if (statusText) statusText.innerText = `Đang quét dải IP (${max_threads} luồng, ${ports_to_check.length} cổng dịch vụ)... Vui lòng chờ...`;
+    if (statusText) statusText.innerText = `Đang quét ${targetLabel} (${max_threads} luồng, ${ports_to_check.length} cổng dịch vụ)... Vui lòng chờ...`;
     if (bodyEl) {
       bodyEl.innerHTML = `
         <tr>

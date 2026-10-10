@@ -787,14 +787,95 @@ def get_local_subnet_range():
             "local_ip": local_ip,
             "subnet": f"{base}.0/24",
             "start_ip": f"{base}.1",
-            "end_ip": f"{base}.254"
+            "end_ip": f"{base}.254",
+            "wildcard": f"{base}.x",
+            "label": f"Mạng Máy Đang Dùng ({base}.x - IP: {local_ip})"
         }
     return {
         "local_ip": local_ip,
         "subnet": "192.168.1.0/24",
         "start_ip": "192.168.1.1",
-        "end_ip": "192.168.1.254"
+        "end_ip": "192.168.1.254",
+        "wildcard": "192.168.1.x",
+        "label": "Mạng 192.168.1.x"
     }
+
+
+def parse_smart_ip_input(text):
+    """
+    Parses any common IP range notation into a list of IPv4 strings:
+    - CIDR: 192.168.1.0/24, 10.0.0.0/24
+    - Wildcard: 192.168.1.x, 192.168.1.*
+    - Short prefix: 192.168.1 or 192.168.1.
+    - Hyphen range: 192.168.1.1 - 254, 192.168.1.10 - 192.168.1.50
+    - Comma-separated: 192.168.1.1, 192.168.1.5, 192.168.1.10
+    - Single IP: 192.168.1.100
+    """
+    import re
+    text = (text or "").strip()
+    if not text:
+        return []
+
+    # 1. Comma-separated list of individual IPs
+    if "," in text:
+        ips = []
+        for part in text.split(","):
+            p = part.strip()
+            try:
+                ipaddress.IPv4Address(p)
+                ips.append(p)
+            except Exception:
+                pass
+        if ips:
+            return ips
+
+    # 2. CIDR (e.g. 192.168.1.0/24)
+    if "/" in text:
+        try:
+            net = ipaddress.IPv4Network(text, strict=False)
+            hosts = list(net.hosts())
+            return [str(ip) for ip in (hosts[:1024] if hosts else [net.network_address])]
+        except Exception:
+            pass
+
+    # 3. Wildcard with x or * (e.g. 192.168.1.x, 192.168.1.*)
+    m_wild = re.match(r"^(\d{1,3}\.\d{1,3}\.\d{1,3})\.[xX\*]$", text)
+    if m_wild:
+        base = m_wild.group(1)
+        return [f"{base}.{i}" for i in range(1, 255)]
+
+    # 4. Short prefix (e.g. 192.168.1 or 192.168.1.)
+    m_prefix = re.match(r"^(\d{1,3}\.\d{1,3}\.\d{1,3})\.?$", text)
+    if m_prefix:
+        base = m_prefix.group(1)
+        return [f"{base}.{i}" for i in range(1, 255)]
+
+    # 5. Hyphen range (e.g. 192.168.1.1 - 254 or 192.168.1.10 - 192.168.1.50)
+    if "-" in text:
+        parts = [p.strip() for p in text.split("-", 1)]
+        start_str, end_str = parts[0], parts[1]
+        try:
+            start_ip = ipaddress.IPv4Address(start_str)
+            if end_str.isdigit():
+                prefix = ".".join(start_str.split(".")[:3])
+                end_ip = ipaddress.IPv4Address(f"{prefix}.{end_str}")
+            else:
+                end_ip = ipaddress.IPv4Address(end_str)
+            if int(start_ip) <= int(end_ip):
+                count = int(end_ip) - int(start_ip) + 1
+                if count <= 1024:
+                    return [str(ipaddress.IPv4Address(i)) for i in range(int(start_ip), int(end_ip) + 1)]
+        except Exception:
+            pass
+
+    # 6. Single IP (e.g. 192.168.1.100)
+    try:
+        ip = ipaddress.IPv4Address(text)
+        return [str(ip)]
+    except Exception:
+        pass
+
+    return []
 
 
 def get_all_arp_macs():
@@ -817,21 +898,25 @@ def get_all_arp_macs():
 def scan_lan_network(subnet_str="", ip_start="", ip_end="", check_ping=True, check_hostname=True, check_mac=True, check_http_port=True, check_https_port=True, max_threads=50, ports_to_check=None):
     """Scans LAN network IP range with multi-threaded sweeps and Windows/Server port checks."""
     ip_list = []
-    if subnet_str and '/' in subnet_str:
-        try:
-            network = ipaddress.IPv4Network(subnet_str.strip(), strict=False)
-            ip_list = [str(ip) for ip in list(network.hosts())[:1000]]
-        except Exception:
-            pass
 
+    # Priority 1: Smart parsing on subnet_str or ip_start
+    if subnet_str:
+        ip_list = parse_smart_ip_input(subnet_str)
+
+    if not ip_list and ip_start and not ip_end:
+        ip_list = parse_smart_ip_input(ip_start)
+
+    # Priority 2: Traditional Start IP to End IP range
     if not ip_list and ip_start and ip_end:
         try:
             start = ipaddress.IPv4Address(ip_start.strip())
             end = ipaddress.IPv4Address(ip_end.strip())
-            ip_list = [str(ipaddress.IPv4Address(i)) for i in range(int(start), int(end) + 1)]
+            if int(start) <= int(end):
+                ip_list = [str(ipaddress.IPv4Address(i)) for i in range(int(start), min(int(end), int(start) + 1023) + 1)]
         except Exception:
             pass
 
+    # Priority 3: Fallback to active local subnet
     if not ip_list:
         default_range = get_local_subnet_range()
         network = ipaddress.IPv4Network(default_range["subnet"], strict=False)
@@ -863,7 +948,20 @@ def scan_lan_network(subnet_str="", ip_start="", ip_end="", check_ping=True, che
     res_queue = queue.Queue()
 
     def worker(ip):
-        alive, ping_time = ping_host(ip, timeout=400)
+        alive, ping_time = ping_host(ip, timeout=350)
+        
+        # Dual-probe: Detect devices even when ICMP Echo Ping is blocked by Windows Firewall
+        if not alive:
+            if ip in arp_map:
+                alive = True
+                ping_time = "<1ms"
+            else:
+                for fast_p in (445, 135, 80, 3389):
+                    if check_port(ip, fast_p, timeout=0.25):
+                        alive = True
+                        ping_time = "<1ms"
+                        break
+
         if alive:
             # Get MAC first (needed for vendor + hostname hints)
             mac = arp_map.get(ip) or (get_mac_from_arp(ip) if check_mac else "")

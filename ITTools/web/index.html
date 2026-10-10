@@ -3837,48 +3837,98 @@
 
             <!-- Configuration Controls -->
             <div
-              style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-top: 10px; margin-bottom: 16px;">
-              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 140px; gap: 12px; margin-bottom: 12px;">
-                <div>
-                  <label class="form-label text-xs font-semibold"
-                    style="display: block; color: #475569; margin-bottom: 4px;">Dải Mạng CIDR (Subnet):</label>
-                  <input type="text" id="ipscan-input-subnet" class="form-control" placeholder="192.168.1.0/24"
-                    style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
-                </div>
-                <div>
-                  <label class="form-label text-xs font-semibold"
-                    style="display: block; color: #475569; margin-bottom: 4px;">Từ IP (Start IP):</label>
-                  <input type="text" id="ipscan-input-start" class="form-control" placeholder="192.168.1.1"
-                    style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
-                </div>
-                <div>
-                  <label class="form-label text-xs font-semibold"
-                    style="display: block; color: #475569; margin-bottom: 4px;">Đến IP (End IP):</label>
-                  <input type="text" id="ipscan-input-end" class="form-control" placeholder="192.168.1.254"
-                    style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
-                </div>
-                <div>
-                  <label class="form-label text-xs font-semibold"
-                    style="display: block; color: #475569; margin-bottom: 4px;">Số Luồng (Threads):</label>
-                  <select id="ipscan-input-threads" class="form-control"
-                    style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
-                    <option value="20">20 Threads</option>
-                    <option value="50" selected>50 Threads (Khuyên dùng)</option>
-                    <option value="100">100 Threads (Siêu nhanh)</option>
-                  </select>
-                </div>
-              </div>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-top: 10px; margin-bottom: 16px;">
 
-              <!-- Host Discovery Options Row -->
-              <div
-                style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; border-top: 1px solid #e2e8f0; padding-top: 10px;">
-                <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
-                  <span style="font-size: 12px; color: #64748b; font-weight: 600;">Dải IP nhanh:</span>
-                  <button class="btn btn-slate-light btn-sm" onclick="app.applyIpScanPreset('local')">🏠 Local Subnet</button>
-                  <button class="btn btn-slate-light btn-sm" onclick="app.applyIpScanPreset('192.168.1')">192.168.1.x</button>
-                  <button class="btn btn-slate-light btn-sm" onclick="app.applyIpScanPreset('192.168.0')">192.168.0.x</button>
-                  <button class="btn btn-slate-light btn-sm" onclick="app.applyIpScanPreset('10.0.0')">10.0.0.x</button>
+                <!-- Primary Smart Input Row -->
+                <div style="display: grid; grid-template-columns: 1fr auto 140px; gap: 12px; align-items: flex-end; margin-bottom: 10px;">
+                  <div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                      <label class="form-label text-xs font-bold" style="color: #1e293b; margin: 0; display: flex; align-items: center; gap: 6px;">
+                        <span>🎯</span>
+                        <span>Dải Mạng Hoặc IP Cần Quét (Smart Range):</span>
+                      </label>
+                      <button type="button" class="btn btn-xs btn-slate-light" id="btn-toggle-ip-advanced" onclick="app.toggleIpScanAdvancedMode()" style="font-size: 11px; padding: 2px 8px;" title="Mở rộng / Thu gọn các ô nhập Từ IP - Đến IP chi tiết">
+                        ⚙️ Chi Tiết Từ IP - Đến IP
+                      </button>
+                    </div>
+                    <div style="position: relative;">
+                      <input type="text" id="ipscan-smart-input" class="form-control"
+                        placeholder="VD: 10.90.39.x hoặc 192.168.1.1-254 hoặc 192.168.1.0/24 hoặc 192.168.1.100..."
+                        style="width: 100%; padding: 9px 12px; padding-left: 36px; border: 1.5px solid #0284c7; border-radius: 8px; font-size: 13.5px; font-weight: 600; background: #ffffff; color: #0f172a; box-shadow: 0 1px 3px rgba(2, 132, 199, 0.1);"
+                        oninput="app.onSmartIpInputChanged(this.value)">
+                      <span style="position: absolute; left: 11px; top: 50%; transform: translateY(-50%); font-size: 14px; pointer-events: none; color: #0284c7;">🔍</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <button type="button" class="btn btn-action-accent text-white" onclick="app.applyIpScanPreset('local')" id="btn-autodetect-ip"
+                      style="padding: 9px 14px; font-size: 12.5px; font-weight: 700; background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); border-radius: 8px; white-space: nowrap; height: 39px; display: flex; align-items: center; gap: 6px;"
+                      title="Tự động nhận diện mạng LAN máy đang kết nối">
+                      <span>🎯</span> Lấy IP Mạng Này
+                    </button>
+                  </div>
+
+                  <div>
+                    <label class="form-label text-xs font-semibold" style="display: block; color: #475569; margin-bottom: 6px;">Số Luồng (Threads):</label>
+                    <select id="ipscan-input-threads" class="form-control"
+                      style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 12.5px; font-weight: 600; height: 39px;">
+                      <option value="20">20 Threads</option>
+                      <option value="50" selected>50 Threads (Khuyên dùng)</option>
+                      <option value="100">100 Threads (Siêu nhanh)</option>
+                    </select>
+                  </div>
                 </div>
+
+                <!-- Scope Preview & Live Status Banner -->
+                <div id="ipscan-scope-banner"
+                  style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 7px 12px; margin-bottom: 12px; font-size: 12px; color: #0369a1; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+                  <div style="display: flex; align-items: center; gap: 7px;">
+                    <span style="font-size: 14px;">⚡</span>
+                    <span id="ipscan-scope-text" style="font-weight: 600;">Đang chuẩn bị dải mạng...</span>
+                  </div>
+                  <div id="ipscan-detected-lan-badge" style="font-size: 11px; background: #e0f2fe; color: #0284c7; padding: 2px 8px; border-radius: 6px; font-weight: 700;">
+                    Mạng máy: Đang nhận diện...
+                  </div>
+                </div>
+
+                <!-- Collapsible Advanced Range Box (Keeps #ipscan-input-subnet, #ipscan-input-start, #ipscan-input-end for full compatibility) -->
+                <div id="ipscan-advanced-range-box" style="display: none; background: #ffffff; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;">
+                  <div style="font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 8px; text-transform: uppercase;">
+                    ⚙️ CẤU HÌNH PHÂN ĐOẠN IP CHI TIẾT (Tự động đồng bộ với ô thông minh ở trên):
+                  </div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                    <div>
+                      <label class="form-label text-xs font-semibold" style="display: block; color: #475569; margin-bottom: 3px;">Dải Mạng CIDR (Subnet):</label>
+                      <input type="text" id="ipscan-input-subnet" class="form-control" placeholder="10.90.39.0/24"
+                        style="width: 100%; padding: 6px 9px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px;"
+                        oninput="app.onClassicIpInputChanged('subnet')">
+                    </div>
+                    <div>
+                      <label class="form-label text-xs font-semibold" style="display: block; color: #475569; margin-bottom: 3px;">Từ IP (Start IP):</label>
+                      <input type="text" id="ipscan-input-start" class="form-control" placeholder="10.90.39.1"
+                        style="width: 100%; padding: 6px 9px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px;"
+                        oninput="app.onClassicIpInputChanged('start')">
+                    </div>
+                    <div>
+                      <label class="form-label text-xs font-semibold" style="display: block; color: #475569; margin-bottom: 3px;">Đến IP (End IP):</label>
+                      <input type="text" id="ipscan-input-end" class="form-control" placeholder="10.90.39.254"
+                        style="width: 100%; padding: 6px 9px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px;"
+                        oninput="app.onClassicIpInputChanged('end')">
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Host Discovery Options Row -->
+                <div
+                  style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; border-top: 1px solid #e2e8f0; padding-top: 10px;">
+                  <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                    <span style="font-size: 12px; color: #64748b; font-weight: 600;">Dải IP nhanh:</span>
+                    <button type="button" class="btn btn-sky-outline btn-sm" id="btn-preset-local" onclick="app.applyIpScanPreset('local')" style="font-weight: 700;">🏠 Mạng Của Máy</button>
+                    <button type="button" class="btn btn-slate-light btn-sm" onclick="app.applyIpScanPreset('192.168.1')">192.168.1.x</button>
+                    <button type="button" class="btn btn-slate-light btn-sm" onclick="app.applyIpScanPreset('192.168.0')">192.168.0.x</button>
+                    <button type="button" class="btn btn-slate-light btn-sm" onclick="app.applyIpScanPreset('10.0.0')">10.0.0.x</button>
+                    <button type="button" class="btn btn-slate-light btn-sm" onclick="app.applyIpScanPreset('172.16.1')">172.16.1.x</button>
+                  </div>
 
                 <div style="display: flex; gap: 14px; align-items: center; font-size: 12.5px; color: #334155;">
                   <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
