@@ -15,6 +15,7 @@ import socket
 import datetime
 import time
 import queue
+import shutil
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from constants import APP_NAME, APP_VERSION, APP_AUTHOR, APP_PHONE, APP_WEBSITE, APP_TELEGRAM, AUTOSTART_KEY_NAME
@@ -5377,7 +5378,8 @@ $res | ConvertTo-Json -Depth 3 -Compress
 
     def start_backup_drivers_async(self, target_dir=""):
         """Starts asynchronous background driver backup with real-time streaming progress,
-        watchdog anti-hang protection, and automatic fallback."""
+        resilient multi-engine export (PowerShell Export-WindowsDriver -> DISM -> pnputil per-driver),
+        and automatic missing-driver healing."""
         if not target_dir:
             initial_folder = self._get_last_driver_backup_dir()
             res_dlg = self.select_folder_dialog("Chọn thư mục lưu trữ Backup Driver", initial_folder)
@@ -5392,154 +5394,190 @@ $res | ConvertTo-Json -Depth 3 -Compress
         except Exception as e:
             return {"success": False, "message": f"Không thể tạo thư mục lưu trữ: {e}"}
 
-        # Estimate total drivers without blocking the UI thread
-        est_total = getattr(self, "_cached_driver_count", 0) or 30
+        # Check free disk space (at least 200MB)
+        try:
+            free_bytes = shutil.disk_usage(target_dir).free
+            if free_bytes < 200 * 1024 * 1024:
+                return {
+                    "success": False,
+                    "message": "Ổ đĩa lưu trữ không đủ dung lượng trống (<200MB). Vui lòng chọn ổ đĩa khác!"
+                }
+        except Exception:
+            pass
+
+        # 1. Enumerate OEM drivers list upfront (< 0.1s)
+        oem_drivers = []
+        try:
+            res_pnp = subprocess.run(
+                ['pnputil', '/enum-drivers'],
+                capture_output=True, text=True, timeout=12, encoding='utf-8', errors='ignore'
+            )
+            if res_pnp.returncode == 0 and res_pnp.stdout:
+                for line in res_pnp.stdout.splitlines():
+                    if "Published Name" in line and ":" in line:
+                        d_name = line.split(":", 1)[1].strip()
+                        if d_name:
+                            oem_drivers.append(d_name)
+        except Exception as ex:
+            self.log("WARN", f"pnputil /enum-drivers enumeration warning: {ex}")
+
+        # Fallback count if pnputil enumeration was empty
+        total_oem = len(oem_drivers) or getattr(self, "_cached_driver_count", 0) or 35
 
         self._driver_progress = {
             "active": True,
             "mode": "backup",
             "status": "running",
             "current": 0,
-            "total": est_total,
+            "total": total_oem,
             "percentage": 0,
-            "message": f"Đang chuẩn bị xuất driver ra {target_dir}...",
+            "message": f"Đang chuẩn bị sao lưu {total_oem} driver hệ thống ra {target_dir}...",
             "path": target_dir
         }
 
         def worker():
             try:
-                self.log("INFO", f"Bắt đầu xuất toàn bộ Driver hệ thống ra: {target_dir}...")
+                self.log("INFO", f"Bắt đầu xuất toàn bộ Driver hệ thống ({total_oem} mục) ra: {target_dir}...")
+                exported_oem_set = set()
+                skipped_list = []
 
-                # Helper to stream stdout line-by-line via Queue to prevent OS pipe deadlock
-                def stream_cmd_lines(cmd_list, on_line_callback, watchdog_sec=120):
-                    proc = subprocess.Popen(
-                        cmd_list,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                        encoding='utf-8',
-                        errors='ignore',
-                        bufsize=1
-                    )
-
-                    q = queue.Queue()
-                    def reader():
+                # Background live directory monitor thread to guarantee continuous progress bar updates
+                stop_monitor = threading.Event()
+                def monitor_target_dir():
+                    seen_dirs = set()
+                    while not stop_monitor.is_set():
                         try:
-                            for line in iter(proc.stdout.readline, ''):
-                                q.put(line)
-                        finally:
+                            if os.path.exists(target_dir):
+                                subdirs = [d for d in os.listdir(target_dir) if os.path.isdir(os.path.join(target_dir, d))]
+                                curr_len = len(subdirs)
+                                if curr_len > 0:
+                                    pct = min(96, int((curr_len / max(1, total_oem)) * 100))
+                                    new_dirs = set(subdirs) - seen_dirs
+                                    if new_dirs:
+                                        latest = list(new_dirs)[-1]
+                                        self._driver_progress["message"] = f"Đang xuất ({curr_len}/{total_oem}): {latest}..."
+                                        seen_dirs.update(new_dirs)
+                                    self._driver_progress["current"] = curr_len
+                                    self._driver_progress["percentage"] = pct
+                        except Exception:
+                            pass
+                        stop_monitor.wait(0.5)
+
+                mon_thread = threading.Thread(target=monitor_target_dir, daemon=True)
+                mon_thread.start()
+
+                # ── METHOD 1: PowerShell Export-WindowsDriver (Fastest & natively resilient) ──
+                ps_script = (
+                    f'$exp = Export-WindowsDriver -Online -Destination "{target_dir}" -ErrorAction Continue '
+                    f'| Select-Object Driver, ProviderName, ClassName; @($exp) | ConvertTo-Json -Compress'
+                )
+                ps_cmd = ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps_script]
+
+                try:
+                    self.log("INFO", "Thực thi PowerShell Export-WindowsDriver...")
+                    res_ps = subprocess.run(ps_cmd, capture_output=True, text=True, timeout=600)
+                    if res_ps.stdout and res_ps.stdout.strip():
+                        try:
+                            ps_data = json.loads(res_ps.stdout.strip())
+                            if isinstance(ps_data, dict):
+                                ps_data = [ps_data]
+                            for item in ps_data:
+                                drv_val = item.get("Driver", "").strip().lower()
+                                if drv_val:
+                                    exported_oem_set.add(drv_val)
+                            self.log("INFO", f"PowerShell đã xuất thành công {len(exported_oem_set)} driver.")
+                        except Exception as j_err:
+                            self.log("WARN", f"Không thể parse JSON từ Export-WindowsDriver: {j_err}")
+                except subprocess.TimeoutExpired:
+                    self.log("WARN", "PowerShell Export-WindowsDriver quá thời gian chờ (timeout 600s), tiếp tục bước kiểm tra...")
+                except Exception as ps_err:
+                    self.log("WARN", f"Lỗi gọi PowerShell Export-WindowsDriver: {ps_err}")
+
+                # ── METHOD 2: DISM /Export-Driver fallback if Method 1 produced 0 files ──
+                existing_folders = [d for d in os.listdir(target_dir) if os.path.isdir(os.path.join(target_dir, d))] if os.path.exists(target_dir) else []
+                if not exported_oem_set and not existing_folders:
+                    self.log("WARN", "PowerShell không xuất được driver nào, chuyển sang DISM /Export-Driver...")
+                    self._driver_progress["message"] = "Đang chuyển sang DISM /Export-Driver để sao lưu..."
+                    try:
+                        dism_cmd = ['dism', '/Online', '/Export-Driver', f'/Destination:{target_dir}']
+                        subprocess.run(dism_cmd, capture_output=True, text=True, timeout=600)
+                    except Exception as d_err:
+                        self.log("WARN", f"Lỗi DISM: {d_err}")
+
+                # ── METHOD 3: Smart Per-Driver Healing for Missing Drivers ─────────
+                # Check which OEM drivers are still missing
+                if oem_drivers:
+                    missing_drivers = [o for o in oem_drivers if o.lower() not in exported_oem_set]
+                    if missing_drivers:
+                        self.log("INFO", f"Kiểm tra thấy {len(missing_drivers)} driver chưa xuất xong, đang tiến hành xuất bù từng driver qua pnputil...")
+                        self._driver_progress["message"] = f"Đang xuất bù {len(missing_drivers)} driver còn lại..."
+
+                        for idx, drv in enumerate(missing_drivers):
+                            sub_dir = os.path.join(target_dir, drv.replace(".inf", ""))
+                            os.makedirs(sub_dir, exist_ok=True)
+                            curr_pct = min(98, int(((len(exported_oem_set) + idx) / max(1, total_oem)) * 100))
+                            self._driver_progress["message"] = f"Đang xuất bù ({idx+1}/{len(missing_drivers)}): {drv}..."
+                            self._driver_progress["percentage"] = curr_pct
+
                             try:
-                                proc.stdout.close()
-                            except Exception:
-                                pass
-                            q.put(None)
+                                r_drv = subprocess.run(
+                                    ['pnputil', '/export-driver', drv, sub_dir],
+                                    capture_output=True, text=True, timeout=25
+                                )
+                                if r_drv.returncode == 0:
+                                    exported_oem_set.add(drv.lower())
+                                else:
+                                    # Driver has broken source files or catalog in Windows DriverStore
+                                    skipped_list.append(drv)
+                                    self.log("WARN", f"Bỏ qua driver lỗi nguồn: {drv} (mã: {r_drv.returncode})")
+                            except subprocess.TimeoutExpired:
+                                skipped_list.append(drv)
+                                self.log("WARN", f"Bỏ qua driver bị treo nguồn: {drv}")
+                            except Exception as ex_drv:
+                                skipped_list.append(drv)
+                                self.log("WARN", f"Lỗi xuất {drv}: {ex_drv}")
 
-                    t = threading.Thread(target=reader, daemon=True)
-                    t.start()
+                # Stop monitor
+                stop_monitor.set()
+                try:
+                    mon_thread.join(timeout=2.0)
+                except Exception:
+                    pass
 
-                    last_act = time.time()
-                    while True:
-                        try:
-                            line = q.get(timeout=0.4)
-                            if line is None:
-                                break
-                            last_act = time.time()
-                            on_line_callback(line)
-                        except queue.Empty:
-                            if proc.poll() is not None:
-                                while True:
-                                    try:
-                                        rem = q.get_nowait()
-                                        if rem is None:
-                                            break
-                                        on_line_callback(rem)
-                                    except queue.Empty:
-                                        break
-                                break
-                            if time.time() - last_act > watchdog_sec:
-                                self.log("WARN", f"Lệnh {cmd_list[0]} không phản hồi quá {watchdog_sec}s, đang dừng để bảo vệ...")
-                                try:
-                                    proc.kill()
-                                except Exception:
-                                    pass
-                                break
-                    proc.wait()
-                    return proc.returncode
+                # Calculate final count & disk size
+                final_subdirs = [d for d in os.listdir(target_dir) if os.path.isdir(os.path.join(target_dir, d))] if os.path.exists(target_dir) else []
+                final_count = max(len(exported_oem_set), len(final_subdirs))
 
-                # ── METHOD 1: DISM /Online /Export-Driver ─────────────────────
-                patt_dism = re.compile(r'Exporting\s+(\d+)\s+of\s+(\d+)\s*-\s*([^:]+):\s*(.*)', re.IGNORECASE)
-                dism_exported = 0
-                dism_total = est_total
+                # Calculate total folder size
+                total_bytes = 0
+                try:
+                    for root_p, _, files in os.walk(target_dir):
+                        for f in files:
+                            total_bytes += os.path.getsize(os.path.join(root_p, f))
+                except Exception:
+                    pass
 
-                def on_dism_line(line):
-                    nonlocal dism_exported, dism_total
-                    l_str = line.strip()
-                    if not l_str:
-                        return
-                    m = patt_dism.search(l_str)
-                    if m:
-                        curr_idx, tot_idx, drv_name, status = m.groups()
-                        dism_exported = int(curr_idx)
-                        dism_total = int(tot_idx)
-                        pct = min(99, int((dism_exported / max(1, dism_total)) * 100))
-                        self._driver_progress["current"] = dism_exported
-                        self._driver_progress["total"] = dism_total
-                        self._driver_progress["percentage"] = pct
-                        self._driver_progress["message"] = f"Đang xuất {dism_exported}/{dism_total}: {drv_name.strip()}..."
-                    elif "successfully exported" in l_str.lower():
-                        dism_exported += 1
-                        pct = min(99, int((dism_exported / max(1, dism_total)) * 100))
-                        self._driver_progress["current"] = dism_exported
-                        self._driver_progress["percentage"] = pct
+                if total_bytes >= 1024 * 1024 * 1024:
+                    size_str = f"{total_bytes / (1024*1024*1024):.2f} GB"
+                else:
+                    size_str = f"{total_bytes / (1024*1024):.1f} MB"
 
-                cmd_dism = ['dism', '/Online', '/Export-Driver', f'/Destination:{target_dir}']
-                rc_dism = stream_cmd_lines(cmd_dism, on_dism_line, watchdog_sec=120)
-
-                # Count exported folders
-                exported_items = [d for d in os.listdir(target_dir) if os.path.isdir(os.path.join(target_dir, d))] if os.path.exists(target_dir) else []
-                total_dirs = len(exported_items)
-
-                # ── METHOD 2: Fallback to PNPUTIL if DISM failed or exported 0 drivers ────────
-                if total_dirs == 0 or rc_dism != 0:
-                    self.log("WARN", f"DISM xuất {total_dirs} driver (mã: {rc_dism}). Kích hoạt cơ chế dự phòng Pnputil...")
-                    self._driver_progress["message"] = "Đang chuyển sang chế độ dự phòng Pnputil để hoàn tất sao lưu..."
-
-                    patt_pnp_pkg = re.compile(r'Exporting driver package:\s*([^\s(]+)', re.IGNORECASE)
-                    patt_pnp_ok = re.compile(r'Driver package exported successfully', re.IGNORECASE)
-                    pnp_cur_drv = ""
-                    pnp_count = 0
-                    pnp_total = max(est_total, 30)
-
-                    def on_pnp_line(line):
-                        nonlocal pnp_cur_drv, pnp_count
-                        l_str = line.strip()
-                        if not l_str:
-                            return
-                        m_pkg = patt_pnp_pkg.search(l_str)
-                        if m_pkg:
-                            pnp_cur_drv = m_pkg.group(1).strip()
-                            self._driver_progress["message"] = f"Đang xuất (Pnputil): {pnp_cur_drv}..."
-                        if patt_pnp_ok.search(l_str):
-                            pnp_count += 1
-                            pct = min(99, int((pnp_count / max(1, pnp_total)) * 100))
-                            self._driver_progress["current"] = pnp_count
-                            self._driver_progress["percentage"] = pct
-                            self._driver_progress["message"] = f"Đã xuất (Pnputil) {pnp_count}/{pnp_total}: {pnp_cur_drv}..."
-
-                    cmd_pnp = ['pnputil', '/export-driver', '*', target_dir]
-                    stream_cmd_lines(cmd_pnp, on_pnp_line, watchdog_sec=180)
-
-                    exported_items = [d for d in os.listdir(target_dir) if os.path.isdir(os.path.join(target_dir, d))] if os.path.exists(target_dir) else []
-                    total_dirs = len(exported_items)
-
-                final_count = total_dirs or dism_exported
                 if final_count > 0:
                     self._driver_progress["current"] = final_count
-                    self._driver_progress["total"] = final_count
+                    self._driver_progress["total"] = max(final_count, total_oem)
                     self._driver_progress["percentage"] = 100
                     self._driver_progress["status"] = "completed"
-                    self._driver_progress["message"] = f"Hoàn tất sao lưu toàn bộ {final_count} driver vào:\n{target_dir}"
-                    self.log("SUCCESS", f"Hoàn tất sao lưu driver ({final_count} mục) ra {target_dir}")
+
+                    if skipped_list:
+                        skip_str = f"\n(Đã tự động bỏ qua {len(skipped_list)} driver bị hỏng file gốc trong Windows DriverStore: {', '.join(skipped_list[:3])})"
+                        self._driver_progress["message"] = (
+                            f"Hoàn tất sao lưu {final_count}/{total_oem} Driver OEM ({size_str}) vào:\n{target_dir}{skip_str}"
+                        )
+                    else:
+                        self._driver_progress["message"] = (
+                            f"Hoàn tất sao lưu toàn bộ {final_count}/{total_oem} Driver OEM ({size_str}) vào:\n{target_dir}"
+                        )
+                    self.log("SUCCESS", f"Hoàn tất sao lưu driver ({final_count} mục, {size_str}) ra {target_dir}")
                 else:
                     self._driver_progress["status"] = "error"
                     self._driver_progress["message"] = (

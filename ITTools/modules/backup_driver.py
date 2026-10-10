@@ -165,28 +165,41 @@ class BackupDriver:
 
         def do_backup():
             try:
-                # 1. Try DISM first
-                result = subprocess.run(
-                    ['dism', '/Online', '/Export-Driver', f'/Destination:{dest}'],
-                    capture_output=True, text=True, timeout=300
-                )
-                items = os.listdir(dest) if os.path.exists(dest) else []
+                # 1. Try fast PowerShell Export-WindowsDriver first
+                ps_cmd = [
+                    'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
+                    f'$exp = Export-WindowsDriver -Online -Destination "{dest}" -ErrorAction Continue; @($exp) | Measure-Object'
+                ]
+                res = subprocess.run(ps_cmd, capture_output=True, text=True, timeout=600)
+                items = [d for d in os.listdir(dest) if os.path.isdir(os.path.join(dest, d))] if os.path.exists(dest) else []
 
-                # 2. Fallback to pnputil if DISM produced 0 files or failed
-                if not items or result.returncode != 0:
-                    self.status_var.set('DISM failed, trying Pnputil fallback...')
-                    result = subprocess.run(
-                        ['pnputil', '/export-driver', '*', dest],
-                        capture_output=True, text=True, timeout=300
+                # 2. Fallback to DISM if PowerShell produced 0 files or failed
+                if not items or res.returncode != 0:
+                    self.status_var.set('PowerShell failed, trying DISM...')
+                    res = subprocess.run(
+                        ['dism', '/Online', '/Export-Driver', f'/Destination:{dest}'],
+                        capture_output=True, text=True, timeout=600
                     )
-                    items = os.listdir(dest) if os.path.exists(dest) else []
+                    items = [d for d in os.listdir(dest) if os.path.isdir(os.path.join(dest, d))] if os.path.exists(dest) else []
+
+                # 3. Individual Pnputil fallback per-driver if still empty
+                if not items and self.all_drivers:
+                    self.status_var.set('Trying individual Pnputil fallback...')
+                    for drv in self.all_drivers:
+                        driver_file = drv[1] if len(drv) > 1 else ''
+                        if driver_file:
+                            sub = os.path.join(dest, driver_file.replace('.inf', ''))
+                            os.makedirs(sub, exist_ok=True)
+                            subprocess.run(['pnputil', '/export-driver', driver_file, sub],
+                                           capture_output=True, text=True, timeout=20)
+                    items = [d for d in os.listdir(dest) if os.path.isdir(os.path.join(dest, d))] if os.path.exists(dest) else []
 
                 self.progress.stop()
                 if items:
                     messagebox.showinfo('Backup', f'✅ Successfully backed up {len(items)} driver(s) to:\n{dest}')
                     self.status_var.set(f'Backup complete ({len(items)} drivers)!')
                 else:
-                    messagebox.showerror('Error', result.stderr or result.stdout or 'Backup failed')
+                    messagebox.showerror('Error', res.stderr or res.stdout or 'Backup failed')
                     self.status_var.set('Backup failed!')
             except Exception as e:
                 self.progress.stop()
