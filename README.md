@@ -12,6 +12,7 @@
 [![Website](https://img.shields.io/badge/Website-lethetuanpc.blogspot.com-f59e0b.svg)](https://lethetuanpc.blogspot.com)
 [![Telegram](https://img.shields.io/badge/Telegram-@lethetuanpc-229ED9.svg)](https://t.me/lethetuanpc)
 [![Version](https://img.shields.io/badge/Phi%C3%AAn%20B%E1%BA%A3n-1.0.0%20(2026)-10b981.svg)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/N%E1%BB%81n%20T%E1%BA%A3ng-Windows%2010%20%7C%2011%20%7C%20Server-blue.svg)]()
 [![Single File](https://img.shields.io/badge/Build-Single%20Portable%20.EXE-purple.svg)]()
 
@@ -524,6 +525,14 @@ ITTools\
 - **Website chính thức:** [https://lethetuanpc.blogspot.com](https://lethetuanpc.blogspot.com)
 - **Kênh Telegram hỗ trợ:** [https://t.me/lethetuanpc](https://t.me/lethetuanpc)
 - **Bản quyền:** © 2026 **IT Tool LTT**. Phát hành phục vụ cộng đồng kỹ thuật viên CNTT & quản trị viên mạng Việt Nam.
+
+---
+
+## 📄 GIẤY PHÉP BẢN QUYỀN (LICENSE)
+
+Dự án này được phân phối dưới giấy phép **[MIT License](LICENSE)**. Bạn được toàn quyền sử dụng, sửa đổi, phân phối cho mục đích cá nhân hoặc thương mại. Vui lòng giữ lại thông tin tác giả và điều khoản bản quyền gốc.
+
+Copyright (c) 2026 **Lê Thế Tuấn**.
 
 ---
 

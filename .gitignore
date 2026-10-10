@@ -1,0 +1,38 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyInstaller
+build/
+dist/
+ITTools/build/
+ITTools/dist/
+*.manifest
+*.spec.bak
+*.pkg
+*.toc
+
+# Archives (phat hanh qua GitHub Releases thay vi commit git)
+*.zip
+*.rar
+*.7z
+
+# Virtual Environment & Logs
+.env
+.venv
+env/
+venv/
+*.log
+*.tmp
+
+# Scratch / Local test artifacts
+ITTools/scratch/
+ITTools/qc
+ITTools/query
+ITTools/wfpstate.xml
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
