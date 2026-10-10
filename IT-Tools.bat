@@ -80,24 +80,24 @@ goto :eof
 echo [OK] Dang dung Python: %PYTHON_EXE%
 echo.
 
-:: Check if pywebview is installed
-"%PYTHON_EXE%" -c "import webview" >nul 2>&1
+:: Check if all required libraries are installed
+"%PYTHON_EXE%" -c "import webview, clr, PIL, psutil, bottle, openpyxl" >nul 2>&1
 if not errorlevel 1 goto :run
 
-:: pywebview not found - install requirements
-echo [!] Chua cai thu vien. Dang tu dong cai dat...
+:: Missing dependencies - auto install
+echo [!] Chua cai day du thu vien. Dang tu dong cai dat tu requirements.txt...
 echo     (Qua trinh nay chi thuc hien 1 lan duy nhat)
 echo.
 "%PYTHON_EXE%" -m pip install --upgrade pip --quiet
 "%PYTHON_EXE%" -m pip install -r requirements.txt --quiet
 
 :: Verify installation
-"%PYTHON_EXE%" -c "import webview" >nul 2>&1
+"%PYTHON_EXE%" -c "import webview, clr, PIL, psutil, bottle, openpyxl" >nul 2>&1
 if errorlevel 1 (
     echo.
     echo [LOI] Cai dat thu vien that bai!
     echo Kiem tra ket noi mang va thu lai, hoac chay lenh thu cong:
-    echo   pip install pywebview pythonnet Pillow psutil
+    echo   pip install -r requirements.txt
     echo.
     pause
     goto :eof

@@ -4,6 +4,9 @@
 # Core GUI framework (PyWebView - renders HTML/JS UI in a native window)
 pywebview>=4.0.0
 
+# Local HTTP server support for PyWebView
+bottle>=0.12.0
+
 # .NET / Windows Forms bindings (required for System Tray icon via CLR)
 pythonnet>=3.0.0
 
@@ -13,6 +16,6 @@ Pillow>=9.0.0
 # Enhanced real-time system monitoring (CPU, RAM, disk, network details)
 psutil>=5.9.0
 
-# Note: All other functionality uses Python standard library only:
-# - winreg, subprocess, socket, threading, queue
-# - ipaddress, os, sys, shutil, json, datetime, ctypes, etc.
+# Excel report export (computer specs & auto shutdown logs)
+openpyxl>=3.0.0
+

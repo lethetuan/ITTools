@@ -19,7 +19,7 @@ datas_clr, binaries_clr, hiddenimports_clr = collect_all("clr_loader")
 datas_pythonnet, binaries_pythonnet, hiddenimports_pythonnet = collect_all("pythonnet")
 datas_psutil, binaries_psutil, hiddenimports_psutil = collect_all("psutil")
 datas_pil, binaries_pil, hiddenimports_pil = collect_all("PIL")
-datas_bottle, binaries_bottle, hiddenimports_bottle = collect_all("bottle")
+datas_openpyxl, binaries_openpyxl, hiddenimports_openpyxl = collect_all("openpyxl")
 
 project_datas = [
     (os.path.join(base_dir, "web"),     "web"),
@@ -36,7 +36,7 @@ all_datas = (
     + datas_pythonnet
     + datas_psutil
     + datas_pil
-    + datas_bottle
+    + datas_openpyxl
 )
 
 all_binaries = (
@@ -45,7 +45,7 @@ all_binaries = (
     + binaries_pythonnet
     + binaries_psutil
     + binaries_pil
-    + binaries_bottle
+    + binaries_openpyxl
 )
 
 all_hiddenimports = list(set(
@@ -54,11 +54,12 @@ all_hiddenimports = list(set(
     + hiddenimports_pythonnet
     + hiddenimports_psutil
     + hiddenimports_pil
-    + hiddenimports_bottle
+    + hiddenimports_openpyxl
     + collect_submodules("webview")
     + collect_submodules("clr_loader")
     + collect_submodules("pythonnet")
     + collect_submodules("PIL")
+    + collect_submodules("openpyxl")
     + [
         # Standard GUI & dialogs
         "tkinter",
@@ -104,9 +105,7 @@ all_hiddenimports = list(set(
         "modules.zoom_screen_gui",
 
         # Windows system APIs and utilities
-        "win32api", "win32con", "win32gui", "win32process",
-        "win32security", "win32service", "win32serviceutil",
-        "win32net", "winerror", "pywintypes", "winreg",
+        "winreg",
         "ctypes", "ctypes.wintypes",
         "subprocess", "threading", "socket", "json", "queue",
         "ipaddress", "shutil", "glob", "tempfile", "hashlib",
@@ -120,6 +119,7 @@ all_hiddenimports = list(set(
         "clr", "clr_loader",
         "webview", "webview.platforms", "webview.platforms.winforms", "webview.platforms.edgechromium",
         "bottle",
+        "openpyxl",
     ]
 ))
 
@@ -136,6 +136,10 @@ a = Analysis(
         "unittest", "test",
         "xmlrpc", "ftplib", "telnetlib", "imaplib", "poplib", "smtplib",
         "curses", "readline", "pdb", "doctest",
+        "webview.platforms.android",
+        "webview.platforms.cocoa",
+        "webview.platforms.gtk",
+        "webview.platforms.qt",
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

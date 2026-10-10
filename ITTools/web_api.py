@@ -280,23 +280,168 @@ class Api:
         return f'"{sys.executable}" "{main_py}"'
 
     # ── PRINTERS MODULE ───────────────────────────────────────────────────
+    def _classify_printer_port(self, port, name, is_offline):
+        """
+        Phân loại cổng máy in thành các nhóm chuẩn (USB, Mạng LAN, Máy in ảo, Chưa cắm cáp, Khác)
+        và trả về nhãn hiển thị trực quan cùng class CSS badge tương ứng.
+        """
+        import re
+        raw_port = (port or "").strip()
+        port_lower = raw_port.lower()
+        name_lower = (name or "").strip().lower()
+
+        # 1. Nhóm Máy in ảo / Xuất file tài liệu (PDF, XPS, Fax, OneNote, Kingsoft...)
+        virtual_keywords = ["portprompt:", "nul:", "file:", "virtual", "pdf", "xps", "fax", "kingsoft", "onenote"]
+        if any(k in port_lower for k in virtual_keywords) or any(k in name_lower for k in ["pdf", "xps", "fax", "onenote", "virtual", "writer"]):
+            if not any(k in port_lower for k in ["usb", "ip_", "wsd-"]) and not port_lower.startswith(r"\\"):
+                return {
+                    "raw_port": raw_port or "Virtual",
+                    "category": "virtual",
+                    "display": "📄 Máy in ảo",
+                    "badge_class": "badge-port-virtual",
+                    "tooltip": f"Máy in ảo xuất file tài liệu ({raw_port or 'System'})"
+                }
+
+        # 2. Nhóm Máy in mạng LAN / Chia sẻ UNC / WSD / IP Address
+        is_network = False
+        display_net = ""
+        if raw_port.startswith(r"\\") or name_lower.startswith(r"\\"):
+            is_network = True
+            target = raw_port if raw_port.startswith(r"\\") else name
+            # Rút gọn đường dẫn chia sẻ dài \\server\printer
+            parts = target.strip("\\").split("\\")
+            if len(parts) >= 2:
+                display_net = f"🌐 Share: \\\\{parts[0]}\\{parts[-1]}"
+            else:
+                display_net = f"🌐 Share: {target}"
+        elif re.search(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b", raw_port):
+            is_network = True
+            ip_match = re.search(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b", raw_port).group(0)
+            display_net = f"🌐 LAN: {ip_match}"
+        elif any(k in port_lower for k in ["wsd", "ip_", "tcpip", "ne0", "lan", "network port"]):
+            is_network = True
+            if "wsd" in port_lower:
+                display_net = "🌐 Cổng WSD (LAN)"
+            elif "ne0" in port_lower:
+                display_net = f"🌐 Cổng Net ({raw_port})"
+            else:
+                display_net = f"🌐 LAN ({raw_port})"
+
+        if is_network:
+            return {
+                "raw_port": raw_port or "Network",
+                "category": "network",
+                "display": display_net,
+                "badge_class": "badge-port-net",
+                "tooltip": f"Kết nối mạng LAN / Network Port ({raw_port})"
+            }
+
+        # 3. Nhóm Máy in USB ngoại tuyến / Chưa cắm cáp / Rút giắc cắm
+        if is_offline and (port_lower in ["", "n/a", "usb/pnp", "pnp device", "ngoại tuyến", "offline", "offline_pnp"]):
+            return {
+                "raw_port": "USB",
+                "category": "unplugged",
+                "display": "🔌 Chưa cắm cáp",
+                "badge_class": "badge-port-unplugged",
+                "tooltip": "Máy in USB chưa cắm cáp hoặc đang tắt nguồn"
+            }
+
+        # 4. Nhóm Cổng USB vật lý đang kết nối (USB001, USB002, DOT4...)
+        if "usb" in port_lower or "dot4" in port_lower:
+            usb_match = re.search(r"USB\d+", raw_port, re.IGNORECASE)
+            if usb_match:
+                display_usb = f"🔌 Cổng {usb_match.group(0).upper()}"
+            elif "dot4" in port_lower:
+                display_usb = "🔌 Cổng DOT4 (USB)"
+            elif is_offline:
+                display_usb = "🔌 USB (Ngoại tuyến)"
+            else:
+                display_usb = "🔌 Cổng USB"
+
+            return {
+                "raw_port": raw_port,
+                "category": "usb",
+                "display": display_usb,
+                "badge_class": "badge-port-usb",
+                "tooltip": f"Cổng kết nối USB ({raw_port})"
+            }
+
+        # 5. Nhóm Cổng nối tiếp / song song (LPT, COM)
+        if any(port_lower.startswith(k) for k in ["lpt", "com"]):
+            return {
+                "raw_port": raw_port,
+                "category": "serial",
+                "display": f"⚡ Cổng {raw_port}",
+                "badge_class": "badge-port-other",
+                "tooltip": f"Cổng máy in LPT / COM: {raw_port}"
+            }
+
+        # 6. Fallback N/A hoặc Cổng nội bộ
+        if raw_port in ["", "N/A", "Offline_PnP", "PnP Device"]:
+            if is_offline:
+                return {
+                    "raw_port": "N/A",
+                    "category": "unplugged",
+                    "display": "🔌 Chưa cắm cáp",
+                    "badge_class": "badge-port-unplugged",
+                    "tooltip": "Máy in ngoại tuyến / chưa kết nối"
+                }
+            return {
+                "raw_port": "N/A",
+                "category": "other",
+                "display": "Cổng nội bộ",
+                "badge_class": "badge-port-other",
+                "tooltip": "Chưa gán cổng hoặc cổng nội bộ của thiết bị"
+            }
+
+        return {
+            "raw_port": raw_port,
+            "category": "other",
+            "display": raw_port,
+            "badge_class": "badge-port-other",
+            "tooltip": raw_port
+        }
+
     def get_printers(self):
-        """Fetches printer list in real-time using Windows Spooler API (winspool.drv), fallback to PowerShell/WMIC."""
-        printers = []
+        """
+        Lấy toàn bộ danh sách máy in trên hệ thống (Spooler Win32, PowerShell Get-Printer / CIM,
+        PnP PrintQueue, Registry HKLM/HKCU/HKU).
+        Lọc sạch các hàng rác SID UWP/AppX nội bộ, xử lý font chữ tiếng Việt chuẩn UTF-8 100%
+        và phân loại cổng trực quan (USB, LAN, Máy in ảo, Chưa cắm cáp).
+        """
+        printers_dict = {}
+        default_printer = ""
 
-        # 1. Native Windows Spooler API (Instant real-time Windows Spooler query)
+        import ctypes
+        from ctypes import wintypes
+        import subprocess
+        import json
+        import winreg
+        import base64
+        import re
+
+        # Hàm lọc bỏ các hàng bí danh nội bộ AppX / SID của Windows 10/11
+        def is_internal_appx_or_sid(name, port):
+            name_str = (name or "").strip()
+            port_str = (port or "").strip().lower()
+            if re.match(r"^S-\d+-\d+", name_str) or name_str.startswith("S-1-"):
+                return True
+            if ":onenote" in name_str.lower() and ("s-1-" in name_str.lower() or "8wekyb3d8bbwe" in name_str.lower()):
+                return True
+            if "microsoft.onenote" in port_str or "8wekyb3d8bbwe" in port_str:
+                return True
+            return False
+
+        # ── 1. Native Windows Spooler API (Real-time in-process query) ──
         try:
-            import ctypes
-            from ctypes import wintypes
-
             winspool = ctypes.windll.LoadLibrary("winspool.drv")
 
-            default_printer = ""
+            # Lấy tên máy in mặc định
             try:
                 def_buf = ctypes.create_unicode_buffer(260)
                 buf_size = wintypes.DWORD(260)
                 if winspool.GetDefaultPrinterW(def_buf, ctypes.byref(buf_size)):
-                    default_printer = def_buf.value
+                    default_printer = def_buf.value.strip()
             except Exception:
                 pass
 
@@ -325,89 +470,244 @@ class Api:
                     ('AveragePPM', wintypes.DWORD),
                 ]
 
-            flags = 0x00000002 | 0x00000004  # PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS
-            needed = wintypes.DWORD(0)
-            returned = wintypes.DWORD(0)
-            winspool.EnumPrintersW(flags, None, 2, None, 0, ctypes.byref(needed), ctypes.byref(returned))
+            for flg in [0x2, 0x4, 0x2 | 0x4]:
+                needed = wintypes.DWORD(0)
+                returned = wintypes.DWORD(0)
+                winspool.EnumPrintersW(flg, None, 2, None, 0, ctypes.byref(needed), ctypes.byref(returned))
+                if needed.value > 0:
+                    buf = ctypes.create_string_buffer(needed.value)
+                    if winspool.EnumPrintersW(flg, None, 2, buf, needed.value, ctypes.byref(needed), ctypes.byref(returned)):
+                        p_info = ctypes.cast(buf, ctypes.POINTER(PRINTER_INFO_2W))
+                        for i in range(returned.value):
+                            p = p_info[i]
+                            name = (p.pPrinterName or "").strip()
+                            port = (p.pPortName or "").strip() or "N/A"
+                            if not name or is_internal_appx_or_sid(name, port):
+                                continue
 
-            if needed.value > 0:
-                buf = ctypes.create_string_buffer(needed.value)
-                if winspool.EnumPrintersW(flags, None, 2, buf, needed.value, ctypes.byref(needed), ctypes.byref(returned)):
-                    p_info = ctypes.cast(buf, ctypes.POINTER(PRINTER_INFO_2W))
-                    for i in range(returned.value):
-                        p = p_info[i]
-                        name = p.pPrinterName or ""
-                        port = p.pPortName or ""
-                        status_code = p.Status
-                        is_default = (name.lower() == default_printer.lower()) if default_printer else False
-                        is_offline = bool(status_code & 0x00000400)  # PRINTER_STATUS_OFFLINE
+                            status_code = p.Status
+                            is_offline = bool(status_code & 0x00000400)
+                            is_def = (name.lower() == default_printer.lower()) if default_printer else False
 
-                        if is_offline:
-                            status_str = "Ngoại tuyến (Offline)"
-                        elif status_code == 0:
-                            status_str = "Sẵn sàng (Ready)"
-                        else:
-                            status_str = "Bình thường"
-
-                        printers.append({
-                            "name": name,
-                            "port": port,
-                            "status": status_str,
-                            "is_default": is_default,
-                            "offline": is_offline
-                        })
+                            printers_dict[name.lower()] = {
+                                "name": name,
+                                "port": port,
+                                "is_default": is_def,
+                                "offline": is_offline
+                            }
         except Exception as ex:
-            self.log("ERROR", f"Lỗi winspool EnumPrintersW: {ex}")
+            self.log("DEBUG", f"Lỗi winspool EnumPrintersW: {ex}")
 
-        # 2. Fallback to PowerShell Get-Printer
-        if not printers:
-            try:
-                ps_cmd = (
-                    "Get-Printer | "
-                    "Select-Object Name, PortName, PrinterStatus, WorkOffline, Default | "
-                    "ConvertTo-Json"
-                )
-                r = subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd],
-                                   capture_output=True, text=True, encoding="utf-8", errors="ignore")
-                if r.stdout.strip():
-                    data = json.loads(r.stdout.strip())
-                    if isinstance(data, dict):
-                        data = [data]
-                    for p in data:
-                        name = p.get("Name", "Unknown")
-                        port = p.get("PortName", "N/A")
-                        offline = p.get("WorkOffline", False)
-                        is_default = p.get("Default", False)
+        # ── 2. PowerShell Multi-Engine Aggregator (Get-Printer + CIM Win32_Printer + Shell PrintersFolder) ──
+        try:
+            ps_code = """
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$results = @()
+$ErrorActionPreference = 'SilentlyContinue'
 
-                        printers.append({
+# 1. Get-Printer (Windows PrintManagement)
+try {
+    Get-Printer | ForEach-Object {
+        $results += [PSCustomObject]@{
+            Name = $_.Name
+            Port = $_.PortName
+            Default = [bool]$_.Default
+            Offline = [bool]$_.WorkOffline
+        }
+    }
+} catch {}
+
+# 2. Win32_Printer (WMI / CIM)
+try {
+    Get-CimInstance Win32_Printer | ForEach-Object {
+        $results += [PSCustomObject]@{
+            Name = $_.Name
+            Port = $_.PortName
+            Default = [bool]$_.Default
+            Offline = [bool]$_.WorkOffline
+        }
+    }
+} catch {}
+
+# 3. Shell PrintersFolder (Khớp 100% với mục Devices and Printers trong Control Panel)
+try {
+    $sh = New-Object -ComObject Shell.Application
+    $f = $sh.Namespace("shell:PrintersFolder")
+    if ($f) {
+        foreach ($item in $f.Items()) {
+            if ($item.Name) {
+                $results += [PSCustomObject]@{
+                    Name = $item.Name
+                    Port = 'N/A'
+                    Default = $false
+                    Offline = $false
+                }
+            }
+        }
+    }
+} catch {}
+
+$results | ConvertTo-Json -Compress
+"""
+            enc = base64.b64encode(ps_code.encode("utf-16le")).decode("ascii")
+            r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", enc],
+                               capture_output=True, timeout=10)
+            out_str = r.stdout.decode("utf-8", errors="replace").strip()
+            if out_str:
+                data = json.loads(out_str)
+                if isinstance(data, dict):
+                    data = [data]
+                for p in data:
+                    name = (p.get("Name") or "").strip()
+                    port_val = (p.get("Port") or "").strip() or "N/A"
+                    if not name or name.lower() == "root print queue" or is_internal_appx_or_sid(name, port_val):
+                        continue
+
+                    key = name.lower()
+                    if " on " in key:
+                        parts = name.split(" on ", 1)
+                        alt_key = f"\\\\{parts[1]}\\{parts[0]}".lower()
+                        if alt_key in printers_dict:
+                            continue
+
+                    is_def = p.get("Default", False) or (name.lower() == default_printer.lower() if default_printer else False)
+                    is_off = bool(p.get("Offline", False))
+
+                    if key not in printers_dict:
+                        printers_dict[key] = {
                             "name": name,
-                            "port": port,
-                            "status": "Ngoại tuyến (Offline)" if offline else "Sẵn sàng (Ready)",
-                            "is_default": is_default,
-                            "offline": offline
-                        })
-            except Exception as ex:
-                self.log("ERROR", f"Lỗi Get-Printer fallback: {ex}")
+                            "port": port_val,
+                            "is_default": is_def,
+                            "offline": is_off
+                        }
+                    else:
+                        if printers_dict[key]["port"] in ["", "N/A", "PnP Device", "USB/PnP", "Offline_PnP"] and port_val not in ["", "N/A", "PnP Device", "USB/PnP", "Offline_PnP"]:
+                            printers_dict[key]["port"] = port_val
+                        if is_def:
+                            printers_dict[key]["is_default"] = True
+                        if is_off and not printers_dict[key].get("offline"):
+                            printers_dict[key]["offline"] = is_off
+        except Exception as ex:
+            self.log("DEBUG", f"Lỗi PowerShell printer scan: {ex}")
 
-        # 3. Last fallback scan via WMIC
-        if not printers:
+        # ── 3. Windows Registry Scan (Chỉ quét Spooler HKLM và Current User HKCU thực tế) ──
+        try:
+            # 3.1 Local Spooler registry (HKLM Print\Printers)
             try:
-                r = subprocess.run("wmic printer get name,portname,default /format:csv",
-                                   shell=True, capture_output=True, text=True, encoding="utf-8", errors="ignore")
-                for line in r.stdout.splitlines():
-                    parts = [p.strip() for p in line.split(",") if p.strip()]
-                    if len(parts) >= 3 and parts[0] != "Node":
-                        printers.append({
-                            "name": parts[1] if len(parts) > 1 else "Printer",
-                            "port": parts[2] if len(parts) > 2 else "Port",
-                            "status": "Sẵn sàng (Ready)",
-                            "is_default": parts[0].lower() == "true",
-                            "offline": False
-                        })
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Print\Printers") as k:
+                    for i in range(winreg.QueryInfoKey(k)[0]):
+                        subk_name = winreg.EnumKey(k, i)
+                        key = subk_name.lower().strip()
+                        port_val = "N/A"
+                        try:
+                            with winreg.OpenKey(k, subk_name) as sk:
+                                port_val, _ = winreg.QueryValueEx(sk, "Port")
+                        except Exception:
+                            pass
+                        if is_internal_appx_or_sid(subk_name, port_val):
+                            continue
+                        if key not in printers_dict:
+                            printers_dict[key] = {
+                                "name": subk_name,
+                                "port": port_val or "N/A",
+                                "is_default": (subk_name.lower() == default_printer.lower()) if default_printer else False,
+                                "offline": False
+                            }
+                        elif printers_dict[key]["port"] in ["", "N/A"] and port_val:
+                            printers_dict[key]["port"] = port_val
             except Exception:
                 pass
 
-        return printers
+            # 3.2 Current User Network Connections (HKCU\Printers\Connections)
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Printers\Connections") as conn_k:
+                    for c_idx in range(winreg.QueryInfoKey(conn_k)[0]):
+                        conn_name = winreg.EnumKey(conn_k, c_idx)
+                        clean_conn = conn_name.lstrip(",")
+                        if "," in clean_conn:
+                            srv, prn = clean_conn.split(",", 1)
+                            full_name = f"\\\\{srv}\\{prn}"
+                        else:
+                            full_name = clean_conn
+                        key = full_name.lower().strip()
+                        if is_internal_appx_or_sid(full_name, "Network Port"):
+                            continue
+                        if key not in printers_dict:
+                            printers_dict[key] = {
+                                "name": full_name,
+                                "port": "Network Port",
+                                "is_default": (full_name.lower() == default_printer.lower()) if default_printer else False,
+                                "offline": False
+                            }
+            except Exception:
+                pass
+
+            # 3.3 Current User Devices (HKCU\Software\Microsoft\Windows NT\CurrentVersion\Devices)
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows NT\CurrentVersion\Devices") as dev_k:
+                    for d_idx in range(winreg.QueryInfoKey(dev_k)[1]):
+                        d_name, d_val, _ = winreg.EnumValue(dev_k, d_idx)
+                        d_name = d_name.strip()
+                        key = d_name.lower()
+                        d_port = d_val.split(",")[-1].strip() if "," in str(d_val) else "N/A"
+                        if is_internal_appx_or_sid(d_name, d_port):
+                            continue
+                        if key not in printers_dict:
+                            printers_dict[key] = {
+                                "name": d_name,
+                                "port": d_port,
+                                "is_default": (d_name.lower() == default_printer.lower()) if default_printer else False,
+                                "offline": True
+                            }
+                        elif printers_dict[key]["port"] in ["", "N/A"] and d_port not in ["", "N/A"]:
+                            printers_dict[key]["port"] = d_port
+            except Exception:
+                pass
+        except Exception as ex:
+            self.log("DEBUG", f"Lỗi Registry printer scan: {ex}")
+
+        # ── 4. Unified Sanitization, Port Classification & Formatting ──
+        cleaned_printers = {}
+        for key, p in printers_dict.items():
+            name = (p.get("name") or "").strip()
+            port = (p.get("port") or "").strip()
+            if not name or name.lower() == "root print queue" or is_internal_appx_or_sid(name, port):
+                continue
+
+            is_offline = bool(p.get("offline", False))
+            is_default = bool(p.get("is_default", False)) or (name.lower() == default_printer.lower() if default_printer else False)
+
+            # Phân loại cổng thông minh
+            port_info = self._classify_printer_port(port, name, is_offline)
+
+            status_str = "Ngoại tuyến (Offline)" if is_offline else "Sẵn sàng (Ready)"
+            status_badge = "badge-pill-offline" if is_offline else "badge-pill-ready"
+
+            cleaned_printers[name.lower()] = {
+                "name": name,
+                "port": port_info["raw_port"],
+                "port_display": port_info["display"],
+                "port_category": port_info["category"],
+                "port_badge_class": port_info["badge_class"],
+                "port_tooltip": port_info["tooltip"],
+                "status": status_str,
+                "status_badge_class": status_badge,
+                "is_default": is_default,
+                "offline": is_offline
+            }
+
+        # Sắp xếp: Máy in mặc định lên đầu -> Máy in sẵn sàng -> Máy in ngoại tuyến
+        printers_list = sorted(
+            list(cleaned_printers.values()),
+            key=lambda x: (
+                not x["is_default"],
+                x["offline"],
+                x["name"].lower()
+            )
+        )
+
+        self.log("SUCCESS", f"Quét hoàn tất: tìm thấy tổng cộng {len(printers_list)} máy in trên hệ thống.")
+        return printers_list
 
 
     def print_test_page(self, printer_name):
@@ -461,7 +761,15 @@ class Api:
             return {"success": False, "message": str(e)}
 
     def delete_printer(self, printer_name):
-        """Deletes one or multiple printers (local and network printers) using PowerShell, WMI, printui.dll, and WMIC."""
+        """
+        Deletes one or multiple printers (both local and network/shared printers) cleanly and reliably.
+        Uses a robust multi-tier pipeline:
+        1. Native winspool API (Cancel print jobs, DeletePrinterConnectionW, DeletePrinter)
+        2. Batch PowerShell execution (Cancel jobs, Remove-Printer, Remove-CimInstance) in 1 invocation
+        3. Silent PrintUI (with /q flag, never shows GUI popups)
+        4. Registry force-cleanup for unreachable/offline network connections (HKCU & HKEY_USERS)
+        5. Spooler refresh to finalize deletion
+        """
         if isinstance(printer_name, list):
             printers = printer_name
         elif isinstance(printer_name, str):
@@ -476,60 +784,201 @@ class Api:
         else:
             printers = [str(printer_name)]
 
+        # Filter out empty or duplicate names
+        printers = list(dict.fromkeys([p.strip() for p in printers if p and p.strip()]))
+
         if not printers:
             return {"success": False, "message": "Không có máy in nào được chọn!"}
 
-        results = []
+        self.log("INFO", f"Bắt đầu quy trình xóa sạch {len(printers)} máy in: {', '.join(printers)}")
+
+        # Step 0: Native Win32 API setup
+        import ctypes
+        from ctypes import wintypes
+        import winreg
+        import base64
+
+        winspool = None
+        try:
+            winspool = ctypes.windll.LoadLibrary("winspool.drv")
+        except Exception as ex:
+            self.log("WARN", f"Không thể tải winspool.drv: {ex}")
+
+        class PRINTER_DEFAULTSW(ctypes.Structure):
+            _fields_ = [
+                ('pDatatype', wintypes.LPWSTR),
+                ('pDevMode', ctypes.c_void_p),
+                ('DesiredAccess', wintypes.DWORD),
+            ]
+
+        # Step 1: Native Win32 Spooler deletion attempt (fastest, in-process, zero popups)
         for pname in printers:
-            self.log("INFO", f"Đang tiến hành xóa máy in: '{pname}'...")
-            pname_escaped = pname.replace("'", "''")
-
-            # 1. PowerShell Remove-Printer (Handles both local & network printers)
+            if not winspool:
+                break
             try:
-                ps_cmd = f'Remove-Printer -Name "{pname}" -ErrorAction SilentlyContinue'
-                subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], capture_output=True, text=True)
+                # If network connection (e.g. \\server\share)
+                if pname.startswith(r"\\"):
+                    if winspool.DeletePrinterConnectionW(ctypes.c_wchar_p(pname)):
+                        self.log("INFO", f"[Win32] Đã xóa network printer connection: {pname}")
+                        continue
+                # Local printer: Open -> Purge Jobs -> DeletePrinter
+                h_printer = wintypes.HANDLE()
+                # 0x00010000 (DELETE) | 0x00000004 (PRINTER_ACCESS_ADMINISTER)
+                defaults = PRINTER_DEFAULTSW(None, None, 0x00010000 | 0x00000004)
+                if winspool.OpenPrinterW(ctypes.c_wchar_p(pname), ctypes.byref(h_printer), ctypes.byref(defaults)):
+                    try:
+                        # PRINTER_CONTROL_PURGE = 3 (Cancel all pending print jobs)
+                        winspool.SetPrinterW(h_printer, 0, None, 3)
+                        if winspool.DeletePrinter(h_printer):
+                            self.log("INFO", f"[Win32] Đã xóa local printer: {pname}")
+                    finally:
+                        winspool.ClosePrinter(h_printer)
             except Exception as ex:
-                self.log("WARN", f"PowerShell Remove-Printer: {ex}")
+                self.log("DEBUG", f"Lỗi Win32 API với '{pname}': {ex}")
 
-            # 2. WMI Delete
-            try:
-                ps_wmi = (
-                    f'$p = Get-WmiObject -Class Win32_Printer | Where-Object {{ $_.Name -eq \'{pname_escaped}\' }}; '
-                    f'if ($p) {{ $p.Delete() }}'
-                )
-                subprocess.run(["powershell", "-NoProfile", "-Command", ps_wmi], capture_output=True, text=True)
-            except Exception as ex:
-                self.log("WARN", f"WMI Delete: {ex}")
+        # Step 2: Batch PowerShell (Purge jobs + Remove-Printer + Remove-CimInstance + PnP remove) in one process
+        try:
+            names_json = json.dumps(printers, ensure_ascii=False)
+            ps_script = f"""
+$ErrorActionPreference = 'SilentlyContinue'
+$names = ConvertFrom-Json @'
+{names_json}
+'@
+foreach ($p in $names) {{
+    # 1. Hủy mọi job in kẹt
+    Get-PrintJob -PrinterName $p 2>$null | Remove-PrintJob 2>$null
+    # 2. Xóa bằng cmdlet Remove-Printer
+    Remove-Printer -Name $p 2>$null
+    # 3. Xóa bằng CIM Win32_Printer
+    $esc = $p.Replace("'", "''")
+    Get-CimInstance -ClassName Win32_Printer -Filter "Name='$esc'" 2>$null | Remove-CimInstance 2>$null
+    # 4. Xóa WMI fallback
+    $wp = Get-WmiObject -Class Win32_Printer -Filter "Name='$esc'" 2>$null
+    if ($wp) {{ $wp.Delete() }}
+    # 5. Xóa PnP device node cho máy in ghost / duplicate USB
+    Get-PnpDevice -Class PrintQueue 2>$null | Where-Object {{ $_.FriendlyName -eq $p }} | ForEach-Object {{
+        & pnputil /remove-device $_.InstanceId /force 2>$null
+    }}
+}}
+"""
+            enc = base64.b64encode(ps_script.encode("utf-16le")).decode("ascii")
+            subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", enc],
+                capture_output=True, text=True, timeout=20
+            )
+        except Exception as ex:
+            self.log("WARN", f"Lỗi batch PowerShell Remove-Printer: {ex}")
 
-            # 3. Printui DLL (/dn for network printer connections, /dl for local printers)
+        # Step 3: Silent PrintUI with /q flag (NEVER show modal dialogs)
+        for pname in printers:
             try:
-                flag = "/dn" if pname.startswith(r"\\") else "/dl"
-                cmd = f'rundll32 printui.dll,PrintUIEntry {flag} /n "{pname}"'
-                subprocess.run(cmd, shell=True, capture_output=True)
-            except Exception as ex:
-                self.log("WARN", f"Printui {flag}: {ex}")
-
-            # 4. WMIC delete fallback
-            try:
-                wmic_cmd = f'wmic printer where "name=\'{pname_escaped}\'" delete'
-                subprocess.run(wmic_cmd, shell=True, capture_output=True)
+                # Try network connection deletion (/dn) with /q (quiet mode)
+                subprocess.run(f'rundll32 printui.dll,PrintUIEntry /q /dn /n "{pname}"', shell=True, capture_output=True)
+                # Try local printer deletion (/dl) with /q (quiet mode)
+                subprocess.run(f'rundll32 printui.dll,PrintUIEntry /q /dl /n "{pname}"', shell=True, capture_output=True)
             except Exception:
                 pass
 
-            results.append(pname)
-            self.log("SUCCESS", f"Đã thực thi xóa máy in: {pname}")
+        # Step 4: Registry Force-Cleanup for offline/unreachable network connections and ghost devices
+        had_reg_cleanup = False
+        for pname in printers:
+            if pname.startswith(r"\\"):
+                server_part, printer_part = pname[2:].split("\\", 1) if "\\" in pname[2:] else (pname[2:], "")
+                expected_sub_end = f",{server_part.lower()},{printer_part.lower()}"
 
-        # Clear spooler queue and restart spooler to force system refresh
+                user_roots = [winreg.HKEY_CURRENT_USER]
+                try:
+                    with winreg.OpenKey(winreg.HKEY_USERS, "") as u_root:
+                        for u_idx in range(winreg.QueryInfoKey(u_root)[0]):
+                            sid = winreg.EnumKey(u_root, u_idx)
+                            if not sid.endswith("_Classes") and len(sid) > 10:
+                                try:
+                                    user_roots.append(winreg.OpenKey(winreg.HKEY_USERS, sid))
+                                except OSError:
+                                    pass
+                except Exception:
+                    pass
+
+                for u_key in user_roots:
+                    try:
+                        # 1. Delete connection subkey under Printers\Connections
+                        with winreg.OpenKey(u_key, r"Printers\Connections", 0, winreg.KEY_ALL_ACCESS) as conn_root:
+                            for c_idx in range(winreg.QueryInfoKey(conn_root)[0] - 1, -1, -1):
+                                subk = winreg.EnumKey(conn_root, c_idx)
+                                if expected_sub_end in subk.lower() or subk.lower().endswith(printer_part.lower()):
+                                    try:
+                                        winreg.DeleteKey(conn_root, subk)
+                                        had_reg_cleanup = True
+                                        self.log("INFO", f"[Registry] Đã xóa key kết nối máy in: {subk}")
+                                    except Exception:
+                                        pass
+                    except Exception:
+                        pass
+
+                    # 2. Delete values from Devices and PrinterPorts
+                    for val_path in [r"Software\Microsoft\Windows NT\CurrentVersion\Devices",
+                                     r"Software\Microsoft\Windows NT\CurrentVersion\PrinterPorts"]:
+                        try:
+                            with winreg.OpenKey(u_key, val_path, 0, winreg.KEY_ALL_ACCESS) as v_k:
+                                for v_idx in range(winreg.QueryInfoKey(v_k)[1] - 1, -1, -1):
+                                    v_name, _, _ = winreg.EnumValue(v_k, v_idx)
+                                    if v_name.lower() == pname.lower():
+                                        try:
+                                            winreg.DeleteValue(v_k, v_name)
+                                            had_reg_cleanup = True
+                                        except Exception:
+                                            pass
+                        except Exception:
+                            pass
+
+        # Clean matching SWD\PRINTENUM device nodes from HKLM for ghost USB printers
         try:
-            spool_dir = r"%SystemRoot%\System32\spool\PRINTERS"
-            subprocess.run("net stop spooler", shell=True, capture_output=True)
-            subprocess.run("taskkill /f /im spoolsv.exe", shell=True, capture_output=True)
-            subprocess.run(f'del /q /f "{spool_dir}\\*.*"', shell=True, capture_output=True)
-            subprocess.run("sc start spooler", shell=True, capture_output=True)
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Enum\SWD\PRINTENUM", 0, winreg.KEY_ALL_ACCESS) as pe_k:
+                for pe_idx in range(winreg.QueryInfoKey(pe_k)[0] - 1, -1, -1):
+                    node = winreg.EnumKey(pe_k, pe_idx)
+                    try:
+                        with winreg.OpenKey(pe_k, node) as sk:
+                            fname, _ = winreg.QueryValueEx(sk, "FriendlyName")
+                            if fname and any(p.lower() == fname.strip().lower() for p in printers):
+                                winreg.DeleteKey(pe_k, node)
+                                had_reg_cleanup = True
+                    except Exception:
+                        pass
         except Exception:
             pass
 
-        return {"success": True, "message": f"Đã xóa thành công máy in: {', '.join(results)}"}
+        # Step 5: If registry was cleaned up or spooler needs refresh
+        if had_reg_cleanup:
+            try:
+                subprocess.run("net stop spooler && net start spooler", shell=True, capture_output=True, timeout=10)
+                self.log("INFO", "Đã khởi động lại Print Spooler để áp dụng dọn dẹp Registry.")
+            except Exception:
+                pass
+
+        # Step 6: Verify results against remaining printers
+        remaining_printers = []
+        try:
+            current_list = self.get_printers()
+            curr_names = [p["name"].lower() for p in current_list]
+            for pname in printers:
+                if pname.lower() in curr_names:
+                    remaining_printers.append(pname)
+        except Exception:
+            pass
+
+        deleted_count = len(printers) - len(remaining_printers)
+        if remaining_printers:
+            self.log("WARN", f"Đã xóa {deleted_count}/{len(printers)} máy in. Còn lại: {', '.join(remaining_printers)}")
+            return {
+                "success": deleted_count > 0,
+                "message": f"Đã xóa thành công {deleted_count}/{len(printers)} máy in.\n(Không thể gỡ bỏ: {', '.join(remaining_printers)} do Windows hoặc trình điều khiển đang khóa)."
+            }
+        else:
+            self.log("SUCCESS", f"Đã xóa sạch thành công toàn bộ {len(printers)} máy in đã chọn!")
+            return {
+                "success": True,
+                "message": f"Đã xóa sạch thành công toàn bộ {len(printers)} máy in khỏi hệ thống!"
+            }
 
     def run_printer_fix_func(self, func_name):
         """Executes any Python fix function from modules.printer_fix using LogBridge."""

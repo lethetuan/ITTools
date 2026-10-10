@@ -18,19 +18,79 @@ Object.assign(AppController.prototype, {
       ];
     }
 
+    try {
+      const kpiTotal = document.getElementById("kpi-total-printers");
+      if (kpiTotal) kpiTotal.innerText = (printers && printers.length) || 0;
+      const kpiPorts = document.getElementById("kpi-active-ports");
+      if (kpiPorts) {
+        const uniquePorts = new Set((printers || []).map(p => p.port).filter(Boolean));
+        kpiPorts.innerText = uniquePorts.size;
+      }
+    } catch (_) {}
+
     if (!printers || printers.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-muted">Không tìm thấy máy in nào.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-muted">Không tìm thấy máy in nào trên hệ thống.</td></tr>`;
+      this.addLog("info", "Hệ thống hiện không có máy in nào được cài đặt.");
       return;
     }
 
     tbody.innerHTML = "";
+
+    const escapeHtml = (str) => {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    };
+
+    const getPortBadgeHtml = (p) => {
+      if (p.port_display) {
+        return `<span class="badge-port-pill ${p.port_badge_class || 'badge-port-other'}" title="${escapeHtml(p.port_tooltip || p.port)}">${p.port_display}</span>`;
+      }
+      const raw = (p.port || '').trim();
+      const isOff = Boolean(p.offline);
+      if (isOff && (!raw || raw === 'N/A' || raw.includes('PnP') || raw.includes('Ngoại'))) {
+        return `<span class="badge-port-pill badge-port-unplugged" title="Máy in USB chưa cắm cáp hoặc đang tắt nguồn">🔌 Chưa cắm cáp</span>`;
+      }
+      if (raw.toUpperCase().includes('USB') || raw.includes('PnP')) {
+        return `<span class="badge-port-pill badge-port-usb" title="${escapeHtml(raw)}">🔌 Cổng ${escapeHtml(raw === 'USB/PnP' ? 'USB' : raw)}</span>`;
+      }
+      if (raw.startsWith('\\\\') || /^\d{1,3}\.\d{1,3}/.test(raw) || raw.includes('WSD') || raw.includes('Ne0')) {
+        return `<span class="badge-port-pill badge-port-net" title="${escapeHtml(raw)}">🌐 LAN (${escapeHtml(raw)})</span>`;
+      }
+      if (raw.includes('PORTPROMPT') || raw.includes('nul:') || raw.includes('FILE') || /pdf|xps|virtual/i.test(p.name)) {
+        return `<span class="badge-port-pill badge-port-virtual" title="${escapeHtml(raw)}">📄 Máy in ảo</span>`;
+      }
+      return `<span class="badge-port-pill badge-port-other" title="${escapeHtml(raw)}">${escapeHtml(raw || 'N/A')}</span>`;
+    };
+
+    const getStatusBadgeHtml = (p) => {
+      const isOff = Boolean(p.offline) || (p.status && (p.status.includes('Ngoại') || p.status.includes('Offline')));
+      if (isOff) {
+        return `<span class="badge-status-pill badge-pill-offline" title="Máy in ngoại tuyến hoặc chưa kết nối"><span class="status-dot dot-red"></span> Ngoại tuyến (Offline)</span>`;
+      }
+      return `<span class="badge-status-pill badge-pill-ready" title="Máy in sẵn sàng in"><span class="status-dot dot-green"></span> Sẵn sàng (Ready)</span>`;
+    };
+
     printers.forEach((p, idx) => {
       const tr = document.createElement("tr");
+      const isDefault = Boolean(p.is_default);
       tr.innerHTML = `
-        <td><input type="checkbox" class="printer-checkbox" value="${p.name.replace(/"/g, '&quot;')}"></td>
-        <td><strong>${p.is_default ? '⭐ ' : ''}${p.name}</strong></td>
-        <td><code>${p.port}</code></td>
-        <td><span class="badge ${p.status.includes('Ready') || p.status.includes('Bình') ? 'text-primary' : 'text-danger'}">${p.status}</span></td>
+        <td style="text-align: center; width: 36px;"><input type="checkbox" class="printer-checkbox" value="${escapeHtml(p.name)}"></td>
+        <td>
+          <div class="printer-name-cell">
+            <span class="printer-icon">🖨️</span>
+            <div class="printer-info-wrap">
+              <span class="printer-name-text">${escapeHtml(p.name)}</span>
+              ${isDefault ? '<span class="badge-default-printer">⭐ Mặc định</span>' : ''}
+            </div>
+          </div>
+        </td>
+        <td>${getPortBadgeHtml(p)}</td>
+        <td>${getStatusBadgeHtml(p)}</td>
       `;
       tr.addEventListener("click", (e) => {
         if (e.target.tagName !== "INPUT") {
@@ -119,20 +179,44 @@ Object.assign(AppController.prototype, {
       return;
     }
     const printerListStr = selected.map(n => `• ${n}`).join("\n");
-    if (confirm(`Bạn CHẮC CHẮN muốn xóa các máy in sau khỏi hệ thống?\n\n${printerListStr}\n\nThao tác này sẽ gỡ bỏ máy in khỏi Windows!`)) {
-      this.addLog("info", `Đang thực hiện xóa ${selected.length} máy in...`);
+    if (!confirm(`Bạn CHẮC CHẮN muốn xóa sạch các máy in sau khỏi hệ thống?\n\n${printerListStr}\n\nThao tác này sẽ gỡ bỏ hoàn toàn máy in khỏi Windows!`)) {
+      return;
+    }
+
+    const btn = document.getElementById("btn-delete-printer");
+    const originalText = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `<span>⏳</span> Đang xóa sạch ${selected.length} máy in... Vui lòng chờ`;
+    }
+
+    this.addLog("info", `Đang thực hiện xóa sạch ${selected.length} máy in...`);
+    try {
       if (window.pywebview && window.pywebview.api) {
         const res = await window.pywebview.api.delete_printer(selected);
         if (res && res.success) {
           this.addLog("success", res.message);
           alert(res.message);
         } else {
-          this.addLog("error", (res && res.message) || "Lỗi xóa máy in");
+          const errMsg = (res && res.message) || "Lỗi trong quá trình xóa máy in!";
+          this.addLog("error", errMsg);
+          alert(errMsg);
         }
-        this.scanPrinters();
       } else {
         alert(`[MOCK] Đã xóa: ${selected.join(", ")}`);
       }
+    } catch (err) {
+      this.addLog("error", `Lỗi gọi API xóa máy in: ${err.message || err}`);
+      alert(`Lỗi: ${err.message || err}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
+      const selectAll = document.getElementById("select-all-printers");
+      if (selectAll) selectAll.checked = false;
+      this.selectedPrinter = null;
+      await this.scanPrinters();
     }
   },
 

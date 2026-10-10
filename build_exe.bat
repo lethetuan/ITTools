@@ -1,6 +1,7 @@
 @echo off
 title IT Tool LTT - Dong goi EXE Standalone
 chcp 65001 >nul
+setlocal enabledelayedexpansion
 set PYTHONUTF8=1
 set PYTHONIOENCODING=utf-8
 
@@ -19,7 +20,7 @@ set PYTHON_EXE=
 py --version >nul 2>&1
 if not errorlevel 1 (
     set PYTHON_EXE=py
-    goto :check_pyinstaller
+    goto :check_dependencies
 )
 
 :: 2. Scan known absolute install paths
@@ -29,14 +30,14 @@ for %%d in (C D E) do (
             "%%d:\Python%%v\python.exe" --version >nul 2>&1
             if not errorlevel 1 (
                 set PYTHON_EXE=%%d:\Python%%v\python.exe
-                goto :check_pyinstaller
+                goto :check_dependencies
             )
         )
         if exist "%%d:\Program Files\Python%%v\python.exe" (
             "%%d:\Program Files\Python%%v\python.exe" --version >nul 2>&1
             if not errorlevel 1 (
                 set PYTHON_EXE=%%d:\Program Files\Python%%v\python.exe
-                goto :check_pyinstaller
+                goto :check_dependencies
             )
         )
     )
@@ -48,7 +49,7 @@ for %%v in (315 314 313 312 311 310 39 38) do (
         "%LOCALAPPDATA%\Programs\Python\Python%%v\python.exe" --version >nul 2>&1
         if not errorlevel 1 (
             set PYTHON_EXE=%LOCALAPPDATA%\Programs\Python\Python%%v\python.exe
-            goto :check_pyinstaller
+            goto :check_dependencies
         )
     )
 )
@@ -60,7 +61,7 @@ for /f "tokens=*" %%i in ('where python 2^>nul') do (
         "%%i" --version >nul 2>&1
         if not errorlevel 1 (
             set PYTHON_EXE=%%i
-            goto :check_pyinstaller
+            goto :check_dependencies
         )
     )
 )
@@ -72,29 +73,72 @@ echo.
 pause
 goto :eof
 
-:: -- 2. Check & Install PyInstaller --
-:check_pyinstaller
+:: -- 2. Kiem tra va Tu dong cai dat toan bo thu vien phu thuoc --
+:check_dependencies
 echo [OK] Dang dung Python: %PYTHON_EXE%
+"%PYTHON_EXE%" --version
 echo.
 
-"%PYTHON_EXE%" -m PyInstaller --version >nul 2>&1
-if not errorlevel 1 goto :clean_and_build
+echo [*] Dang kiem tra cac thu vien bat buoc (pywebview, clr, PIL, psutil, bottle, openpyxl, pyinstaller)...
+"%PYTHON_EXE%" -c "import webview, clr, PIL, psutil, bottle, openpyxl, PyInstaller" >nul 2>&1
+if not errorlevel 1 (
+    echo [OK] Tat ca thu vien can thiet da san sang tren he thong.
+    echo.
+    goto :clean_and_build
+)
 
-echo [!] PyInstaller chua duoc cai dat. Dang tu dong cai dat...
-"%PYTHON_EXE%" -m pip install pyinstaller
-if errorlevel 1 (
-    echo [LOI] Cai dat PyInstaller that bai!
+echo.
+echo [!] Phat hien thieu thu vien can thiet cho qua trinh dong goi!
+echo [*] Dang tu dong tai ve va cai dat tat ca thu vien tu requirements.txt va PyInstaller...
+echo     Qua trinh nay chi chay 1 lan, vui long cho trong giay lat...
+echo.
+
+"%PYTHON_EXE%" -m pip install --upgrade pip
+if not exist "%~dp0ITTools\requirements.txt" (
+    echo [LOI] Khong tim thay file ITTools\requirements.txt!
     pause
     goto :eof
 )
 
+"%PYTHON_EXE%" -m pip install -r "%~dp0ITTools\requirements.txt" pyinstaller
+if errorlevel 1 (
+    echo.
+    echo ============================================================
+    echo [LOI] Cai dat thu vien that bai!
+    echo Vui long kiem tra ket noi Internet va thu lai.
+    echo Lenh thu cong: pip install -r ITTools/requirements.txt pyinstaller
+    echo ============================================================
+    pause
+    goto :eof
+)
+
+:: Xac minh lai cac thu vien sau khi pip install
+"%PYTHON_EXE%" -c "import webview, clr, PIL, psutil, bottle, openpyxl, PyInstaller" >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo ============================================================
+    echo [LOI] Cai dat hoan tat nhung van khong the nap duoc module!
+    echo Vui long kiem tra lai moi truong Python: %PYTHON_EXE%
+    echo ============================================================
+    pause
+    goto :eof
+)
+
+echo.
+echo [OK] Da cai dat va kiem tra thanh cong tat ca cac thu vien!
+echo.
+
+:: -- 3. Don dep thu muc build cu --
 :clean_and_build
 echo [1/3] Don dep thu muc build cu...
 if exist "dist\IT_Tool_LTT.exe" del /f /q "dist\IT_Tool_LTT.exe"
-if exist "build\IT-Tools" rmdir /s /q "build\IT-Tools" 2>nul
+if exist "build" rmdir /s /q "build" 2>nul
+if exist "ITTools\build" rmdir /s /q "ITTools\build" 2>nul
+if exist "ITTools\dist" rmdir /s /q "ITTools\dist" 2>nul
 echo [OK] Da don dep xong.
 echo.
 
+:: -- 4. Dong goi EXE voi PyInstaller --
 echo [2/3] Dang dong goi IT_Tool_LTT.exe (PyInstaller)...
 echo      Qua trinh nay co the mat 1 - 2 phut, vui long cho...
 echo.
@@ -119,8 +163,17 @@ if not exist "dist\IT_Tool_LTT.exe" goto :exe_not_found
 
 echo File EXE da tao tai:
 for %%F in ("dist\IT_Tool_LTT.exe") do (
+    set /a "SIZE_MB=%%~zF / 1048576"
     echo   %%~fF
-    echo   Kich thuoc: %%~zF bytes
+    echo   Kich thuoc: %%~zF bytes (~!SIZE_MB! MB)
+    if !SIZE_MB! LSS 25 (
+        echo.
+        echo [CANH BAO] File EXE nho hon binh thuong (~!SIZE_MB! MB ^< 25 MB)!
+        echo Co the mot so module chua duoc thu thap day du.
+    ) else (
+        echo.
+        echo [OK] File EXE day du module (~!SIZE_MB! MB).
+    )
 )
 echo.
 echo HUONG DAN SU DUNG TREN MAY TINH KHAC:
