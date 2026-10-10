@@ -209,6 +209,118 @@ def run_as_admin():
         print(f"[run_as_admin] Error: {ex}")
         return False
 
+def is_webview2_runtime_installed():
+    """
+    Kiem tra su ton tai cua Microsoft Edge WebView2 Runtime tren Windows.
+    Tra ve True neu da cai dat day du, False neu thieu.
+    """
+    if sys.platform != 'win32':
+        return True
+
+    # 1. Kiem tra truc tiep thong qua co is_chromium cua winforms pywebview
+    try:
+        import webview.platforms.winforms as wf
+        if getattr(wf, 'is_chromium', None) is False:
+            return False
+        if getattr(wf, 'is_chromium', None) is True:
+            return True
+    except Exception:
+        pass
+
+    # 2. Quet cac khoa Windows Registry chinh thuc cua Microsoft Edge WebView2 Runtime
+    try:
+        import winreg
+        guid_keys = [
+            r'{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',  # WebView2 Evergreen Runtime
+            r'{2CD8A007-E189-409D-A2C8-9AF4EF3C72AA}',  # Edge Beta
+            r'{0D50BFEC-CD6A-4F9A-964C-C7416E3ACB10}',  # Edge Dev
+            r'{65C35B14-6C1D-4122-AC46-7148CC9D6497}',  # Edge Canary
+        ]
+        reg_paths = [
+            r'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients',
+            r'SOFTWARE\Microsoft\EdgeUpdate\Clients'
+        ]
+        for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+            for path in reg_paths:
+                for guid in guid_keys:
+                    try:
+                        with winreg.OpenKey(root, f"{path}\\{guid}") as key:
+                            val, _ = winreg.QueryValueEx(key, 'pv')
+                            if val and val.strip() and val != '0.0.0.0' and val != '0':
+                                return True
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+    return False
+
+def handle_missing_webview2():
+    """
+    Thong bao cho nguoi dung khi may thieu Microsoft Edge WebView2 Runtime.
+    Ho tro tu dong tai va chay bo cai dat Evergreen Bootstrapper tu Microsoft,
+    hoac mo trang tai chinh thuc neu khong the tai tu dong.
+    Ngan chan ung dung chay tren Internet Explorer (MSHTML) lam vo giao dien va chet script.
+    """
+    msg = (
+        "PHÁT HIỆN THIẾU THÀNH PHẦN HỆ THỐNG:\n\n"
+        "Máy tính của bạn chưa có 'Microsoft Edge WebView2 Runtime'.\n\n"
+        "Nếu thiếu WebView2, giao diện IT Tool LTT sẽ bị lỗi vỡ khung (bị rơi vào trình duyệt cũ IE11) "
+        "và các tính năng không thể hoạt động.\n\n"
+        "Bạn có muốn tải và cài đặt Microsoft Edge WebView2 ngay bây giờ không?\n\n"
+        "• Bấm 'Yes' (Có): Tự động tải và chạy bộ cài đặt chính thức từ Microsoft.\n"
+        "• Bấm 'No' (Không): Thoát ứng dụng để cài đặt sau."
+    )
+    res = ctypes.windll.user32.MessageBoxW(
+        0,
+        msg,
+        "IT Tool LTT - Yêu cầu Microsoft Edge WebView2",
+        0x34  # MB_YESNO | MB_ICONWARNING
+    )
+    if res == 6:  # IDYES
+        bootstrapper_url = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
+        import tempfile
+        import urllib.request
+        import webbrowser
+
+        installer_path = os.path.join(tempfile.gettempdir(), "MicrosoftEdgeWebview2Setup.exe")
+        downloaded = False
+        try:
+            req = urllib.request.Request(
+                bootstrapper_url,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp, open(installer_path, "wb") as f:
+                f.write(resp.read())
+
+            if os.path.exists(installer_path) and os.path.getsize(installer_path) > 10000:
+                downloaded = True
+                subprocess.Popen([installer_path, "/install"])
+                ctypes.windll.user32.MessageBoxW(
+                    0,
+                    "Bộ cài đặt Microsoft Edge WebView2 đã được kích hoạt!\n\n"
+                    "Vui lòng đợi 1 - 2 phút để Windows hoàn tất cài đặt (yêu cầu có kết nối Internet),\n"
+                    "sau đó khởi động lại IT Tool LTT.",
+                    "IT Tool LTT - Đang cài đặt",
+                    0x40  # MB_ICONINFORMATION
+                )
+        except Exception as ex:
+            print(f"[WebView2] Auto-download failed: {ex}")
+            downloaded = False
+
+        if not downloaded:
+            webbrowser.open("https://developer.microsoft.com/en-us/microsoft-edge/webview2/")
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                "Trình duyệt đã được mở tới trang tải Microsoft Edge WebView2.\n\n"
+                "Vui lòng tải 'Evergreen Bootstrapper' hoặc 'Standalone Installer', "
+                "tiến hành cài đặt rồi mở lại IT Tool LTT.",
+                "IT Tool LTT - Hướng dẫn tải",
+                0x40  # MB_ICONINFORMATION
+            )
+
+    sys.exit(0)
+
 def main():
     # Handle standalone module GUI requests (e.g. --module boot_manager)
     if "--module" in sys.argv:
@@ -255,6 +367,11 @@ def main():
             sys.exit(0)
         # else: user denied UAC or elevation failed — continue running without admin
 
+    # 3. Kiem tra moi truong Microsoft Edge WebView2 Runtime truoc khi mo giao dien Web
+    if not is_webview2_runtime_installed():
+        handle_missing_webview2()
+        return
+
     # Launch PyWebView Modern Desktop Window
     web_index = os.path.join(BASE_DIR, "web", "index.html")
 
@@ -294,7 +411,7 @@ def main():
             print(f"[ZoomScreen] Auto-start hotkeys warning: {ex}")
 
         # Khởi chạy giao diện Web và tự động kích hoạt Tray icon khi Webview sẵn sàng
-        webview.start(tray.start, debug=False)
+        webview.start(tray.start, debug=False, gui='edgechromium')
     except Exception as ex:
         try:
             ctypes.windll.user32.MessageBoxW(
