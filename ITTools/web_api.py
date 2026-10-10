@@ -77,11 +77,13 @@ class LogBridge:
     """Redirects Tkinter text widget logging calls from printer_fix functions to PyWebView API logger."""
     def __init__(self, api_instance):
         self.api = api_instance
+        self.entries = []
 
     def insert(self, index, text, tag="info"):
         text_clean = text.rstrip("\r\n")
         if not text_clean:
             return
+        self.entries.append({"tag": tag, "text": text_clean})
         level_map = {
             "info": "INFO",
             "ok": "SUCCESS",
@@ -715,27 +717,27 @@ $results | ConvertTo-Json -Compress
             cmd = f'rundll32 printui.dll,PrintUIEntry /k /n "{printer_name}"'
             subprocess.Popen(cmd, shell=True)
             self.log("SUCCESS", f"Đã gửi lệnh in trang test đến máy in: {printer_name}")
-            return {"success": True, "message": f"Đã gửi lệnh in trang test đến {printer_name}"}
+            return {"success": True, "message": f"Đã gửi lệnh in trang test đến máy in '{printer_name}'!\nVui lòng kiểm tra khay giấy máy in."}
         except Exception as e:
             self.log("ERROR", f"Không thể in trang test: {e}")
-            return {"success": False, "message": str(e)}
+            return {"success": False, "message": f"Không thể in trang test: {str(e)}"}
 
     def set_default_printer(self, printer_name):
         try:
             cmd = f'rundll32 printui.dll,PrintUIEntry /y /n "{printer_name}"'
             r = subprocess.run(cmd, shell=True, capture_output=True, text=True)
             if r.returncode == 0:
-                self.log("SUCCESS", f"Đã đặt {printer_name} làm máy in mặc định.")
-                return {"success": True, "message": f"Đã đặt {printer_name} làm máy in mặc định"}
+                self.log("SUCCESS", f"Đã đặt '{printer_name}' làm máy in mặc định.")
+                return {"success": True, "message": f"Đã đặt '{printer_name}' làm máy in mặc định thành công!"}
             else:
                 # Try PowerShell fallback
                 ps = f'Set-WmiInstance -Class Win32_Printer -Filter "Name=\'{printer_name}\'" -Argument @{{Default=$true}}'
                 subprocess.run(["powershell", "-NoProfile", "-Command", ps])
-                self.log("SUCCESS", f"Đã đặt {printer_name} làm máy in mặc định (PowerShell).")
-                return {"success": True, "message": f"Đã đặt {printer_name} làm mặc định"}
+                self.log("SUCCESS", f"Đã đặt '{printer_name}' làm máy in mặc định (PowerShell).")
+                return {"success": True, "message": f"Đã đặt '{printer_name}' làm máy in mặc định thành công!"}
         except Exception as e:
             self.log("ERROR", f"Lỗi đặt máy in mặc định: {e}")
-            return {"success": False, "message": str(e)}
+            return {"success": False, "message": f"Lỗi đặt máy in mặc định: {str(e)}"}
 
     def add_local_port(self, port_name):
         try:
@@ -745,9 +747,9 @@ $results | ConvertTo-Json -Compress
             )
             subprocess.run(["powershell", "-NoProfile", "-Command", ps])
             self.log("SUCCESS", f"Đã thêm cổng máy in cục bộ: {port_name}")
-            return {"success": True, "message": f"Đã thêm cổng: {port_name}"}
+            return {"success": True, "message": f"Đã tạo thành công cổng máy in: '{port_name}'!"}
         except Exception as e:
-            return {"success": False, "message": str(e)}
+            return {"success": False, "message": f"Lỗi tạo cổng '{port_name}': {str(e)}"}
 
     def share_printer_lan(self, printer_name, share_name):
         try:
@@ -756,9 +758,9 @@ $results | ConvertTo-Json -Compress
             cmd = f'rundll32 printui.dll,PrintUIEntry /Xs /n "{printer_name}" Shared TRUE ShareName "{share_name}"'
             subprocess.run(cmd, shell=True)
             self.log("SUCCESS", f"Đã chia sẻ máy in '{printer_name}' với tên share: '{share_name}'")
-            return {"success": True, "message": f"Đã chia sẻ máy in {printer_name} => {share_name}"}
+            return {"success": True, "message": f"Đã chia sẻ thành công máy in '{printer_name}' qua mạng LAN với tên share '{share_name}'!"}
         except Exception as e:
-            return {"success": False, "message": str(e)}
+            return {"success": False, "message": f"Lỗi chia sẻ máy in: {str(e)}"}
 
     def delete_printer(self, printer_name):
         """
@@ -981,14 +983,49 @@ foreach ($p in $names) {{
             }
 
     def run_printer_fix_func(self, func_name):
-        """Executes any Python fix function from modules.printer_fix using LogBridge."""
+        """Executes any Python fix function from modules.printer_fix using LogBridge with rich feedback."""
         import modules.printer_fix as pf
         import inspect
         func = getattr(pf, func_name, None)
+
+        friendly_names = {
+            "auto_fix_15_buoc": "Auto Fix 15 Bước Toàn Diện Máy In Mạng",
+            "fix_canon_2900": "Fix Lỗi Giao Tiếp Canon LBP 2900 / 3300",
+            "fix_print_spooler": "Sửa Dịch Vụ Print Spooler",
+            "fix_0x709": "Sửa Lỗi 0x00000709 (Không Set Được Mặc Định)",
+            "reset_printer_ports": "Reset Cổng Máy In TCP/IP",
+            "unlock_share_printer": "Gỡ Khóa Chia Sẻ Máy In Mạng",
+            "set_local_connection": "Cấu Hình LocalConnection (Không Mật Khẩu)",
+            "list_and_remove_canon_drivers": "Kiểm Tra & Xóa Driver Canon Cũ",
+            "reset_usb_monitor": "Reset USB Monitor Canon",
+            "clear_spool_queue": "Dọn Sạch Hàng Đợi In Spooler",
+            "xem_huong_dan": "Xem Hướng Dẫn Fix Máy In Mạng",
+            "open_devmgmt": "Mở Device Manager",
+            "open_printmgmt": "Mở Print Management",
+            "open_printserver": "Mở Print Server Properties",
+        }
+
+        completion_guidance = {
+            "auto_fix_15_buoc": "Đã hoàn tất toàn bộ 15 bước sửa lỗi in mạng LAN (Firewall, RPC, Point&Print, Spooler). Hãy thử kết nối lại máy in mạng!",
+            "fix_canon_2900": "Đã reset dịch vụ Spooler & cổng in Canon. Hãy RÚT CÁP USB MÁY IN RA, CHỜ 5-10 GIÂY RỒI CẮM LẠI để máy in tự nhận diện!",
+            "fix_print_spooler": "Đã sửa quyền dịch vụ, xóa hàng đợi in kẹt và khởi động lại Print Spooler thành công!",
+            "fix_0x709": "Đã cấu hình Legacy Mode & phân quyền Registry cho lỗi 0x00000709 thành công!",
+            "reset_printer_ports": "Đã reset các cổng máy in TCP/IP bất thường và khởi động lại Spooler thành công!",
+            "unlock_share_printer": "Đã gỡ bỏ toàn bộ chính sách khóa chia sẻ máy in mạng LAN (Point & Print / RPC)!",
+            "set_local_connection": "Đã cấu hình truy cập chia sẻ mạng nội bộ không cần mật khẩu (Guest Access) thành công!",
+            "reset_usb_monitor": "Đã xóa USB Monitor Canon. Hãy rút cáp USB máy in và cắm lại vào cổng USB khác!",
+            "clear_spool_queue": "Đã dọn sạch toàn bộ lệnh in kẹt trong hàng đợi Spooler thành công!",
+            "open_devmgmt": "Đã mở trình quản lý thiết bị Device Manager của Windows.",
+            "open_printmgmt": "Đã mở trình quản lý Print Management của Windows.",
+            "open_printserver": "Đã mở Print Server Properties của Windows.",
+        }
+
+        title = friendly_names.get(func_name, func_name)
+
         if not func:
             self.log("ERROR", f"Không tìm thấy chức năng '{func_name}' trong printer_fix.py")
-            return {"success": False, "message": f"Hàm '{func_name}' không tồn tại."}
-        
+            return {"success": False, "title": title, "message": f"Chức năng '{title}' không tồn tại trong hệ thống."}
+
         bridge = LogBridge(self)
         try:
             sig = inspect.signature(func)
@@ -996,11 +1033,24 @@ foreach ($p in $names) {{
                 func(bridge)
             else:
                 func()
-            self.log("SUCCESS", f"Hoàn tất chức năng: {func_name}")
-            return {"success": True, "message": f"Thực thi thành công: {func_name}"}
+
+            guidance = completion_guidance.get(func_name, f"Đã thực thi thành công: {title}")
+            self.log("SUCCESS", f"Hoàn tất chức năng: {title}")
+
+            extracted_text = "\n".join([e["text"] for e in bridge.entries if e["text"].strip()])
+
+            return {
+                "success": True,
+                "func_name": func_name,
+                "title": title,
+                "message": guidance,
+                "guidance": guidance,
+                "details": [e["text"] for e in bridge.entries],
+                "extracted_text": extracted_text
+            }
         except Exception as e:
-            self.log("ERROR", f"Lỗi khi thực thi {func_name}: {e}")
-            return {"success": False, "message": str(e)}
+            self.log("ERROR", f"Lỗi khi thực thi {title}: {e}")
+            return {"success": False, "title": title, "message": f"Lỗi khi thực thi {title}: {str(e)}"}
 
     def fix_printer_error_codes(self, error_codes):
         """Fixes selected printer error codes by dispatching to modules.printer_fix via LogBridge."""
@@ -1048,10 +1098,14 @@ foreach ($p in $names) {{
                     executed.append(f"{code} (RPC Fix)")
 
             self.log("SUCCESS", f"Đã thực hiện xong các mã lỗi: {', '.join(executed)}")
-            return {"success": True, "details": executed}
+            return {
+                "success": True,
+                "details": executed,
+                "message": f"Đã khắc phục thành công {len(executed)} mã lỗi máy in:\n" + "\n".join([f"• {x}" for x in executed])
+            }
         except Exception as e:
             self.log("ERROR", f"Lỗi khi sửa các mã lỗi máy in: {e}")
-            return {"success": False, "message": str(e)}
+            return {"success": False, "message": f"Lỗi khi sửa các mã lỗi máy in: {str(e)}"}
 
     def fix_spooler_services(self):
         return self.run_printer_fix_func("fix_print_spooler")

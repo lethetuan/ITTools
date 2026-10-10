@@ -3,19 +3,38 @@
  */
 Object.assign(AppController.prototype, {
   async scanPrinters() {
+    const scanBtn = document.querySelector('button[onclick*="scanPrinters"]') || (window.event && window.event.target && window.event.target.closest('button'));
+    const oldScanHtml = scanBtn ? scanBtn.innerHTML : "";
+    if (scanBtn) {
+      scanBtn.disabled = true;
+      scanBtn.innerHTML = '<span>⏳</span> Đang quét...';
+    }
+
     this.addLog("info", "Đang quét danh sách máy in hệ thống...");
     const tbody = document.getElementById("printers-list-body");
-    if (!tbody) return;
+    if (!tbody) {
+      if (scanBtn) { scanBtn.disabled = false; scanBtn.innerHTML = oldScanHtml; }
+      return;
+    }
     tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-muted">Đang quét máy in...</td></tr>`;
 
     let printers = [];
-    if (window.pywebview && window.pywebview.api) {
-      printers = await window.pywebview.api.get_printers();
-    } else {
-      printers = [
-        { name: "Microsoft Print to PDF", port: "PORTPROMPT:", status: "Sẵn sàng (Ready)", is_default: true },
-        { name: "\\\\test\\Canon2900", port: "Ne00:", status: "Bình thường", is_default: false }
-      ];
+    try {
+      if (window.pywebview && window.pywebview.api) {
+        printers = await window.pywebview.api.get_printers();
+      } else {
+        printers = [
+          { name: "Microsoft Print to PDF", port: "PORTPROMPT:", status: "Sẵn sàng (Ready)", is_default: true },
+          { name: "\\\\test\\Canon2900", port: "Ne00:", status: "Bình thường", is_default: false }
+        ];
+      }
+    } catch (e) {
+      this.addLog("error", "Lỗi quét máy in: " + (e.message || e));
+    } finally {
+      if (scanBtn) {
+        scanBtn.disabled = false;
+        scanBtn.innerHTML = oldScanHtml || '<span>🔄</span> Quét Loại Máy In';
+      }
     }
 
     try {
@@ -31,6 +50,7 @@ Object.assign(AppController.prototype, {
     if (!printers || printers.length === 0) {
       tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-muted">Không tìm thấy máy in nào trên hệ thống.</td></tr>`;
       this.addLog("info", "Hệ thống hiện không có máy in nào được cài đặt.");
+      this.showToast("info", "Không tìm thấy máy in nào trên hệ thống.");
       return;
     }
 
@@ -122,53 +142,188 @@ Object.assign(AppController.prototype, {
   async printTestPage() {
     const selected = this.getSelectedPrinterName();
     if (!selected) {
+      this.showToast("warning", "Vui lòng chọn 1 máy in trong bảng trước khi in trang test!");
       alert("Vui lòng chọn 1 máy in trong bảng để in trang test!");
       return;
     }
+
+    const btn = (window.event && window.event.target && window.event.target.closest('button')) || document.querySelector('button[onclick*="printTestPage"]');
+    const oldHtml = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳</span> Đang in...';
+    }
+
+    this.showToast("info", `Đang gửi lệnh in trang test đến "${selected}"...`);
     this.addLog("info", `Đang in trang test cho ${selected}...`);
-    if (window.pywebview && window.pywebview.api) {
-      const res = await window.pywebview.api.print_test_page(selected);
-      this.addLog(res.success ? "success" : "error", res.message);
-    } else {
-      alert(`[MOCK] In trang test gửi đến ${selected}`);
+
+    try {
+      if (window.pywebview && window.pywebview.api) {
+        const res = await window.pywebview.api.print_test_page(selected);
+        if (res && res.success) {
+          this.addLog("success", res.message);
+          this.showToast("success", `Đã gửi lệnh in test đến ${selected}!`);
+          alert(`🖨️ ĐÃ GỬI LỆNH IN TRANG TEST THÀNH CÔNG!\n\n• Máy in: ${selected}\n• Trạng thái: Lệnh in đã được gửi đến Windows Spooler.\n\n👉 Vui lòng kiểm tra khay giấy và đèn báo trên máy in!`);
+        } else {
+          const errMsg = (res && res.message) || "Không thể in trang test!";
+          this.addLog("error", errMsg);
+          this.showToast("error", errMsg);
+          alert(`❌ LỖI IN TRANG TEST:\n\n${errMsg}`);
+        }
+      } else {
+        alert(`[MOCK] In trang test gửi đến ${selected}`);
+      }
+    } catch (err) {
+      this.addLog("error", `Lỗi in trang test: ${err.message || err}`);
+      this.showToast("error", `Lỗi: ${err.message || err}`);
+      alert(`❌ Lỗi in trang test: ${err.message || err}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = oldHtml;
+      }
     }
   },
 
   async setDefaultPrinter() {
     const selected = this.getSelectedPrinterName();
     if (!selected) {
-      alert("Vui lòng chọn 1 máy in trong bảng!");
+      this.showToast("warning", "Vui lòng chọn 1 máy in trong bảng để đặt mặc định!");
+      alert("Vui lòng chọn 1 máy in trong bảng để đặt làm máy in mặc định!");
       return;
     }
-    if (window.pywebview && window.pywebview.api) {
-      const res = await window.pywebview.api.set_default_printer(selected);
-      this.addLog(res.success ? "success" : "error", res.message);
-      this.scanPrinters();
-    } else {
-      alert(`[MOCK] Đã đặt ${selected} làm máy in mặc định.`);
+
+    const btn = (window.event && window.event.target && window.event.target.closest('button')) || document.querySelector('button[onclick*="setDefaultPrinter"]');
+    const oldHtml = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳</span> Đang lưu...';
+    }
+
+    this.showToast("info", `Đang đặt "${selected}" làm máy in mặc định...`);
+    this.addLog("info", `Đang đặt "${selected}" làm máy in mặc định...`);
+
+    try {
+      if (window.pywebview && window.pywebview.api) {
+        const res = await window.pywebview.api.set_default_printer(selected);
+        if (res && res.success) {
+          this.addLog("success", res.message);
+          this.showToast("success", `Đã đặt "${selected}" làm máy in mặc định!`);
+          alert(`⭐ ĐÃ ĐẶT MÁY IN MẶC ĐỊNH THÀNH CÔNG!\n\n• Máy in mặc định hiện tại: ${selected}\n\nTất cả các ứng dụng Office, trình duyệt và phần mềm sẽ ưu tiên in qua máy in này.`);
+          await this.scanPrinters();
+        } else {
+          const errMsg = (res && res.message) || "Lỗi đặt máy in mặc định!";
+          this.addLog("error", errMsg);
+          this.showToast("error", errMsg);
+          alert(`❌ LỖI ĐẶT MÁY IN MẶC ĐỊNH:\n\n${errMsg}\n\n💡 Gợi ý: Hãy bấm nút 'Sửa Lỗi Set Mặc Định (0x709)' ở cột bên phải rồi thử lại!`);
+        }
+      } else {
+        alert(`[MOCK] Đã đặt ${selected} làm máy in mặc định.`);
+      }
+    } catch (err) {
+      this.addLog("error", `Lỗi: ${err.message || err}`);
+      this.showToast("error", `Lỗi: ${err.message || err}`);
+      alert(`❌ Lỗi: ${err.message || err}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = oldHtml;
+      }
     }
   },
 
   async addLocalPortPrompt() {
-    const port = prompt("Nhập tên Cổng (Local Port) mới cần thêm (VD: 192.168.1.100 hoặc LocalPort1):");
-    if (!port) return;
-    if (window.pywebview && window.pywebview.api) {
-      const res = await window.pywebview.api.add_local_port(port);
-      this.addLog(res.success ? "success" : "error", res.message);
+    const port = prompt("Nhập tên Cổng (Local Port) mới cần thêm:\n(Ví dụ: 192.168.1.100 hoặc LocalPort1 hoặc IP máy chủ in):");
+    if (!port || !port.trim()) return;
+    const cleanPort = port.trim();
+
+    const btn = (window.event && window.event.target && window.event.target.closest('button')) || document.querySelector('button[onclick*="addLocalPortPrompt"]');
+    const oldHtml = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳</span> Đang tạo...';
+    }
+
+    this.showToast("info", `Đang tạo cổng Local Port "${cleanPort}"...`);
+    this.addLog("info", `Đang tạo cổng Local Port: ${cleanPort}...`);
+
+    try {
+      if (window.pywebview && window.pywebview.api) {
+        const res = await window.pywebview.api.add_local_port(cleanPort);
+        if (res && res.success) {
+          this.addLog("success", res.message);
+          this.showToast("success", `Đã tạo cổng "${cleanPort}" thành công!`);
+          alert(`➕ ĐÃ TẠO CỔNG LOCAL PORT THÀNH CÔNG!\n\n• Tên cổng: ${cleanPort}\n\n👉 Bạn có thể vào Printer Properties > tab Ports để gán cổng này cho máy in.`);
+          await this.scanPrinters();
+        } else {
+          const errMsg = (res && res.message) || "Lỗi khi tạo cổng máy in!";
+          this.addLog("error", errMsg);
+          this.showToast("error", errMsg);
+          alert(`❌ LỖI TẠO CỔNG MÁY IN:\n\n${errMsg}`);
+        }
+      } else {
+        alert(`[MOCK] Đã thêm cổng: ${cleanPort}`);
+      }
+    } catch (err) {
+      this.addLog("error", `Lỗi: ${err.message || err}`);
+      this.showToast("error", `Lỗi: ${err.message || err}`);
+      alert(`❌ Lỗi: ${err.message || err}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = oldHtml;
+      }
     }
   },
 
   async sharePrinterPrompt() {
     const selected = this.getSelectedPrinterName();
     if (!selected) {
-      alert("Vui lòng chọn 1 máy in trong bảng để chia sẻ!");
+      this.showToast("warning", "Vui lòng chọn 1 máy in trong bảng để chia sẻ!");
+      alert("Vui lòng chọn 1 máy in trong bảng để chia sẻ qua mạng LAN!");
       return;
     }
-    const shareName = prompt(`Nhập Tên Chia Sẻ (Share Name) cho máy in ${selected}:`, "PrinterShare");
+    const defaultShare = ("".concat(selected).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 12)) || "PrinterShare";
+    const shareName = prompt(`Nhập Tên Chia Sẻ (Share Name) cho máy in "${selected}":\n(Viết liền không dấu, VD: Canon2900 hoặc MayInA4)`, defaultShare);
     if (shareName === null) return;
-    if (window.pywebview && window.pywebview.api) {
-      const res = await window.pywebview.api.share_printer_lan(selected, shareName);
-      this.addLog(res.success ? "success" : "error", res.message);
+    const cleanShareName = shareName.trim() || defaultShare;
+
+    const btn = (window.event && window.event.target && window.event.target.closest('button')) || document.querySelector('button[onclick*="sharePrinterPrompt"]');
+    const oldHtml = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳</span> Đang share...';
+    }
+
+    this.showToast("info", `Đang bật chia sẻ mạng LAN cho "${selected}"...`);
+    this.addLog("info", `Đang chia sẻ máy in "${selected}" với tên "${cleanShareName}"...`);
+
+    try {
+      if (window.pywebview && window.pywebview.api) {
+        const res = await window.pywebview.api.share_printer_lan(selected, cleanShareName);
+        if (res && res.success) {
+          this.addLog("success", res.message);
+          this.showToast("success", `Đã bật chia sẻ máy in "${selected}"!`);
+          alert(`🚀 ĐÃ BẬT CHIA SẺ MÁY IN MẠNG LAN THÀNH CÔNG!\n\n• Máy in: ${selected}\n• Tên chia sẻ (Share Name): ${cleanShareName}\n\n👉 Các máy trạm trong cùng mạng LAN hiện đã có thể tìm và kết nối tới máy in này.`);
+          await this.scanPrinters();
+        } else {
+          const errMsg = (res && res.message) || "Lỗi bật chia sẻ máy in!";
+          this.addLog("error", errMsg);
+          this.showToast("error", errMsg);
+          alert(`❌ LỖI CHIA SẺ MÁY IN:\n\n${errMsg}`);
+        }
+      } else {
+        alert(`[MOCK] Đã chia sẻ ${selected} => ${cleanShareName}`);
+      }
+    } catch (err) {
+      this.addLog("error", `Lỗi: ${err.message || err}`);
+      this.showToast("error", `Lỗi: ${err.message || err}`);
+      alert(`❌ Lỗi: ${err.message || err}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = oldHtml;
+      }
     }
   },
 
@@ -234,16 +389,102 @@ Object.assign(AppController.prototype, {
   },
 
   async runPrinterFixFunc(funcName) {
-    this.addLog("info", `Đang thực thi chức năng: ${funcName}...`);
-    if (window.pywebview && window.pywebview.api) {
-      const res = await window.pywebview.api.run_printer_fix_func(funcName);
-      if (res && res.success) {
-        this.addLog("success", res.message || `Đã thực thi thành công: ${funcName}`);
+    const titles = {
+      "auto_fix_15_buoc": "Auto Fix 15 Bước Toàn Diện",
+      "fix_canon_2900": "Fix Canon 2900 / 3300 Full Reset",
+      "fix_print_spooler": "Fix Print Spooler Service",
+      "fix_0x709": "Sửa Lỗi Set Mặc Định (0x709)",
+      "reset_printer_ports": "Reset PrinterPorts (TCP/IP)",
+      "unlock_share_printer": "Unlock Share Printer (Point & Print)",
+      "set_local_connection": "Set LocalConnection (Không Mật Khẩu)",
+      "list_and_remove_canon_drivers": "Kiểm Tra & Xóa Driver Canon Cũ",
+      "reset_usb_monitor": "Reset USB Monitor Canon",
+      "clear_spool_queue": "Dọn Sạch Hàng Đợi In",
+      "xem_huong_dan": "Hướng Dẫn Fix Máy In Mạng",
+      "open_devmgmt": "Mở Device Manager",
+      "open_printmgmt": "Mở Print Management",
+      "open_printserver": "Mở Print Server Properties"
+    };
+
+    const actionTitle = titles[funcName] || funcName;
+
+    let btn = null;
+    if (window.event && window.event.target) {
+      btn = window.event.target.closest('button');
+    }
+    if (!btn) {
+      btn = document.querySelector(`button[onclick*="'${funcName}'"]`);
+    }
+
+    const oldHtml = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳</span> Đang thực hiện...';
+    }
+
+    this.showToast("info", `Đang thực hiện: ${actionTitle}...`);
+    this.addLog("info", `Bắt đầu thực thi: ${actionTitle}...`);
+
+    try {
+      if (window.pywebview && window.pywebview.api) {
+        const res = await window.pywebview.api.run_printer_fix_func(funcName);
+        if (res && res.success) {
+          const finishMsg = res.guidance || res.message || `Đã thực thi thành công: ${actionTitle}`;
+          this.addLog("success", finishMsg);
+          this.showToast("success", `Hoàn tất: ${actionTitle}!`);
+
+          if (funcName === "xem_huong_dan") {
+            const guideText = res.extracted_text || res.message || "Không có nội dung hướng dẫn.";
+            alert(`📖 HƯỚNG DẪN FIX MÁY IN MẠNG LAN CHI TIẾT:\n\n${guideText}`);
+          } else if (funcName === "auto_fix_15_buoc") {
+            alert(`🎉 AUTO FIX 15 BƯỚC HOÀN TẤT TOÀN DIỆN!\n\nĐã cấu hình tự động 15 bước hệ thống:\n• Mở Firewall port in ấn (445, 139, 135)\n• Thiết lập RpcAuthnLevelPrivacyEnabled = 0 & Named Pipes\n• Gỡ bỏ hạn chế Point & Print Restrictions\n• Khôi phục dịch vụ Spooler & Network Discovery\n\n👉 Bạn hãy thử kết nối lại máy in qua mạng LAN ngay bây giờ!`);
+            await this.scanPrinters();
+          } else if (funcName === "fix_canon_2900") {
+            alert(`✅ FIX CANON 2900 / 3300 HOÀN TẤT!\n\nĐã reset Spooler, USB Monitor và dọn sạch hàng đợi in.\n\n⚠️ BƯỚC TIẾP THEO BẮT BUỘC:\n1. RÚT CÁP USB MÁY IN RA KHỎI MÁY TÍNH\n2. Chờ 5 - 10 giây\n3. CẮM LẠI CÁP USB vào cổng USB khác\n\nWindows sẽ tự động nhận diện lại máy in và có thể in bình thường.`);
+            await this.scanPrinters();
+          } else if (funcName === "clear_spool_queue") {
+            alert(`🧹 ĐÃ DỌN SẠCH HÀNG ĐỢI IN (SPOOL QUEUE)!\n\nToàn bộ các lệnh in bị kẹt, treo Spooler đã được xóa sạch.\nDịch vụ in ấn đã khởi động lại sẵn sàng.`);
+            await this.scanPrinters();
+          } else if (funcName === "fix_print_spooler") {
+            alert(`⚡ ĐÃ SỬA PRINT SPOOLER SERVICE!\n\nĐã phân quyền bảo mật dịch vụ, dọn dẹp hàng đợi và khởi động lại dịch vụ Print Spooler thành công.`);
+            await this.scanPrinters();
+          } else if (funcName === "reset_printer_ports") {
+            alert(`🔌 ĐÃ RESET CỔNG MÁY IN (TCP/IP)!\n\nĐã dọn dẹp các cổng in mạng bị lỗi và khởi động lại dịch vụ in ấn.`);
+            await this.scanPrinters();
+          } else if (funcName === "unlock_share_printer") {
+            alert(`🔓 ĐÃ GỠ BỎ KHÓA CHIA SẺ MÁY IN!\n\nĐã cập nhật chính sách Point & Print và RPC không giới hạn.\nCác máy con trong mạng LAN hiện có thể cài driver từ máy chủ.`);
+          } else if (funcName === "set_local_connection") {
+            alert(`🔗 ĐÃ CẤU HÌNH LOCAL CONNECTION (NO PASS)!\n\nĐã kích hoạt chế độ Insecure Guest Auth cho chia sẻ mạng nội bộ.`);
+          } else if (funcName === "reset_usb_monitor") {
+            alert(`🔄 ĐÃ RESET USB MONITOR CANON!\n\nĐã xóa tiến trình giám sát USB bị lỗi.\n👉 Hãy rút cáp USB máy in ra và cắm lại vào cổng USB khác.`);
+            await this.scanPrinters();
+          } else if (funcName === "list_and_remove_canon_drivers") {
+            const driverInfo = res.extracted_text || res.message;
+            alert(`🗑️ KIỂM TRA DRIVER CANON CŨ:\n\n${driverInfo}`);
+            await this.scanPrinters();
+          } else if (funcName.startsWith("open_")) {
+            this.showToast("success", `Đã mở tiện ích: ${actionTitle}`);
+          } else {
+            alert(`✅ ${actionTitle.toUpperCase()} HOÀN TẤT!\n\n${finishMsg}`);
+          }
+        } else {
+          const errMsg = (res && res.message) || `Lỗi khi thực thi: ${actionTitle}`;
+          this.addLog("error", errMsg);
+          this.showToast("error", errMsg);
+          alert(`❌ LỖI KHI THỰC THI ${actionTitle.toUpperCase()}:\n\n${errMsg}`);
+        }
       } else {
-        this.addLog("error", (res && res.message) || `Lỗi khi thực thi: ${funcName}`);
+        alert(`[MOCK] Thực thi chức năng ${actionTitle}`);
       }
-    } else {
-      alert(`[MOCK] Thực thi chức năng ${funcName}`);
+    } catch (err) {
+      this.addLog("error", `Lỗi thực thi ${actionTitle}: ${err.message || err}`);
+      this.showToast("error", `Lỗi: ${err.message || err}`);
+      alert(`❌ Lỗi thực thi ${actionTitle}:\n\n${err.message || err}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = oldHtml;
+      }
     }
   },
 
@@ -251,54 +492,66 @@ Object.assign(AppController.prototype, {
     const checkboxes = document.querySelectorAll(".error-checkbox:checked");
     const codes = Array.from(checkboxes).map(c => c.value);
     if (codes.length === 0) {
-      alert("Vui lòng tích chọn ít nhất 1 mã lỗi ở bảng trên!");
+      this.showToast("warning", "Vui lòng tích chọn ít nhất 1 mã lỗi ở bảng trên!");
+      alert("⚠️ Vui lòng tích chọn ít nhất 1 mã lỗi ở bảng 'Khắc Phục Mã Lỗi & Tiện Ích Sửa Máy In LAN' trước khi bấm sửa!");
       return;
     }
+
+    const btn = (window.event && window.event.target && window.event.target.closest('button')) || document.querySelector('button[onclick*="fixSelectedErrors"]');
+    const oldHtml = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `<span>⏳</span> Đang sửa ${codes.length} mã lỗi...`;
+    }
+
+    this.showToast("info", `Đang sửa ${codes.length} mã lỗi máy in đã chọn...`);
     this.addLog("info", `Đang sửa các mã lỗi: ${codes.join(", ")}...`);
-    if (window.pywebview && window.pywebview.api) {
-      const res = await window.pywebview.api.fix_printer_error_codes(codes);
-      if (res.success) {
-        this.addLog("success", `Hoàn tất sửa lỗi: ${(res.details || []).join(" | ")}`);
-        alert("Đã sửa các mã lỗi máy in thành công!");
+
+    try {
+      if (window.pywebview && window.pywebview.api) {
+        const res = await window.pywebview.api.fix_printer_error_codes(codes);
+        if (res && res.success) {
+          const detailsList = res.details || codes;
+          this.addLog("success", `Hoàn tất sửa lỗi: ${detailsList.join(" | ")}`);
+          this.showToast("success", `Đã sửa thành công ${detailsList.length} mã lỗi!`);
+          alert(`🔧 ĐÃ KHẮC PHỤC THÀNH CÔNG CÁC MÃ LỖI ĐÃ CHỌN!\n\nDanh sách mã lỗi / cấu hình đã áp dụng:\n${detailsList.map(c => `• ${c}`).join("\n")}\n\n👉 Spooler và Registry mạng LAN đã được đồng bộ tối ưu.`);
+          checkboxes.forEach(c => c.checked = false);
+          await this.scanPrinters();
+        } else {
+          const errMsg = (res && res.message) || "Lỗi khi sửa các mã lỗi!";
+          this.addLog("error", errMsg);
+          this.showToast("error", errMsg);
+          alert(`❌ LỖI SỬA MÃ LỖI MÁY IN:\n\n${errMsg}`);
+        }
       } else {
-        this.addLog("error", res.message);
+        alert(`[MOCK] Sửa các lỗi: ${codes.join(", ")}`);
       }
-    } else {
-      alert(`[MOCK] Sửa các lỗi: ${codes.join(", ")}`);
+    } catch (err) {
+      this.addLog("error", `Lỗi: ${err.message || err}`);
+      this.showToast("error", `Lỗi: ${err.message || err}`);
+      alert(`❌ Lỗi: ${err.message || err}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = oldHtml;
+      }
     }
   },
 
   async fixSpoolerServices() {
-    this.addLog("info", "Đang Fix Print Spooler Service...");
-    if (window.pywebview && window.pywebview.api) {
-      const res = await window.pywebview.api.fix_spooler_services();
-      this.addLog(res.success ? "success" : "error", res.message);
-    }
+    return this.runPrinterFixFunc("fix_print_spooler");
   },
 
   async installPrintToPdf() {
-    this.addLog("info", "Đang cài đặt Microsoft Print to PDF...");
-    if (window.pywebview && window.pywebview.api) {
-      const res = await window.pywebview.api.install_print_to_pdf();
-      this.addLog(res.success ? "success" : "error", res.message);
-    }
+    return this.runPrinterFixFunc("fix_0x3eb");
   },
 
   async fixCanon2900() {
-    this.addLog("info", "Đang Fix Canon LBP 2900/3300 Communication Error...");
-    if (window.pywebview && window.pywebview.api) {
-      const res = await window.pywebview.api.fix_canon_2900();
-      this.addLog(res.success ? "success" : "error", res.message);
-      alert(res.message);
-    }
+    return this.runPrinterFixFunc("fix_canon_2900");
   },
 
   async fixDefaultPrinter() {
-    this.addLog("info", "Đang sửa lỗi Set Default Printer (0x00000709)...");
-    if (window.pywebview && window.pywebview.api) {
-      const res = await window.pywebview.api.fix_printer_error_codes(["0x00000709"]);
-      this.addLog(res.success ? "success" : "error", "Đã fix lỗi Set Default Printer 0x709");
-    }
+    return this.runPrinterFixFunc("fix_0x709");
   },
 
   openOneClickFixPrinterModal() {
@@ -387,6 +640,7 @@ Object.assign(AppController.prototype, {
         if (status.completed) {
           clearInterval(this._pfPollingTimer);
           this._pfPollingTimer = null;
+          this.showToast("success", "🎉 One Click Fix Tất Cả Lỗi Máy In Mạng LAN đã hoàn tất!");
           if (typeof this.scanPrinters === 'function') {
             this.scanPrinters();
           }
@@ -1007,11 +1261,41 @@ Object.assign(AppController.prototype, {
   },
 
   async fixDataSharing() {
+    const btn = (window.event && window.event.target && window.event.target.closest('button')) || document.querySelector('button[onclick*="fixDataSharing"]');
+    const oldHtml = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `<span>⏳</span> Đang cấu hình...`;
+    }
+
+    this.showToast("info", "Đang cấu hình Fix chia sẻ dữ liệu & mạng LAN...");
     this.addLog("info", "Đang Fix Chia Sẻ Dữ Liệu & Mạng LAN...");
-    if (window.pywebview && window.pywebview.api) {
-      const res = await window.pywebview.api.fix_data_sharing();
-      this.addLog(res.success ? "success" : "error", res.message);
-      alert(res.message);
+
+    try {
+      if (window.pywebview && window.pywebview.api) {
+        const res = await window.pywebview.api.fix_data_sharing();
+        if (res && res.success) {
+          this.addLog("success", res.message);
+          this.showToast("success", "Đã cấu hình Fix chia sẻ dữ liệu & mạng LAN!");
+          alert(`🌐 ĐÃ FIX CHIA SẺ DỮ LIỆU & MẠNG LAN THÀNH CÔNG!\n\n• Đã mở Windows Firewall cho File & Printer Sharing và Network Discovery\n• Đã kích hoạt các dịch vụ mạng: LanmanServer, LanmanWorkstation, fdPHost, FDResPub\n• Đã cấp quyền truy cập Insecure Guest Auth cho mạng nội bộ.\n\n👉 Bạn có thể truy cập chia sẻ qua đường dẫn \\\\IP_May_Chu ngay bây giờ.`);
+        } else {
+          const errMsg = (res && res.message) || "Lỗi khi cấu hình chia sẻ dữ liệu!";
+          this.addLog("error", errMsg);
+          this.showToast("error", errMsg);
+          alert(`❌ Lỗi: ${errMsg}`);
+        }
+      } else {
+        alert("[MOCK] Đã cấu hình Fix chia sẻ dữ liệu!");
+      }
+    } catch (err) {
+      this.addLog("error", `Lỗi: ${err.message || err}`);
+      this.showToast("error", `Lỗi: ${err.message || err}`);
+      alert(`❌ Lỗi: ${err.message || err}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = oldHtml;
+      }
     }
   }
 });
