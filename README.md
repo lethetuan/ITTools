@@ -530,9 +530,7 @@ ITTools\
 
 ## 📄 GIẤY PHÉP BẢN QUYỀN (LICENSE)
 
-Dự án này được phân phối dưới giấy phép **[MIT License](LICENSE)**. Bạn được toàn quyền sử dụng, sửa đổi, phân phối cho mục đích cá nhân hoặc thương mại. Vui lòng giữ lại thông tin tác giả và điều khoản bản quyền gốc.
-
-Copyright (c) 2026 **Lê Thế Tuấn**.
+Dự án này được phân phối dưới giấy phép **[MIT License](LICENSE)**. Bạn được toàn quyền sử dụng, sửa đổi, phân phối cho mục đích cá nhân.
 
 ---
 
