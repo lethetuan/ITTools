@@ -1325,9 +1325,13 @@ Object.assign(AppController.prototype, {
       btnCancel.disabled = false; // Always allow user to cancel or close
     }
     if (btnSkip) {
-      btnSkip.style.display = "inline-flex";
-      btnSkip.disabled = false;
-      btnSkip.innerHTML = "<span>⏭️</span> Đã Gỡ Xong - Quét Sạch Ngay";
+      if (appItem.is_store) {
+        btnSkip.style.display = "none";
+      } else {
+        btnSkip.style.display = "inline-flex";
+        btnSkip.disabled = false;
+        btnSkip.innerHTML = "<span>⏭️</span> Đã Gỡ Xong - Quét Sạch Ngay";
+      }
     }
 
     const step1Badge = document.getElementById("wiz-step-1-badge");
@@ -1335,11 +1339,13 @@ Object.assign(AppController.prototype, {
     if (step1Status) {
       step1Status.style.background = "#fef3c7";
       step1Status.style.color = "#d97706";
-      step1Status.innerText = "⚡ Đang chạy Uninstaller...";
+      step1Status.innerText = appItem.is_store ? "⚡ Đang gỡ Store App..." : "⚡ Đang chạy Uninstaller...";
     }
     if (summaryMsg) {
       summaryMsg.style.color = "#d97706";
-      summaryMsg.innerText = "Đang mở trình gỡ cài đặt gốc... Hãy hoàn tất cửa sổ gỡ cài đặt nếu nó hiện ra. Bấm nút 'Đã Gỡ Xong - Quét Sạch Ngay' nếu trình gỡ đã đóng.";
+      summaryMsg.innerText = appItem.is_store
+        ? "Đang gỡ bỏ gói Windows Store qua PowerShell Deployment API..."
+        : "Đang mở trình gỡ cài đặt gốc... Hãy hoàn tất cửa sổ gỡ cài đặt nếu nó hiện ra. Bấm nút 'Đã Gỡ Xong - Quét Sạch Ngay' nếu trình gỡ đã đóng.";
     }
 
     this.addLog("info", `Bắt đầu gỡ cài đặt 3 bước cho '${appItem.display_name}'...`);
@@ -1352,11 +1358,12 @@ Object.assign(AppController.prototype, {
           appItem.uninstall_cmd,
           appItem.install_location,
           appItem.reg_key_name,
-          appItem.is_store
+          appItem.is_store,
+          appItem.package_full_name || ""
         );
       } catch (err) {
         console.error("Lỗi run_deep_clean_uninstall:", err);
-        res = { success: false, step1_success: false, step1_msg: err.message, registry_cleaned: [], folders_cleaned: [] };
+        res = { success: false, step1_success: false, step1_msg: err.message, summary: err.message, registry_cleaned: [], folders_cleaned: [] };
       }
     } else {
       await new Promise(r => setTimeout(r, 1500));
@@ -1373,14 +1380,14 @@ Object.assign(AppController.prototype, {
     // ── STEP 1 STATUS ─────────────────────────────────────────────────────
     const step1Success = res && res.step1_success === true;
     if (step1Badge) {
-      step1Badge.style.background = step1Success ? "#10b981" : "#f59e0b";
-      step1Badge.innerText = step1Success ? "✓" : "⚠";
+      step1Badge.style.background = step1Success ? "#10b981" : "#ef4444";
+      step1Badge.innerText = step1Success ? "✓" : "✕";
     }
     if (step1Status) {
       if (step1Success) {
         step1Status.style.background = "#dcfce7"; step1Status.style.color = "#15803d"; step1Status.innerText = "Đã gỡ xong!";
       } else {
-        step1Status.style.background = "#fef3c7"; step1Status.style.color = "#d97706"; step1Status.innerText = "⚠ Chưa gỡ hoàn toàn";
+        step1Status.style.background = "#fee2e2"; step1Status.style.color = "#b91c1c"; step1Status.innerText = "❌ Gỡ thất bại";
       }
     }
 
@@ -1432,12 +1439,12 @@ Object.assign(AppController.prototype, {
         summaryMsg.style.color = "#15803d";
         summaryMsg.style.background = "#dcfce7";
         summaryMsg.style.border = "1px solid #bbf7d0";
-        summaryMsg.innerText = `🎉 Hoàn tất gỡ sạch 100%! Đã xóa triệt để phần mềm, ${regCount} Registry keys và ${folderCount} Thư mục rác.`;
+        summaryMsg.innerText = res.summary || `🎉 Hoàn tất gỡ sạch 100%! Đã xóa triệt để phần mềm, ${regCount} Registry keys và ${folderCount} Thư mục rác.`;
       } else {
-        summaryMsg.style.color = "#b45309";
-        summaryMsg.style.background = "#fffbeb";
-        summaryMsg.style.border = "1px solid #fde68a";
-        summaryMsg.innerText = `⚠️ Phần mềm có thể chưa được gỡ hoàn toàn. Đã dọn ${regCount} Registry keys & ${folderCount} Thư mục rác phụ.`;
+        summaryMsg.style.color = "#b91c1c";
+        summaryMsg.style.background = "#fef2f2";
+        summaryMsg.style.border = "1px solid #fecaca";
+        summaryMsg.innerText = res.summary || (res.step1_msg ? `⚠️ ${res.step1_msg}` : `⚠️ Phần mềm có thể chưa được gỡ hoàn toàn. Đã dọn ${regCount} Registry keys & ${folderCount} Thư mục rác phụ.`);
       }
     }
 

@@ -11,9 +11,13 @@ import subprocess
 import sys
 import re
 import time
+import base64
+import glob
+import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from modules.startup_manager import extract_file_icon_base64, extract_exe_path
+
 
 
 _start_menu_shortcuts_cache = None
@@ -193,39 +197,305 @@ def get_installed_apps():
     return sorted(apps, key=lambda x: x['display_name'].lower())
 
 
+def get_store_app_icon_b64(install_location):
+    """Extracts a high-res PNG icon from a Windows Store App directory."""
+    if not install_location or not os.path.exists(install_location):
+        return ""
+    patterns = [
+        os.path.join(install_location, "Assets", "*Square44x44Logo*.png"),
+        os.path.join(install_location, "Assets", "*Square150x150Logo*.png"),
+        os.path.join(install_location, "Assets", "*storelogo*.png"),
+        os.path.join(install_location, "Assets", "*Logo*.png"),
+        os.path.join(install_location, "images", "*logo*.png"),
+        os.path.join(install_location, "*logo*.png"),
+    ]
+    for pattern in patterns:
+        matches = glob.glob(pattern)
+        if matches:
+            normal_matches = [m for m in matches if "contrast" not in os.path.basename(m).lower()]
+            best = normal_matches[0] if normal_matches else matches[0]
+            try:
+                with open(best, "rb") as f:
+                    b64_str = base64.b64encode(f.read()).decode("utf-8")
+                    return f"data:image/png;base64,{b64_str}"
+            except Exception:
+                pass
+    return ""
+
+
+def _check_store_app_exists(package_full_name="", package_name=""):
+    """Returns True if the AppX package is still installed on the system."""
+    try:
+        if package_name:
+            cmd = f"[bool](Get-AppxPackage -Name '{package_name}' -AllUsers -ErrorAction SilentlyContinue)"
+        elif package_full_name:
+            cmd = f"[bool](Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object {{ $_.PackageFullName -eq '{package_full_name}' }})"
+        else:
+            return False
+        res = subprocess.run(["powershell", "-NoProfile", "-Command", cmd], capture_output=True, text=True, timeout=10)
+        return "True" in res.stdout
+    except Exception:
+        return False
+
+
+def clean_store_app_leftovers(package_name, package_family_name=""):
+    """Scans and safely deletes leftover AppData\\Packages folders for uninstalled Store apps."""
+    cleaned_folders = []
+    local_app = os.environ.get('LOCALAPPDATA', '')
+    if not local_app or not os.path.exists(local_app):
+        return cleaned_folders
+
+    pkgs_dir = os.path.join(local_app, 'Packages')
+    if os.path.exists(pkgs_dir):
+        try:
+            for item in os.listdir(pkgs_dir):
+                target = os.path.join(pkgs_dir, item)
+                if not os.path.isdir(target):
+                    continue
+                matched = False
+                if package_family_name and package_family_name.lower() == item.lower():
+                    matched = True
+                elif package_name and (item.lower().startswith(package_name.lower() + "_") or item.lower() == package_name.lower()):
+                    matched = True
+
+                if matched:
+                    try:
+                        shutil.rmtree(target, ignore_errors=True)
+                        if not os.path.exists(target):
+                            cleaned_folders.append(target)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    return cleaned_folders
+
+
+def uninstall_store_app(package_full_name, package_name=""):
+    """
+    Thoroughly and reliably uninstalls a Windows Store (AppX) package:
+    1. Force kills any active processes locking the package.
+    2. Runs PowerShell removal with multi-stage fallback:
+       - Stage 1: Remove-AppxPackage -Package <PackageFullName> (current user)
+       - Stage 2: Remove-AppxPackage -Package <PackageFullName> -AllUsers (all user profiles)
+       - Stage 3: Get-AppxPackage -Name <package_name> -AllUsers | Remove-AppxPackage -AllUsers
+       - Stage 4: Remove-AppxProvisionedPackage if provisioned in Windows system image
+    3. Verifies whether the package was truly removed.
+    Returns dict: {"success": bool, "message": str, "errors": list}
+    """
+    results = {
+        "success": False,
+        "message": "",
+        "errors": []
+    }
+
+    # 1. Kill any running processes related to package
+    clean_name = re.sub(r'[^a-zA-Z0-9]', '', package_name.lower()) if package_name else ""
+    if clean_name and len(clean_name) >= 3:
+        try:
+            res = subprocess.run('tasklist /FO CSV /NH', shell=True, capture_output=True, text=True, errors='ignore')
+            for line in res.stdout.splitlines():
+                if not line:
+                    continue
+                proc_exe = [p.strip('"') for p in line.split(',')][0]
+                proc_clean = re.sub(r'[^a-zA-Z0-9]', '', proc_exe.lower().replace('.exe', ''))
+                if clean_name in proc_clean or proc_clean in clean_name:
+                    subprocess.run(f'taskkill /f /im "{proc_exe}"', shell=True, capture_output=True)
+        except Exception:
+            pass
+
+    # 2. Run PowerShell removal script with multi-stage fallback
+    pkg_full_escaped = package_full_name.replace('"', '`"') if package_full_name else ""
+    pkg_name_escaped = package_name.replace('"', '`"') if package_name else ""
+
+    ps_script = f"""
+$pkgFullName = "{pkg_full_escaped}"
+$pkgName = "{pkg_name_escaped}"
+$errors = @()
+
+# Stage 1: Standard Remove-AppxPackage by PackageFullName
+if ($pkgFullName) {{
+    try {{
+        Remove-AppxPackage -Package $pkgFullName -ErrorAction Stop
+    }} catch {{
+        $errors += "Stage 1 ($pkgFullName): " + $_.Exception.Message
+    }}
+}}
+
+# Stage 2: Try with -AllUsers if still exists
+$check1 = if ($pkgName) {{ 
+    Get-AppxPackage -Name $pkgName -AllUsers -ErrorAction SilentlyContinue 
+}} else {{ 
+    Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object {{ $_.PackageFullName -eq $pkgFullName }} 
+}}
+
+if ($check1 -and $pkgFullName) {{
+    try {{
+        Remove-AppxPackage -Package $pkgFullName -AllUsers -ErrorAction Stop
+    }} catch {{
+        $errors += "Stage 2 AllUsers: " + $_.Exception.Message
+    }}
+}}
+
+# Stage 3: Fallback via Get-AppxPackage pipeline by Name
+$check2 = if ($pkgName) {{ 
+    Get-AppxPackage -Name $pkgName -AllUsers -ErrorAction SilentlyContinue 
+}} else {{ $null }}
+
+if ($check2) {{
+    try {{
+        Get-AppxPackage -Name $pkgName -AllUsers -ErrorAction Stop | Remove-AppxPackage -AllUsers -ErrorAction Stop
+    }} catch {{
+        $errors += "Stage 3 Pipeline AllUsers: " + $_.Exception.Message
+    }}
+    if (Get-AppxPackage -Name $pkgName -ErrorAction SilentlyContinue) {{
+        try {{
+            Get-AppxPackage -Name $pkgName -ErrorAction Stop | Remove-AppxPackage -ErrorAction Stop
+        }} catch {{
+            $errors += "Stage 3 Pipeline CurrentUser: " + $_.Exception.Message
+        }}
+    }}
+}}
+
+# Stage 4: Remove provisioned package so it doesn't return
+try {{
+    $prov = Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue | Where-Object {{
+        ($pkgName -and ($_.DisplayName -eq $pkgName -or $_.PackageName -like "*$pkgName*")) -or
+        ($pkgFullName -and $_.PackageName -eq $pkgFullName)
+    }}
+    if ($prov) {{
+        $prov | Remove-AppxProvisionedPackage -Online -ErrorAction Stop
+    }}
+}} catch {{
+    $errors += "Stage 4 Provisioned: " + $_.Exception.Message
+}}
+
+# Verification: Is the package completely gone?
+$still = if ($pkgName) {{
+    Get-AppxPackage -Name $pkgName -AllUsers -ErrorAction SilentlyContinue
+}} else {{
+    Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object {{ $_.PackageFullName -eq $pkgFullName }}
+}}
+
+if ($still) {{
+    Write-Output "STATUS:FAILED"
+    $errors | ForEach-Object {{ Write-Output "ERR:$_" }}
+}} else {{
+    Write-Output "STATUS:SUCCESS"
+}}
+"""
+    try:
+        proc = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True, timeout=90)
+        stdout = proc.stdout.strip()
+        stderr = proc.stderr.strip()
+
+        if "STATUS:SUCCESS" in stdout:
+            results["success"] = True
+            results["message"] = f"Đã gỡ bỏ thành công ứng dụng Store: {package_name or package_full_name}"
+        else:
+            err_lines = [l.replace("ERR:", "").strip() for l in stdout.splitlines() if l.startswith("ERR:")]
+            if stderr:
+                err_lines.append(stderr)
+            results["success"] = False
+            results["errors"] = err_lines
+            err_summary = "; ".join(err_lines) if err_lines else "Gói ứng dụng vẫn tồn tại sau khi chạy lệnh gỡ bỏ."
+            results["message"] = f"Không thể gỡ ứng dụng Store: {err_summary}"
+    except subprocess.TimeoutExpired:
+        results["success"] = False
+        results["message"] = "Hết thời gian chờ lệnh gỡ ứng dụng Store (PowerShell timeout 90s)."
+    except Exception as e:
+        results["success"] = False
+        results["message"] = f"Lỗi thực thi PowerShell: {str(e)}"
+
+    return results
+
+
 def get_store_apps():
-    """Returns installed Windows Store (AppX) packages."""
+    """Returns installed Windows Store (AppX) packages with accurate FullName, high-res icons and clean publisher names."""
     apps = []
     try:
-        ps_cmd = 'Get-AppxPackage | Select-Object Name, Publisher, Version, InstallLocation | ConvertTo-Json -Depth 2'
-        res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], capture_output=True, text=True, timeout=15)
-        if res.returncode == 0 and res.stdout:
-            import json
+        ps_cmd = """
+try {
+    Get-AppxPackage -AllUsers | Where-Object { -not $_.IsFramework -and -not $_.NonRemovable } | Select-Object Name, PackageFullName, PackageFamilyName, Publisher, Version, InstallLocation | ConvertTo-Json -Depth 2
+} catch {
+    Get-AppxPackage | Where-Object { -not $_.IsFramework -and -not $_.NonRemovable } | Select-Object Name, PackageFullName, PackageFamilyName, Publisher, Version, InstallLocation | ConvertTo-Json -Depth 2
+}
+"""
+        res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], capture_output=True, text=True, timeout=30)
+        if res.returncode == 0 and res.stdout and res.stdout.strip():
             data = json.loads(res.stdout)
             if isinstance(data, dict):
                 data = [data]
+            
+            # System internal packages to exclude from user uninstaller
+            SYSTEM_APPX_PREFIXES = (
+                'microsoft.windows.search', 'microsoft.windows.shellexperiencehost',
+                'microsoft.windows.startmenuexperiencehost', 'microsoft.windows.cortana',
+                'microsoft.windows.sechealthui', 'microsoft.windows.cloudexperiencehost',
+                'microsoft.aad.brokerplugin', 'microsoft.accountscontrol',
+                'microsoft.bioenrollment', 'microsoft.lockapp', 'microsoft.win32webviewhost',
+                'microsoft.asynctextservice', 'microsoft.ecapp', 'microsoft.creddialoghost',
+                'microsoft.windows.oobenetworkconnectionflow', 'microsoft.windows.narratorquickstart',
+                'microsoft.windows.parentalcontrols', 'microsoft.windows.peopleexperiencehost',
+                'microsoft.windows.contentdeliverymanager', 'microsoft.windows.apprep.chxapp',
+                'microsoft.windows.callingdatacapture'
+            )
+
+            seen_full_names = set()
+
             for item in data:
                 name = item.get('Name', '')
-                if not name or name.startswith('Microsoft.') or name.startswith('Windows.'):
+                full_name = item.get('PackageFullName', '')
+                family_name = item.get('PackageFamilyName', '')
+                if not name or not full_name:
                     continue
+
+                name_lower = name.lower()
+                if any(name_lower.startswith(p) for p in SYSTEM_APPX_PREFIXES):
+                    continue
+
+                if full_name in seen_full_names:
+                    continue
+                seen_full_names.add(full_name)
+
+                # Clean display name
                 parts = name.split('_')
                 disp = parts[0] if parts else name
+
+                # Clean publisher name (extract from CN=... if present)
+                raw_pub = item.get('Publisher', '')
+                clean_pub = raw_pub
+                if raw_pub:
+                    m = re.search(r'CN=([^,]+)', raw_pub)
+                    if m:
+                        clean_pub = m.group(1).strip()
+                    elif raw_pub.startswith("CN="):
+                        clean_pub = raw_pub.replace("CN=", "").strip()
+                if not clean_pub:
+                    clean_pub = "Microsoft Store"
+
                 loc = item.get('InstallLocation', '')
-                icon_b64 = extract_file_icon_base64(loc) if loc else ""
+                version = item.get('Version', '1.0')
+
+                # Native high-res PNG icon extraction for AppX packages
+                icon_b64 = get_store_app_icon_b64(loc)
+
                 apps.append({
                     "display_name": disp,
                     "name": disp,
-                    "publisher": item.get('Publisher', 'Microsoft Store'),
+                    "publisher": clean_pub,
                     "install_date": "Store Package",
                     "date": "Store Package",
                     "estimated_size": 0,
                     "size": "--",
-                    "display_version": item.get('Version', '1.0'),
-                    "version": item.get('Version', '1.0'),
-                    "uninstall_cmd": f'Remove-AppxPackage -Package {name}',
-                    "uninstall": f'Remove-AppxPackage -Package {name}',
+                    "display_version": version,
+                    "version": version,
+                    "uninstall_cmd": f'Remove-AppxPackage -Package "{full_name}"',
+                    "uninstall": f'Remove-AppxPackage -Package "{full_name}"',
                     "install_location": loc,
                     "reg_key_name": name,
+                    "package_full_name": full_name,
+                    "package_family_name": family_name,
                     "hive_name": "Store",
                     "icon_b64": icon_b64,
                     "icon": icon_b64,
@@ -235,6 +505,7 @@ def get_store_apps():
     except Exception:
         pass
     return sorted(apps, key=lambda x: x['display_name'].lower())
+
 
 
 def _check_reg_key_exists(reg_key_name):
@@ -503,12 +774,17 @@ def deep_scan_leftover_folders(app_name, install_location=None):
     return deleted_folders
 
 
-def run_deep_clean_uninstall(app_name, uninstall_cmd, install_location=None, reg_key_name="", is_store=False):
+def run_deep_clean_uninstall(app_name, uninstall_cmd, install_location=None, reg_key_name="", is_store=False, package_full_name=""):
     """
     Executes the 3-Step Your Uninstaller! Wizard process:
-    Step 1: Terminate app processes & run the native uninstaller interactively
-    Step 2: Deep scan & clean Windows Registry leftovers
-    Step 3: Deep scan & clean installation folders & AppData trash
+    For Store (AppX) Apps:
+      Step 1: Terminate app processes & run PowerShell AppX uninstaller with multi-stage fallback
+      Step 2: Deep scan & clean Windows Registry leftovers
+      Step 3: Deep scan & clean AppData\\Packages leftovers
+    For Win32 Apps:
+      Step 1: Terminate app processes & run the native uninstaller interactively
+      Step 2: Deep scan & clean Windows Registry leftovers
+      Step 3: Deep scan & clean installation folders & AppData trash
     """
     global _skip_step1_flag
     _skip_step1_flag = False
@@ -525,21 +801,74 @@ def run_deep_clean_uninstall(app_name, uninstall_cmd, install_location=None, reg
         "summary": ""
     }
 
+    # ── BRANCH A: WINDOWS STORE (APPX) PACKAGES ──────────────────────────
+    if is_store or (uninstall_cmd and "Remove-AppxPackage" in uninstall_cmd):
+        pkg_full = package_full_name
+        if not pkg_full and uninstall_cmd:
+            m = re.search(r'Remove-AppxPackage\s+(?:-Package\s+)?["\']?([^"\']+)["\']?', uninstall_cmd, re.I)
+            if m:
+                cand = m.group(1).strip()
+                if "_" in cand:
+                    pkg_full = cand
+        if not pkg_full and install_location and "WindowsApps" in install_location:
+            pkg_full = os.path.basename(install_location.rstrip(r'\/'))
+        if not pkg_full and reg_key_name and "_" in reg_key_name:
+            pkg_full = reg_key_name
+
+        pkg_name = reg_key_name if (reg_key_name and "_" not in reg_key_name) else (app_name or "")
+        if "_" in pkg_name and not pkg_full:
+            pkg_full = pkg_name
+            pkg_name = pkg_name.split('_')[0]
+        elif "_" in pkg_name:
+            pkg_name = pkg_name.split('_')[0]
+
+        # Step 1: Run Store uninstallation with multi-stage fallback
+        store_res = uninstall_store_app(pkg_full, pkg_name)
+        results["step1_success"] = store_res["success"]
+        results["step1_msg"] = store_res["message"]
+
+        # Step 2: Clean registry leftovers (vendor/app keys in HKCU/HKLM Software)
+        try:
+            del_keys = deep_scan_leftover_registry(pkg_name or app_name, "")
+            results["step2_keys"] = del_keys
+            results["registry_cleaned"] = del_keys
+        except Exception:
+            results["step2_keys"] = []
+            results["registry_cleaned"] = []
+
+        # Step 3: Clean Store AppData packages leftovers
+        family_name = ""
+        if pkg_full and "_" in pkg_full:
+            parts = pkg_full.split('_')
+            if len(parts) >= 5:
+                family_name = f"{parts[0]}_{parts[-1]}"
+        try:
+            del_folders = clean_store_app_leftovers(pkg_name or app_name, family_name)
+            results["step3_folders"] = del_folders
+            results["folders_cleaned"] = del_folders
+        except Exception:
+            results["step3_folders"] = []
+            results["folders_cleaned"] = []
+
+        reg_cnt = len(results["step2_keys"])
+        folder_cnt = len(results["step3_folders"])
+
+        if results["step1_success"]:
+            results["success"] = True
+            results["summary"] = f"🎉 Đã gỡ siêu sạch Store App '{app_name}'! Xóa {reg_cnt} Registry Keys và {folder_cnt} Thư mục rác."
+        else:
+            results["success"] = False
+            results["summary"] = f"⚠️ Không thể gỡ ứng dụng Store '{app_name}': {results['step1_msg']}"
+
+        return results
+
+    # ── BRANCH B: WIN32 DESKTOP APPLICATIONS ─────────────────────────────
     # Kill any running processes first to release file & registry locks
     kill_app_processes(app_name, install_location)
 
     # ── STEP 1: Run Default Uninstaller (Interactive — user sees the window) ──
     try:
-        if is_store or (uninstall_cmd and "Remove-AppxPackage" in uninstall_cmd):
-            # Store apps: must run silently via PowerShell
-            subprocess.run(
-                ["powershell", "-NoProfile", "-Command", uninstall_cmd],
-                capture_output=True, timeout=60
-            )
-            results["step1_msg"] = "✅ Step 1: Đã gỡ ứng dụng Windows Store (AppX)!"
-            results["step1_success"] = not _check_reg_key_exists(reg_key_name)
-
-        elif uninstall_cmd:
+        if uninstall_cmd:
             cmd = uninstall_cmd.strip()
             cmd_lower = cmd.lower()
 
@@ -637,8 +966,25 @@ def open_app_folder(install_location, app_name):
     """Opens the installation directory of the specified application."""
     try:
         if install_location and os.path.exists(install_location):
-            os.startfile(install_location)
-            return {"success": True, "message": f"Đã mở thư mục: {install_location}"}
+            try:
+                os.startfile(install_location)
+                return {"success": True, "message": f"Đã mở thư mục: {install_location}"}
+            except Exception:
+                pass
+
+        # Check AppData Packages folder for Store apps
+        local_app = os.environ.get('LOCALAPPDATA', '')
+        if local_app:
+            pkgs_dir = os.path.join(local_app, 'Packages')
+            if os.path.exists(pkgs_dir):
+                for item in os.listdir(pkgs_dir):
+                    if app_name and (app_name.lower() in item.lower()):
+                        pkg_path = os.path.join(pkgs_dir, item)
+                        try:
+                            os.startfile(pkg_path)
+                            return {"success": True, "message": f"Đã mở thư mục dữ liệu AppData: {pkg_path}"}
+                        except Exception:
+                            pass
 
         # Search program files
         folders = find_app_folders(app_name)
@@ -649,6 +995,7 @@ def open_app_folder(install_location, app_name):
         return {"success": False, "message": "Không tìm thấy thư mục cài đặt của phần mềm này!"}
     except Exception as e:
         return {"success": False, "message": str(e)}
+
 
 
 class UninstallManager:

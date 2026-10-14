@@ -2342,12 +2342,12 @@ foreach ($p in $names) {{
             return {"success": False, "message": str(e), "data": []}
 
 
-    def run_deep_clean_uninstall(self, app_name, uninstall_cmd, install_location="", reg_key_name="", is_store=False):
+    def run_deep_clean_uninstall(self, app_name, uninstall_cmd, install_location="", reg_key_name="", is_store=False, package_full_name=""):
         """Executes 3-Step Your Uninstaller! Wizard process."""
         try:
             import modules.uninstall_manager as um
             self.log("INFO", f"Đang tiến hành gỡ siêu sạch phần mềm: {app_name}...")
-            res = um.run_deep_clean_uninstall(app_name, uninstall_cmd, install_location, reg_key_name, is_store)
+            res = um.run_deep_clean_uninstall(app_name, uninstall_cmd, install_location, reg_key_name, is_store, package_full_name)
             um._start_menu_shortcuts_cache = None
             self.log("SUCCESS" if res.get("success") else "ERROR", res.get("summary"))
             return res
