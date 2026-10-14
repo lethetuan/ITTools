@@ -424,7 +424,11 @@ ITTools\
     ├── assets\                # Tài nguyên đồ họa & tệp hệ thống sạch
     │   ├── tray_icon.ico      # Icon khay hệ thống & icon ứng dụng
     │   ├── tray_icon.png
-    │   └── spooler_clean\     # Bộ 3 tệp hệ thống sạch sửa lỗi máy in
+    │   ├── spooler_clean\         # Bộ 3 tệp hệ thống sạch cho Windows 11 (localspl, spoolsv, win32spl)
+    │   │   ├── localspl.dll
+    │   │   ├── spoolsv.exe
+    │   │   └── win32spl.dll
+    │   └── spooler_clean_win10\   # Bộ 3 tệp hệ thống sạch cho Windows 10 (localspl, spoolsv, win32spl)
     │       ├── localspl.dll
     │       ├── spoolsv.exe
     │       └── win32spl.dll
